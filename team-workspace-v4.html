@@ -1,0 +1,2748 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>팀 워크스페이스 - 브랜드마케팅팀</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
+    button { font-family: inherit; cursor: pointer; }
+    input:focus, textarea:focus { outline: none; border-color: #3182F6 !important; }
+    select:focus { outline: none; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #D1D6DB; border-radius: 3px; }
+    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .menu-item { transition: all 0.15s; }
+    .menu-item:hover { background: rgba(255,255,255,0.1); }
+    .task-row { transition: background 0.15s; }
+    .task-row:hover { background: #F7F8FA; }
+    .drag-over { background: #EBF4FF !important; }
+    .loading-spinner { 
+      width: 40px; height: 40px; border: 3px solid #E5E8EB; 
+      border-top-color: #3182F6; border-radius: 50%; 
+      animation: spin 1s linear infinite; 
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script>
+    // Firebase 초기화
+    const firebaseConfig = {
+      apiKey: "AIzaSyBVc-4vKB3KMQo422y4FofSRhnF2hJcPOQ",
+      authDomain: "mktt-764a6.firebaseapp.com",
+      projectId: "mktt-764a6",
+      storageBucket: "mktt-764a6.firebasestorage.app",
+      messagingSenderId: "451380847332",
+      appId: "1:451380847332:web:903cad94de2785dc00c2f1",
+      measurementId: "G-KEW7ZC2GK3"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+  </script>
+  
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+
+    // ============ 아이콘 컴포넌트 ============
+    const Icon = ({ name, size = 20, color = "currentColor" }) => {
+      const icons = {
+        layout: <path d="M3 3h7v9H3V3zm11 0h7v5h-7V3zm0 9h7v9h-7v-9zM3 16h7v5H3v-5z" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+        clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" fill="none" stroke={color} strokeWidth="2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1" fill="none" stroke={color} strokeWidth="2"/></>,
+        folder: <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="none" stroke={color} strokeWidth="2"/></>,
+        calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2" fill="none" stroke={color} strokeWidth="2"/><line x1="16" y1="2" x2="16" y2="6" stroke={color} strokeWidth="2"/><line x1="8" y1="2" x2="8" y2="6" stroke={color} strokeWidth="2"/><line x1="3" y1="10" x2="21" y2="10" stroke={color} strokeWidth="2"/></>,
+        plus: <><line x1="12" y1="5" x2="12" y2="19" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke={color} strokeWidth="2" strokeLinecap="round"/></>,
+        check: <polyline points="20 6 9 17 4 12" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+        x: <><line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth="2" strokeLinecap="round"/></>,
+        chevronLeft: <polyline points="15 18 9 12 15 6" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+        chevronRight: <polyline points="9 18 15 12 9 6" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+        chevronDown: <polyline points="6 9 12 15 18 9" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+        user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" fill="none" stroke={color} strokeWidth="2"/><circle cx="12" cy="7" r="4" fill="none" stroke={color} strokeWidth="2"/></>,
+        search: <><circle cx="11" cy="11" r="8" fill="none" stroke={color} strokeWidth="2"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke={color} strokeWidth="2" strokeLinecap="round"/></>,
+        trash: <><polyline points="3 6 5 6 21 6" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round"/></>,
+        edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" fill="none" stroke={color} strokeWidth="2"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" fill="none" stroke={color} strokeWidth="2"/></>,
+        bookmark: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>,
+        bookmarkFill: <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" fill={color} stroke={color} strokeWidth="2"/>,
+        message: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="none" stroke={color} strokeWidth="2"/></>,
+        send: <><line x1="22" y1="2" x2="11" y2="13" stroke={color} strokeWidth="2"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round"/></>,
+        users: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" fill="none" stroke={color} strokeWidth="2"/><circle cx="9" cy="7" r="4" fill="none" stroke={color} strokeWidth="2"/><path d="M23 21v-2a4 4 0 0 0-3-3.87" fill="none" stroke={color} strokeWidth="2"/><path d="M16 3.13a4 4 0 0 1 0 7.75" fill="none" stroke={color} strokeWidth="2"/></>,
+        grip: <><circle cx="9" cy="5" r="1" fill={color}/><circle cx="9" cy="12" r="1" fill={color}/><circle cx="9" cy="19" r="1" fill={color}/><circle cx="15" cy="5" r="1" fill={color}/><circle cx="15" cy="12" r="1" fill={color}/><circle cx="15" cy="19" r="1" fill={color}/></>,
+        circle: <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2"/>,
+        checkCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" fill="none" stroke={color} strokeWidth="2"/><polyline points="22 4 12 14.01 9 11.01" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>,
+        pause: <><circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2"/><line x1="10" y1="15" x2="10" y2="9" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="14" y1="15" x2="14" y2="9" stroke={color} strokeWidth="2" strokeLinecap="round"/></>,
+        fileText: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke={color} strokeWidth="2"/><polyline points="14 2 14 8 20 8" fill="none" stroke={color} strokeWidth="2"/><line x1="16" y1="13" x2="8" y2="13" stroke={color} strokeWidth="2"/><line x1="16" y1="17" x2="8" y2="17" stroke={color} strokeWidth="2"/><line x1="10" y1="9" x2="8" y2="9" stroke={color} strokeWidth="2"/></>,
+        pin: <><line x1="12" y1="17" x2="12" y2="22" stroke={color} strokeWidth="2" strokeLinecap="round"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>,
+        paperclip: <><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></>,
+      };
+      return <svg width={size} height={size} viewBox="0 0 24 24" style={{display:'block'}}>{icons[name]}</svg>;
+    };
+
+    // ============ 공통 데이터 ============
+    const TEAM_MEMBERS = [
+      { id: 1, name: '김혜영', initial: '혜', color: '#3182F6', role: '팀장' },
+      { id: 2, name: '이수진', initial: '수', color: '#00C471', role: '대리' },
+      { id: 3, name: '박준호', initial: '준', color: '#F97316', role: '주임' },
+      { id: 4, name: '최민서', initial: '민', color: '#8B5CF6', role: '사원' },
+      { id: 5, name: '정다은', initial: '다', color: '#EC4899', role: '사원' },
+    ];
+
+    const BRANDS = [
+      { id: 1, name: 'Pour 공법', color: '#3182F6' },
+      { id: 2, name: 'Pour 솔루션', color: '#00C471' },
+      { id: 3, name: '아파트스퀘어', color: '#F97316' },
+    ];
+
+    const STATUS_OPTIONS = [
+      { id: 'progress', label: '진행중', color: '#3182F6', bg: '#EBF4FF', icon: 'circle' },
+      { id: 'complete', label: '완료', color: '#00C471', bg: '#ECFDF5', icon: 'checkCircle' },
+      { id: 'hold', label: '보류', color: '#F59E0B', bg: '#FFFBEB', icon: 'pause' },
+    ];
+
+    // ============ 유틸리티 ============
+    const formatDate = (date) => {
+      const d = new Date(date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const formatShortDate = (dateStr) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+    };
+
+    const formatDateTime = (dateStr) => {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now - d;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+      if (diffMins < 1) return '방금 전';
+      if (diffMins < 60) return `${diffMins}분 전`;
+      if (diffHours < 24) return `${diffHours}시간 전`;
+      if (diffDays < 7) return `${diffDays}일 전`;
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    };
+
+    const getMonthDates = (year, month) => {
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      const startPadding = (firstDay.getDay() + 6) % 7;
+      const dates = [];
+      for (let i = startPadding - 1; i >= 0; i--) {
+        const d = new Date(year, month, -i);
+        dates.push({ date: formatDate(d), isCurrentMonth: false, day: d.getDate() });
+      }
+      for (let i = 1; i <= lastDay.getDate(); i++) {
+        const d = new Date(year, month, i);
+        dates.push({ date: formatDate(d), isCurrentMonth: true, day: d.getDate() });
+      }
+      const remaining = 42 - dates.length;
+      for (let i = 1; i <= remaining; i++) {
+        const d = new Date(year, month + 1, i);
+        dates.push({ date: formatDate(d), isCurrentMonth: false, day: d.getDate() });
+      }
+      return dates;
+    };
+
+    const today = formatDate(new Date());
+
+    // ============ Firebase 유틸리티 함수 ============
+    const FirebaseService = {
+      // 컬렉션에서 모든 문서 가져오기
+      async getAll(collection) {
+        try {
+          const snapshot = await db.collection(collection).get();
+          return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        } catch (error) {
+          console.error(`Error getting ${collection}:`, error);
+          return [];
+        }
+      },
+      
+      // 문서 저장 (upsert)
+      async save(collection, id, data) {
+        try {
+          await db.collection(collection).doc(String(id)).set(data, { merge: true });
+        } catch (error) {
+          console.error(`Error saving to ${collection}:`, error);
+        }
+      },
+      
+      // 문서 삭제
+      async delete(collection, id) {
+        try {
+          await db.collection(collection).doc(String(id)).delete();
+        } catch (error) {
+          console.error(`Error deleting from ${collection}:`, error);
+        }
+      },
+      
+      // 전체 컬렉션 동기화 (배열을 한 번에 저장)
+      async syncCollection(collection, items) {
+        try {
+          const batch = db.batch();
+          items.forEach(item => {
+            const ref = db.collection(collection).doc(String(item.id));
+            batch.set(ref, item);
+          });
+          await batch.commit();
+        } catch (error) {
+          console.error(`Error syncing ${collection}:`, error);
+        }
+      },
+      
+      // 단일 문서 저장 (settings 등)
+      async saveDoc(collection, docId, data) {
+        try {
+          await db.collection(collection).doc(docId).set(data, { merge: true });
+        } catch (error) {
+          console.error(`Error saving doc:`, error);
+        }
+      },
+      
+      // 단일 문서 가져오기
+      async getDoc(collection, docId) {
+        try {
+          const doc = await db.collection(collection).doc(docId).get();
+          return doc.exists ? doc.data() : null;
+        } catch (error) {
+          console.error(`Error getting doc:`, error);
+          return null;
+        }
+      },
+      
+      // 파일 업로드
+      async uploadFile(file, path) {
+        try {
+          const ref = storage.ref().child(path);
+          const snapshot = await ref.put(file);
+          const url = await snapshot.ref.getDownloadURL();
+          return { url, name: file.name, size: file.size, type: file.type };
+        } catch (error) {
+          console.error('Error uploading file:', error);
+          return null;
+        }
+      },
+      
+      // 파일 삭제
+      async deleteFile(path) {
+        try {
+          await storage.ref().child(path).delete();
+        } catch (error) {
+          console.error('Error deleting file:', error);
+        }
+      }
+    };
+
+    // ============ 샘플 데이터 (초기 데이터가 없을 때 사용) ============
+    const INITIAL_PROJECTS = [
+      { id: 101, brandId: 1, title: '2025 신년 캠페인', description: '새해맞이 브랜드 프로모션 캠페인 기획 및 실행', status: 'progress', createdDate: '2024-12-15', creatorId: 1, memberIds: [1, 3], comments: [
+        { id: 1, memberId: 1, text: '킥오프 미팅 완료! 각자 업무 확인해주세요', createdAt: '2024-12-20T09:00:00' },
+        { id: 2, memberId: 3, text: '디자인 시안 작업 시작합니다', createdAt: '2024-12-21T14:00:00' },
+      ]},
+      { id: 102, brandId: 2, title: 'SNS 콘텐츠 리뉴얼', description: '인스타그램, 유튜브 채널 콘텐츠 전략 재수립', status: 'progress', createdDate: '2024-12-10', creatorId: 2, memberIds: [1, 2], comments: [] },
+      { id: 103, brandId: 1, title: '브랜드북 제작', description: 'Pour 공법 브랜드 아이덴티티 가이드라인 문서화', status: 'hold', createdDate: '2024-11-20', creatorId: 1, memberIds: [1], comments: [] },
+      { id: 104, brandId: 3, title: '고객 후기 캠페인', description: '입주민 후기 수집 및 콘텐츠화', status: 'complete', createdDate: '2024-11-01', completedDate: '2024-12-20', creatorId: 3, memberIds: [3, 4], comments: [] },
+    ];
+
+    const INITIAL_TASKS = [
+      { id: 1, projectId: 101, title: '캠페인 컨셉 기획서 작성', memberId: 1, date: '2024-12-23', completed: true, order: 0, note: '', bookmark: false },
+      { id: 2, projectId: 101, title: '디자인 시안 제작', memberId: 3, date: '2024-12-26', completed: false, order: 1, note: '', bookmark: false },
+      { id: 10, projectId: 101, title: '브랜드 가이드라인 검토', memberId: 1, date: today, completed: false, order: 0, note: '디자인팀과 협의 필요\n\n- 로고 사용 규정 확인\n- 컬러 가이드 검토\n- 폰트 사용 범위 논의', bookmark: true },
+      { id: 11, projectId: 102, title: 'SNS 콘텐츠 기획회의', memberId: 1, date: today, completed: false, order: 1, note: '인스타그램 릴스 위주로 논의', bookmark: false },
+      { id: 12, projectId: 103, title: '광고 소재 디자인 피드백', memberId: 1, date: today, completed: false, order: 2, note: '', bookmark: false },
+      { id: 13, projectId: 101, title: '신규 캠페인 컨셉 회의', memberId: 1, date: today, completed: false, order: 3, note: '', bookmark: false },
+      { id: 14, projectId: 101, title: '월간 보고서 작성', memberId: 1, date: today, completed: false, order: 4, note: '이번 주 금요일까지\n\n[ ] 지난달 성과 정리\n[ ] 이번달 계획 작성\n[ ] KPI 분석', bookmark: true },
+      { id: 15, projectId: 102, title: '협력사 미팅 준비', memberId: 1, date: today, completed: false, order: 5, note: '', bookmark: false },
+      { id: 16, projectId: 103, title: '캠페인 성과 분석', memberId: 1, date: today, completed: false, order: 6, note: '', bookmark: false },
+    ];
+
+    const INITIAL_FIXED_TASKS = [
+      { id: 1, title: '일일 보고서 작성', projectId: 1, routineType: 'daily', completedDates: [] },
+      { id: 2, title: '이메일 확인 및 회신', projectId: null, routineType: 'daily', completedDates: [] },
+      { id: 3, title: '주간 회의 준비', projectId: 1, routineType: 'weekly', completedDates: [] },
+      { id: 4, title: '팀 미팅 참석', projectId: null, routineType: 'weekly', completedDates: [] },
+      { id: 5, title: '월간 보고서 작성', projectId: 1, routineType: 'monthly', completedDates: [] },
+      { id: 6, title: '월간 KPI 점검', projectId: null, routineType: 'monthly', completedDates: [] },
+    ];
+
+    // ============ 메인 앱 ============
+    function TeamWorkApp() {
+      const [activeTab, setActiveTab] = useState('worklog');
+      const [currentUser] = useState(TEAM_MEMBERS[0]);
+      const [projects, setProjects] = useState([]);
+      const [tasks, setTasks] = useState([]);
+      const [fixedTasks, setFixedTasks] = useState([]);
+      const [isLoading, setIsLoading] = useState(true);
+      const [isSaving, setIsSaving] = useState(false);
+      
+      // Firebase에서 초기 데이터 로드
+      useEffect(() => {
+        const loadData = async () => {
+          setIsLoading(true);
+          try {
+            // 프로젝트 로드
+            const loadedProjects = await FirebaseService.getAll('projects');
+            if (loadedProjects.length > 0) {
+              setProjects(loadedProjects.map(p => ({ ...p, id: Number(p.id) || p.id })));
+            } else {
+              // 초기 데이터 저장
+              setProjects(INITIAL_PROJECTS);
+              await FirebaseService.syncCollection('projects', INITIAL_PROJECTS);
+            }
+            
+            // 업무 로드
+            const loadedTasks = await FirebaseService.getAll('tasks');
+            if (loadedTasks.length > 0) {
+              setTasks(loadedTasks.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            } else {
+              setTasks(INITIAL_TASKS);
+              await FirebaseService.syncCollection('tasks', INITIAL_TASKS);
+            }
+            
+            // 루틴 업무 로드
+            const loadedFixedTasks = await FirebaseService.getAll('fixedTasks');
+            if (loadedFixedTasks.length > 0) {
+              setFixedTasks(loadedFixedTasks.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            } else {
+              setFixedTasks(INITIAL_FIXED_TASKS);
+              await FirebaseService.syncCollection('fixedTasks', INITIAL_FIXED_TASKS);
+            }
+            
+            // 기타 설정 로드 (오늘의 한마디, 고정 메모 등)
+            const settings = await FirebaseService.getDoc('settings', 'dailyNotes');
+            if (settings) {
+              // dailyNotes 상태가 있다면 여기서 설정
+            }
+            
+          } catch (error) {
+            console.error('Error loading data:', error);
+            // 에러 시 초기 데이터 사용
+            setProjects(INITIAL_PROJECTS);
+            setTasks(INITIAL_TASKS);
+            setFixedTasks(INITIAL_FIXED_TASKS);
+          }
+          setIsLoading(false);
+        };
+        
+        loadData();
+      }, []);
+      
+      // 프로젝트 변경 시 Firebase에 저장
+      useEffect(() => {
+        if (!isLoading && projects.length > 0) {
+          FirebaseService.syncCollection('projects', projects);
+        }
+      }, [projects, isLoading]);
+      
+      // 업무 변경 시 Firebase에 저장
+      useEffect(() => {
+        if (!isLoading && tasks.length > 0) {
+          FirebaseService.syncCollection('tasks', tasks);
+        }
+      }, [tasks, isLoading]);
+      
+      // 루틴 업무 변경 시 Firebase에 저장
+      useEffect(() => {
+        if (!isLoading && fixedTasks.length > 0) {
+          FirebaseService.syncCollection('fixedTasks', fixedTasks);
+        }
+      }, [fixedTasks, isLoading]);
+      const [readComments, setReadComments] = useState(() => {
+        const init = {};
+        INITIAL_PROJECTS.forEach(p => { init[p.id] = p.comments.filter(c => c.memberId === 1).length; });
+        return init;
+      });
+      const [movedTasksCount, setMovedTasksCount] = useState(0);
+
+      // 미완료 업무 자동 이동 (데이터 로드 완료 후 실행)
+      useEffect(() => {
+        if (isLoading || tasks.length === 0) return;
+        
+        const todayStr = formatDate(new Date());
+        let movedCount = 0;
+        
+        setTasks(prev => prev.map(task => {
+          // 오늘 이전 날짜이고, 완료되지 않은 업무만 이동
+          if (task.date < todayStr && !task.completed) {
+            movedCount++;
+            return { ...task, date: todayStr };
+          }
+          return task;
+        }));
+        
+        if (movedCount > 0) {
+          setMovedTasksCount(movedCount);
+          // 3초 후 알림 숨기기
+          setTimeout(() => setMovedTasksCount(0), 4000);
+        }
+      }, [isLoading]);
+
+      const totalUnread = useMemo(() => projects.reduce((sum, p) => sum + Math.max(0, p.comments.length - (readComments[p.id] || 0)), 0), [projects, readComments]);
+
+      const MENU = [
+        { id: 'worklog', label: '업무일지', icon: 'clipboard' },
+        { id: 'project', label: '프로젝트', icon: 'folder', badge: totalUnread },
+        { id: 'calendar', label: '전체업무', icon: 'calendar' },
+      ];
+
+      // 로딩 화면
+      if (isLoading) {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#F7F8FA', gap: 20 }}>
+            <div className="loading-spinner"></div>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 16, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>데이터를 불러오는 중...</p>
+              <p style={{ fontSize: 13, color: '#8B95A1' }}>잠시만 기다려주세요</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ display: 'flex', minHeight: '100vh', background: '#F7F8FA' }}>
+          {/* 저장 중 표시 */}
+          {isSaving && (
+            <div style={{ position: 'fixed', bottom: 20, right: 20, background: '#191F28', color: 'white', padding: '10px 16px', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, zIndex: 9999 }}>
+              <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+              저장 중...
+            </div>
+          )}
+          
+          {/* 미완료 업무 이동 알림 토스트 */}
+          {movedTasksCount > 0 && (
+            <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', background: '#191F28', color: 'white', padding: '14px 24px', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.2)', zIndex: 9999, display: 'flex', alignItems: 'center', gap: 10, animation: 'slideIn 0.3s ease' }}>
+              <span style={{ fontSize: 18 }}>📋</span>
+              <span style={{ fontSize: 14, fontWeight: 500 }}>어제 미완료된 업무 <strong style={{ color: '#3182F6' }}>{movedTasksCount}건</strong>이 오늘로 이동되었습니다</span>
+            </div>
+          )}
+          
+          {/* 사이드바 */}
+          <aside style={{ width: 240, background: 'linear-gradient(180deg, #1B1D21 0%, #2C2F36 100%)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+            <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, #3182F6, #006FEE)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="layout" size={22} color="white" />
+                </div>
+                <div>
+                  <h1 style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>팀 워크스페이스</h1>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>브랜드마케팅팀</p>
+                </div>
+              </div>
+            </div>
+
+            <nav style={{ flex: 1, padding: '16px 12px' }}>
+              {MENU.map(item => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button key={item.id} className="menu-item" onClick={() => setActiveTab(item.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '14px 16px', marginBottom: 4, borderRadius: 12, border: 'none', background: isActive ? 'rgba(49, 130, 246, 0.2)' : 'transparent', textAlign: 'left' }}>
+                    <Icon name={item.icon} size={20} color={isActive ? '#3182F6' : 'rgba(255,255,255,0.6)'} />
+                    <span style={{ flex: 1, fontSize: 15, fontWeight: isActive ? 600 : 500, color: isActive ? 'white' : 'rgba(255,255,255,0.7)' }}>{item.label}</span>
+                    {item.badge > 0 && <span style={{ minWidth: 20, height: 20, borderRadius: 10, background: '#F04452', color: 'white', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' }}>{item.badge}</span>}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>{currentUser.initial}</div>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'white' }}>{currentUser.name}</p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>{currentUser.role}</p>
+              </div>
+            </div>
+          </aside>
+
+          {/* 메인 */}
+          <main style={{ flex: 1, overflow: 'auto' }}>
+            {activeTab === 'worklog' && <WorkLogTab tasks={tasks} setTasks={setTasks} currentUser={currentUser} fixedTasks={fixedTasks} setFixedTasks={setFixedTasks} projects={projects} />}
+            {activeTab === 'project' && <ProjectTab projects={projects} setProjects={setProjects} tasks={tasks} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} />}
+            {activeTab === 'calendar' && <CalendarTab tasks={tasks} setTasks={setTasks} projects={projects} currentUser={currentUser} />}
+          </main>
+        </div>
+      );
+    }
+
+    // ============ 업무일지 탭 ============
+    function WorkLogTab({ tasks, setTasks, currentUser, fixedTasks, setFixedTasks, projects }) {
+      const [selectedDate, setSelectedDate] = useState(today);
+      const [currentMonth, setCurrentMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() });
+      const [selectedProject, setSelectedProject] = useState(null);
+      const [showAddModal, setShowAddModal] = useState(false);
+      const [editingTask, setEditingTask] = useState(null);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [selectedTaskForNote, setSelectedTaskForNote] = useState(null);
+      const [draggedTask, setDraggedTask] = useState(null);
+      const [dragOverId, setDragOverId] = useState(null);
+      
+      // 루틴 업무 UI 상태
+      const [showAddFixedModal, setShowAddFixedModal] = useState(false);
+      const [addRoutineType, setAddRoutineType] = useState('daily');
+
+      const myTasks = useMemo(() => tasks.filter(t => t.memberId === currentUser.id), [tasks, currentUser]);
+      const monthDates = useMemo(() => getMonthDates(currentMonth.year, currentMonth.month), [currentMonth]);
+      const filteredTasks = useMemo(() => {
+        return myTasks
+          .filter(t => t.date === selectedDate)
+          .filter(t => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()))
+          .filter(t => selectedProject === null || t.projectId === selectedProject || (selectedProject === 0 && !t.projectId))
+          .sort((a, b) => a.order - b.order);
+      }, [myTasks, selectedDate, searchQuery, selectedProject]);
+      const taskCountByDate = useMemo(() => { const c = {}; myTasks.forEach(t => { c[t.date] = (c[t.date] || 0) + 1; }); return c; }, [myTasks]);
+      
+      // 주/월 시작일 계산 헬퍼
+      const getWeekStart = (dateStr) => {
+        const d = new Date(dateStr);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        return formatDate(new Date(d.setDate(diff)));
+      };
+      const getMonthStart = (dateStr) => dateStr.slice(0, 7) + '-01';
+      const getCompletionKey = (routineType, dateStr) => {
+        if (routineType === 'weekly') return getWeekStart(dateStr);
+        if (routineType === 'monthly') return getMonthStart(dateStr);
+        return dateStr;
+      };
+      
+      const stats = useMemo(() => { 
+        const dt = myTasks.filter(t => t.date === selectedDate); 
+        const comp = dt.filter(t => t.completed).length;
+        // 일일 루틴만 진행률에 포함
+        const dailyRoutines = fixedTasks.filter(t => t.routineType === 'daily');
+        const dailyComp = dailyRoutines.filter(t => t.completedDates.includes(selectedDate)).length;
+        const total = dt.length + dailyRoutines.length;
+        const totalComp = comp + dailyComp;
+        return { total, completed: totalComp, rate: total > 0 ? Math.round((totalComp / total) * 100) : 0 }; 
+      }, [myTasks, selectedDate, fixedTasks]);
+
+      const moveMonth = (dir) => setCurrentMonth(prev => { let m = prev.month + (dir === 'prev' ? -1 : 1), y = prev.year; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } return { year: y, month: m }; });
+      const toggleComplete = (id) => setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+      const toggleBookmark = (id) => setTasks(prev => prev.map(t => t.id === id ? { ...t, bookmark: !t.bookmark } : t));
+      const deleteTask = (id) => setTasks(prev => prev.filter(t => t.id !== id));
+      const addTask = (task) => { const dt = tasks.filter(t => t.date === task.date && t.memberId === currentUser.id); const mx = Math.max(...dt.map(t => t.order), -1); setTasks(prev => [...prev, { ...task, id: Date.now(), memberId: currentUser.id, order: mx + 1, completed: false, bookmark: false, note: task.note || '' }]); };
+      const updateTask = (task) => setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...task } : t));
+      const updateTaskFields = (id, fields) => {
+        setTasks(prev => prev.map(t => t.id === id ? { ...t, ...fields } : t));
+        setSelectedTaskForNote(prev => prev ? { ...prev, ...fields } : null);
+      };
+      
+      // 고정업무 핸들러
+      const addFixedTask = (task) => {
+        setFixedTasks(prev => [...prev, { ...task, id: Date.now(), completedDates: [] }]);
+      };
+      const toggleFixedComplete = (id, routineType) => {
+        const completionKey = getCompletionKey(routineType, selectedDate);
+        setFixedTasks(prev => prev.map(t => {
+          if (t.id !== id) return t;
+          const isCompleted = t.completedDates.includes(completionKey);
+          return {
+            ...t,
+            completedDates: isCompleted 
+              ? t.completedDates.filter(d => d !== completionKey)
+              : [...t.completedDates, completionKey]
+          };
+        }));
+      };
+      const deleteFixedTask = (id) => {
+        setFixedTasks(prev => prev.filter(t => t.id !== id));
+      };
+      
+      // 루틴 타입별 필터링
+      const getFilteredRoutineTasks = (type) => {
+        return fixedTasks.filter(t => 
+          t.routineType === type &&
+          (!searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase())) &&
+          (selectedProject === null || t.projectId === selectedProject || (selectedProject === 0 && !t.projectId))
+        );
+      };
+      const dailyTasks = useMemo(() => getFilteredRoutineTasks('daily'), [fixedTasks, searchQuery, selectedProject]);
+      const weeklyTasks = useMemo(() => getFilteredRoutineTasks('weekly'), [fixedTasks, searchQuery, selectedProject]);
+      const monthlyTasks = useMemo(() => getFilteredRoutineTasks('monthly'), [fixedTasks, searchQuery, selectedProject]);
+      
+      // 루틴 타입별 완료 카운트
+      const getRoutineStats = (type) => {
+        const tasks = fixedTasks.filter(t => t.routineType === type);
+        const completionKey = getCompletionKey(type, selectedDate);
+        const comp = tasks.filter(t => t.completedDates.includes(completionKey)).length;
+        return { total: tasks.length, completed: comp };
+      };
+      const isRoutineCompleted = (task) => {
+        const completionKey = getCompletionKey(task.routineType, selectedDate);
+        return task.completedDates.includes(completionKey);
+      };
+
+      // 드래그 앤 드롭 핸들러
+      const handleDragStart = (e, task) => {
+        setDraggedTask(task);
+        e.dataTransfer.effectAllowed = 'move';
+      };
+      const handleDragOver = (e, task) => {
+        e.preventDefault();
+        if (!draggedTask || draggedTask.id === task.id) return;
+        setDragOverId(task.id);
+      };
+      const handleDragLeave = () => setDragOverId(null);
+      const handleDrop = (e, targetTask) => {
+        e.preventDefault();
+        setDragOverId(null);
+        if (!draggedTask || draggedTask.id === targetTask.id) return;
+        
+        const newTasks = [...filteredTasks];
+        const dragIdx = newTasks.findIndex(t => t.id === draggedTask.id);
+        const targetIdx = newTasks.findIndex(t => t.id === targetTask.id);
+        
+        newTasks.splice(dragIdx, 1);
+        newTasks.splice(targetIdx, 0, draggedTask);
+        
+        const updates = newTasks.map((t, i) => ({ id: t.id, order: i }));
+        setTasks(prev => prev.map(t => {
+          const update = updates.find(u => u.id === t.id);
+          return update ? { ...t, order: update.order } : t;
+        }));
+        setDraggedTask(null);
+      };
+      const handleDragEnd = () => { setDraggedTask(null); setDragOverId(null); };
+
+      const PROJECT_FILTERS = [
+        { id: null, name: '전체' },
+        ...BRANDS,
+        { id: 0, name: '기타 업무', color: '#8B95A1' },
+      ];
+
+      return (
+        <div style={{ display: 'flex', height: '100vh' }}>
+          {/* 왼쪽 사이드바 - 캘린더 + 진행률 */}
+          <div style={{ width: 320, background: 'white', borderRight: '1px solid #E5E8EB', padding: 20, overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <button onClick={() => moveMonth('prev')} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="chevronLeft" size={18} color="#6B7684" /></button>
+              <h3 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>{currentMonth.year}년 {currentMonth.month + 1}월</h3>
+              <button onClick={() => moveMonth('next')} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="chevronRight" size={18} color="#6B7684" /></button>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 8 }}>
+                {['월', '화', '수', '목', '금', '토', '일'].map((d, i) => <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 500, color: i >= 5 ? '#F04452' : '#8B95A1', padding: '4px 0' }}>{d}</div>)}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                {monthDates.map(({ date, isCurrentMonth, day }, idx) => {
+                  const isSelected = date === selectedDate, isToday = date === today, hasTask = taskCountByDate[date] > 0, dow = idx % 7;
+                  return (
+                    <button key={date} onClick={() => setSelectedDate(date)} style={{ aspectRatio: '1', borderRadius: 8, border: 'none', background: isSelected ? '#3182F6' : isToday ? '#EBF4FF' : 'transparent', color: isSelected ? 'white' : !isCurrentMonth ? '#D1D6DB' : dow >= 5 ? '#F04452' : '#191F28', fontSize: 14, fontWeight: isSelected || isToday ? 600 : 400, position: 'relative', cursor: 'pointer' }}>
+                      {day}
+                      {hasTask && !isSelected && <div style={{ position: 'absolute', bottom: 4, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: '50%', background: '#3182F6' }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ background: '#F7F8FA', borderRadius: 12, padding: 16 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#6B7684', marginBottom: 12 }}>오늘의 진행률</h4>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 24, fontWeight: 700, color: '#191F28' }}>{stats.rate}%</span>
+                <span style={{ fontSize: 14, color: '#6B7684' }}>{stats.completed}/{stats.total} 완료</span>
+              </div>
+              <div style={{ height: 8, background: '#E5E8EB', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: stats.rate === 100 ? '#00C471' : '#3182F6', width: `${stats.rate}%`, transition: 'width 0.3s' }} />
+              </div>
+            </div>
+
+            {/* 오늘의 한마디 메모 */}
+            <DailyMemo selectedDate={selectedDate} />
+
+            {/* 고정 메모 */}
+            <FixedMemo />
+          </div>
+
+          {/* 오른쪽 - 업무 리스트 */}
+          <div style={{ flex: 1, overflow: 'auto', background: '#F7F8FA' }}>
+            {/* 상단 날짜 + 필터 바 */}
+            <div style={{ background: 'white', borderBottom: '1px solid #E5E8EB', padding: '16px 24px' }}>
+              {/* 날짜 표시 */}
+              <div style={{ marginBottom: 16 }}>
+                <h2 style={{ fontSize: 22, fontWeight: 700, color: '#191F28' }}>
+                  {(() => {
+                    const d = new Date(selectedDate);
+                    const days = ['일', '월', '화', '수', '목', '금', '토'];
+                    const isToday = selectedDate === today;
+                    return (
+                      <>
+                        {d.getMonth() + 1}월 {d.getDate()}일 ({days[d.getDay()]})
+                        {isToday && <span style={{ marginLeft: 8, padding: '4px 10px', borderRadius: 6, background: '#3182F6', color: 'white', fontSize: 12, fontWeight: 600 }}>오늘</span>}
+                      </>
+                    );
+                  })()}
+                </h2>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F7F8FA', borderRadius: 10, padding: '0 14px', width: 240 }}>
+                  <Icon name="search" size={18} color="#8B95A1" />
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="업무 검색" style={{ flex: 1, border: 'none', background: 'transparent', padding: '10px 0', fontSize: 14, color: '#191F28' }} />
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, color: '#6B7684', marginRight: 4 }}>프로젝트</span>
+                  {PROJECT_FILTERS.map(f => (
+                    <button key={f.id === null ? 'all' : f.id} onClick={() => setSelectedProject(f.id)} style={{ padding: '6px 14px', borderRadius: 8, border: selectedProject === f.id ? `1.5px solid ${f.color || '#3182F6'}` : '1px solid #E5E8EB', background: selectedProject === f.id ? (f.color ? `${f.color}15` : '#EBF4FF') : 'white', fontSize: 13, fontWeight: 500, color: selectedProject === f.id ? (f.color || '#3182F6') : '#6B7684' }}>{f.name}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 루틴 업무 섹션 - 가로 3열 배치 */}
+            <div style={{ padding: '24px 24px 0 24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                {/* 일일 루틴 */}
+                <RoutineSection 
+                  title="일일 루틴" 
+                  type="daily"
+                  icon="☀️"
+                  bgColor="#FEF3C7"
+                  borderColor="#FDE68A"
+                  textColor="#92400E"
+                  buttonColor="#F59E0B"
+                  tasks={dailyTasks}
+                  stats={getRoutineStats('daily')}
+                  isCompleted={isRoutineCompleted}
+                  onToggle={(id) => toggleFixedComplete(id, 'daily')}
+                  onDelete={deleteFixedTask}
+                  onAdd={() => { setAddRoutineType('daily'); setShowAddFixedModal(true); }}
+                />
+                
+                {/* 주간 루틴 */}
+                <RoutineSection 
+                  title="주간 루틴" 
+                  type="weekly"
+                  icon="📅"
+                  bgColor="#DBEAFE"
+                  borderColor="#93C5FD"
+                  textColor="#1E40AF"
+                  buttonColor="#3B82F6"
+                  tasks={weeklyTasks}
+                  stats={getRoutineStats('weekly')}
+                  isCompleted={isRoutineCompleted}
+                  onToggle={(id) => toggleFixedComplete(id, 'weekly')}
+                  onDelete={deleteFixedTask}
+                  onAdd={() => { setAddRoutineType('weekly'); setShowAddFixedModal(true); }}
+                />
+                
+                {/* 월간 루틴 */}
+                <RoutineSection 
+                  title="월간 루틴" 
+                  type="monthly"
+                  icon="📆"
+                  bgColor="#F3E8FF"
+                  borderColor="#D8B4FE"
+                  textColor="#6B21A8"
+                  buttonColor="#9333EA"
+                  tasks={monthlyTasks}
+                  stats={getRoutineStats('monthly')}
+                  isCompleted={isRoutineCompleted}
+                  onToggle={(id) => toggleFixedComplete(id, 'monthly')}
+                  onDelete={deleteFixedTask}
+                  onAdd={() => { setAddRoutineType('monthly'); setShowAddFixedModal(true); }}
+                />
+              </div>
+            </div>
+
+            {/* 테이블 */}
+            <div style={{ padding: 24 }}>
+              <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '32px 44px 1fr 120px 44px 44px 44px', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid #E5E8EB', background: '#FAFBFC' }}>
+                  <div></div>
+                  <div></div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7684' }}>업무</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7684', textAlign: 'center' }}>프로젝트</div>
+                  <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={() => { setEditingTask(null); setShowAddModal(true); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      <Icon name="plus" size={14} color="white" /> 업무 추가
+                    </button>
+                  </div>
+                </div>
+
+                {filteredTasks.length === 0 ? (
+                  <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+                    <Icon name="clipboard" size={48} color="#D1D6DB" />
+                    <p style={{ fontSize: 16, color: '#8B95A1', marginTop: 16 }}>등록된 업무가 없습니다</p>
+                  </div>
+                ) : (
+                  filteredTasks.map((task, idx) => {
+                    const project = projects.find(p => p.id === task.projectId);
+                    const proj = project ? BRANDS.find(b => b.id === project.brandId) : BRANDS.find(p => p.id === task.projectId);
+                    const isDragging = draggedTask?.id === task.id;
+                    const isDragOver = dragOverId === task.id;
+                    return (
+                      <div
+                        key={task.id}
+                        className="task-row"
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, task)}
+                        onDragOver={(e) => handleDragOver(e, task)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, task)}
+                        onDragEnd={handleDragEnd}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '32px 44px 1fr 120px 44px 44px 44px',
+                          alignItems: 'center',
+                          padding: '14px 20px',
+                          borderBottom: idx < filteredTasks.length - 1 ? '1px solid #F2F3F5' : 'none',
+                          background: isDragOver ? '#EBF4FF' : isDragging ? '#F7F8FA' : 'white',
+                          opacity: isDragging ? 0.6 : 1,
+                          borderTop: isDragOver ? '2px solid #3182F6' : 'none',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'center', cursor: 'grab' }}>
+                          <Icon name="grip" size={16} color="#D1D6DB" />
+                        </div>
+
+                        <div>
+                          <button onClick={(e) => { e.stopPropagation(); toggleComplete(task.id); }} style={{ width: 22, height: 22, borderRadius: 6, border: task.completed ? 'none' : '2px solid #D1D6DB', background: task.completed ? '#3182F6' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {task.completed && <Icon name="check" size={14} color="white" />}
+                          </button>
+                        </div>
+
+                        <div onClick={() => setSelectedTaskForNote(task)} style={{ cursor: 'pointer', padding: '4px 0' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 15, fontWeight: 500, color: task.completed ? '#8B95A1' : '#191F28', textDecoration: task.completed ? 'line-through' : 'none' }}>{task.title}</span>
+                            {task.bookmark && <Icon name="bookmarkFill" size={14} color="#F59E0B" />}
+                            {task.note && <Icon name="fileText" size={14} color="#3182F6" />}
+                          </div>
+                          {task.note && <p style={{ fontSize: 13, color: '#8B95A1', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>{task.note.split('\n')[0]}</p>}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          {proj ? <span style={{ padding: '4px 10px', borderRadius: 6, background: `${proj.color}15`, color: proj.color, fontSize: 12, fontWeight: 600 }}>{proj.name}</span> : <span style={{ padding: '4px 10px', borderRadius: 6, background: '#8B95A115', color: '#8B95A1', fontSize: 12, fontWeight: 600 }}>기타 업무</span>}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          <button onClick={(e) => { e.stopPropagation(); toggleBookmark(task.id); }} style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Icon name={task.bookmark ? 'bookmarkFill' : 'bookmark'} size={18} color={task.bookmark ? '#F59E0B' : '#D1D6DB'} />
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          <button onClick={(e) => { e.stopPropagation(); setEditingTask(task); setShowAddModal(true); }} style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Icon name="edit" size={16} color="#6B7684" />
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Icon name="trash" size={16} color="#F04452" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 메모 패널 */}
+          {selectedTaskForNote && <NotePanel task={selectedTaskForNote} onClose={() => setSelectedTaskForNote(null)} onUpdateTask={(fields) => updateTaskFields(selectedTaskForNote.id, fields)} />}
+
+          {showAddModal && <TaskModal task={editingTask} date={selectedDate} onSave={(t) => { if (editingTask) updateTask(t); else addTask(t); setShowAddModal(false); }} onClose={() => setShowAddModal(false)} />}
+          
+          {/* 고정업무 추가 모달 */}
+          {showAddFixedModal && <FixedTaskModal routineType={addRoutineType} onSave={(t) => { addFixedTask(t); setShowAddFixedModal(false); }} onClose={() => setShowAddFixedModal(false)} />}
+        </div>
+      );
+    }
+
+    // ============ 고정업무 추가 모달 ============
+    function FixedTaskModal({ routineType, onSave, onClose }) {
+      const [form, setForm] = useState({ title: '', projectId: null, routineType: routineType });
+      
+      const typeInfo = {
+        daily: { label: '일일 루틴 업무', icon: '☀️', color: '#F59E0B' },
+        weekly: { label: '주간 루틴 업무', icon: '📅', color: '#3B82F6' },
+        monthly: { label: '월간 루틴 업무', icon: '📆', color: '#9333EA' },
+      };
+      const info = typeInfo[routineType] || typeInfo.daily;
+      
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 480, maxHeight: '90vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 24 }}>{info.icon}</span>
+                <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28' }}>{info.label} 추가</h2>
+              </div>
+              <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="x" size={20} color="#8B95A1" />
+              </button>
+            </div>
+            
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>업무명 *</label>
+              <input 
+                type="text" 
+                value={form.title} 
+                onChange={(e) => setForm({ ...form, title: e.target.value })} 
+                placeholder={routineType === 'daily' ? '매일 수행할 업무' : routineType === 'weekly' ? '매주 수행할 업무' : '매월 수행할 업무'}
+                style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15 }}
+                autoFocus
+              />
+            </div>
+            
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={() => setForm({ ...form, projectId: null })} style={{ padding: '10px 16px', borderRadius: 10, border: form.projectId === null ? '2px solid #3182F6' : '1px solid #E5E8EB', background: form.projectId === null ? '#EBF4FF' : 'white', color: form.projectId === null ? '#3182F6' : '#6B7684', fontSize: 14, fontWeight: 500 }}>없음</button>
+                {BRANDS.map(b => (
+                  <button key={b.id} onClick={() => setForm({ ...form, projectId: b.id })} style={{ padding: '10px 16px', borderRadius: 10, border: form.projectId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: form.projectId === b.id ? `${b.color}15` : 'white', color: form.projectId === b.id ? b.color : '#6B7684', fontSize: 14, fontWeight: 500 }}>{b.name}</button>
+                ))}
+              </div>
+            </div>
+            
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={onClose} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', fontSize: 15, fontWeight: 600, color: '#6B7684' }}>취소</button>
+              <button 
+                onClick={() => form.title.trim() && onSave(form)} 
+                disabled={!form.title.trim()}
+                style={{ flex: 1, padding: 16, borderRadius: 12, border: 'none', background: form.title.trim() ? info.color : '#E5E8EB', fontSize: 15, fontWeight: 600, color: form.title.trim() ? 'white' : '#8B95A1' }}
+              >
+                추가하기
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============ 루틴 섹션 컴포넌트 ============
+    function RoutineSection({ title, type, icon, bgColor, borderColor, textColor, buttonColor, tasks, stats, isCompleted, onToggle, onDelete, onAdd }) {
+      const [isCollapsed, setIsCollapsed] = useState(false);
+      
+      return (
+        <div style={{ background: 'white', borderRadius: 12, border: `1px solid ${borderColor}`, overflow: 'hidden' }}>
+          {/* 헤더 */}
+          <div 
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            style={{ 
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 16px', background: bgColor, cursor: 'pointer'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16 }}>{icon}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: textColor }}>{title}</span>
+              <span style={{ padding: '3px 8px', borderRadius: 8, background: `${buttonColor}20`, color: textColor, fontSize: 13, fontWeight: 600 }}>{stats.completed}/{stats.total}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button 
+                onClick={(e) => { e.stopPropagation(); onAdd(); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: 6, background: buttonColor, border: 'none', color: 'white', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="plus" size={12} color="white" /> 추가
+              </button>
+              <div style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)', transition: 'transform 0.2s' }}>
+                <Icon name="chevronDown" size={16} color={textColor} />
+              </div>
+            </div>
+          </div>
+          
+          {/* 리스트 */}
+          {!isCollapsed && (
+            tasks.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', background: `${bgColor}50` }}>
+                <p style={{ fontSize: 13, color: textColor }}>등록된 업무가 없습니다</p>
+              </div>
+            ) : (
+              tasks.map((task, idx) => {
+                const proj = BRANDS.find(p => p.id === task.projectId);
+                const completed = isCompleted(task);
+                return (
+                  <div 
+                    key={task.id}
+                    style={{ 
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '12px 16px', background: `${bgColor}50`,
+                      borderTop: `1px solid ${borderColor}`
+                    }}
+                  >
+                    <button onClick={() => onToggle(task.id)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: completed ? buttonColor : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 2px rgba(0,0,0,0.1)', cursor: 'pointer', flexShrink: 0 }}>
+                      {completed && <Icon name="check" size={14} color="white" />}
+                    </button>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: completed ? '#8B95A1' : '#191F28', textDecoration: completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
+                    {proj ? <span style={{ padding: '3px 8px', borderRadius: 6, background: `${proj.color}15`, color: proj.color, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>{proj.name}</span> : <span style={{ padding: '3px 8px', borderRadius: 6, background: '#8B95A115', color: '#8B95A1', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>기타</span>}
+                    <button onClick={() => onDelete(task.id)} style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                      <Icon name="trash" size={14} color="#F04452" />
+                    </button>
+                  </div>
+                );
+              })
+            )
+          )}
+        </div>
+      );
+    }
+
+    // ============ 데일리 메모 컴포넌트 ============
+    function DailyMemo({ selectedDate }) {
+      const [memos, setMemos] = useState({});
+      const [memo, setMemo] = useState('');
+      const [isEditing, setIsEditing] = useState(false);
+      const [isLoaded, setIsLoaded] = useState(false);
+
+      // Firebase에서 메모 로드
+      useEffect(() => {
+        const loadMemos = async () => {
+          const data = await FirebaseService.getDoc('settings', 'dailyMemos');
+          if (data && data.memos) {
+            setMemos(data.memos);
+          }
+          setIsLoaded(true);
+        };
+        loadMemos();
+      }, []);
+
+      useEffect(() => {
+        if (isLoaded) {
+          setMemo(memos[selectedDate] || '');
+        }
+      }, [selectedDate, memos, isLoaded]);
+
+      const saveMemo = async () => {
+        const newMemos = { ...memos, [selectedDate]: memo };
+        setMemos(newMemos);
+        setIsEditing(false);
+        // Firebase에 저장
+        await FirebaseService.saveDoc('settings', 'dailyMemos', { memos: newMemos });
+      };
+
+      return (
+        <div style={{ marginTop: 16, background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #F2F3F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600, color: '#191F28', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>✏️</span> 오늘의 한마디
+            </h4>
+            {!isEditing && memo && (
+              <button onClick={() => setIsEditing(true)} style={{ fontSize: 12, color: '#3182F6', background: 'none', border: 'none', fontWeight: 500 }}>수정</button>
+            )}
+          </div>
+          <div style={{ padding: 12 }}>
+            {isEditing ? (
+              <div>
+                <textarea
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  placeholder="오늘의 목표, 다짐, 메모 등을 자유롭게 적어보세요..."
+                  style={{ width: '100%', minHeight: 80, padding: 12, borderRadius: 8, border: '1px solid #3182F6', fontSize: 13, lineHeight: 1.6, resize: 'none', outline: 'none' }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button onClick={() => { setMemo(memos[selectedDate] || ''); setIsEditing(false); }} style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, fontWeight: 500, color: '#6B7684' }}>취소</button>
+                  <button onClick={saveMemo} style={{ flex: 1, padding: 8, borderRadius: 6, border: 'none', background: '#3182F6', fontSize: 12, fontWeight: 500, color: 'white' }}>저장</button>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => setIsEditing(true)}
+                style={{ minHeight: 60, padding: 12, borderRadius: 8, background: '#FAFBFC', fontSize: 13, lineHeight: 1.6, color: memo ? '#191F28' : '#8B95A1', whiteSpace: 'pre-wrap', cursor: 'pointer', border: '1px dashed transparent', transition: 'all 0.2s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#D1D6DB'; e.currentTarget.style.background = '#F7F8FA'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.background = '#FAFBFC'; }}
+              >
+                {memo || '클릭하여 오늘의 한마디를 작성해보세요...'}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============ 고정 메모 컴포넌트 ============
+    function FixedMemo() {
+      const [memo, setMemo] = useState('');
+      const [isEditing, setIsEditing] = useState(false);
+      const [tempMemo, setTempMemo] = useState('');
+      const [isLoaded, setIsLoaded] = useState(false);
+
+      // Firebase에서 고정 메모 로드
+      useEffect(() => {
+        const loadMemo = async () => {
+          const data = await FirebaseService.getDoc('settings', 'fixedMemo');
+          if (data && data.content) {
+            setMemo(data.content);
+          }
+          setIsLoaded(true);
+        };
+        loadMemo();
+      }, []);
+
+      const startEdit = () => {
+        setTempMemo(memo);
+        setIsEditing(true);
+      };
+
+      const saveMemo = async () => {
+        setMemo(tempMemo);
+        setIsEditing(false);
+        // Firebase에 저장
+        await FirebaseService.saveDoc('settings', 'fixedMemo', { content: tempMemo });
+      };
+
+      const cancelEdit = () => {
+        setTempMemo(memo);
+        setIsEditing(false);
+      };
+
+      return (
+        <div style={{ marginTop: 16, background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #F2F3F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h4 style={{ fontSize: 13, fontWeight: 600, color: '#191F28', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>📌</span> 고정 메모
+            </h4>
+            {!isEditing && memo && (
+              <button onClick={startEdit} style={{ fontSize: 12, color: '#3182F6', background: 'none', border: 'none', fontWeight: 500 }}>수정</button>
+            )}
+          </div>
+          <div style={{ padding: 12 }}>
+            {isEditing ? (
+              <div>
+                <textarea
+                  value={tempMemo}
+                  onChange={(e) => setTempMemo(e.target.value)}
+                  placeholder="항상 기억해야 할 내용, 중요한 메모 등을 적어두세요..."
+                  style={{ width: '100%', minHeight: 100, padding: 12, borderRadius: 8, border: '1px solid #3182F6', fontSize: 13, lineHeight: 1.6, resize: 'none', outline: 'none' }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button onClick={cancelEdit} style={{ flex: 1, padding: 8, borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, fontWeight: 500, color: '#6B7684' }}>취소</button>
+                  <button onClick={saveMemo} style={{ flex: 1, padding: 8, borderRadius: 6, border: 'none', background: '#3182F6', fontSize: 12, fontWeight: 500, color: 'white' }}>저장</button>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={startEdit}
+                style={{ minHeight: 80, padding: 12, borderRadius: 8, background: '#FFF9E6', fontSize: 13, lineHeight: 1.6, color: memo ? '#191F28' : '#8B95A1', whiteSpace: 'pre-wrap', cursor: 'pointer', border: '1px dashed transparent', transition: 'all 0.2s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#F59E0B'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; }}
+              >
+                {memo || '클릭하여 고정 메모를 작성해보세요...'}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ============ 메모 패널 ============
+    function NotePanel({ task, onClose, onUpdateTask }) {
+      const [note, setNote] = useState(task.note || '');
+      const [taskDate, setTaskDate] = useState(task.date || today);
+      const [isEditing, setIsEditing] = useState(false);
+      const [attachments, setAttachments] = useState(task.attachments || []);
+      const fileInputRef = React.useRef(null);
+      const proj = BRANDS.find(p => p.id === task.projectId);
+
+      const handleSave = () => { 
+        onUpdateTask({ note, date: taskDate, attachments }); 
+        setIsEditing(false); 
+      };
+      
+      const handleFileSelect = (e) => {
+        const files = Array.from(e.target.files);
+        const newAttachments = files.map(f => ({
+          id: Date.now() + Math.random(),
+          name: f.name,
+          size: f.size,
+          type: f.type
+        }));
+        const updated = [...attachments, ...newAttachments];
+        setAttachments(updated);
+        onUpdateTask({ note, date: taskDate, attachments: updated });
+        e.target.value = '';
+      };
+      
+      const removeAttachment = (id) => {
+        const updated = attachments.filter(a => a.id !== id);
+        setAttachments(updated);
+        onUpdateTask({ note, date: taskDate, attachments: updated });
+      };
+
+      // task가 변경되면 상태 업데이트
+      React.useEffect(() => { 
+        setNote(task.note || ''); 
+        setTaskDate(task.date || today);
+        setAttachments(task.attachments || []);
+      }, [task.id, task.note, task.date, task.attachments]);
+
+      return (
+        <>
+          {/* 바깥 영역 클릭 시 닫기 위한 오버레이 */}
+          <div 
+            onClick={onClose} 
+            style={{ position: 'fixed', top: 0, left: 0, right: 420, bottom: 0, zIndex: 999 }} 
+          />
+          
+          {/* 메모 패널 */}
+          <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 420, background: 'white', boxShadow: '-4px 0 20px rgba(0,0,0,0.1)', zIndex: 1000, display: 'flex', flexDirection: 'column', animation: 'slideIn 0.3s ease' }}>
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>📝 업무 메모</h3>
+              <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="x" size={18} color="#6B7684" />
+              </button>
+            </div>
+
+            <div style={{ background: '#F7F8FA', borderRadius: 12, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                {task.completed ? (
+                  <div style={{ width: 22, height: 22, borderRadius: 6, background: '#3182F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="check" size={14} color="white" />
+                  </div>
+                ) : (
+                  <div style={{ width: 22, height: 22, borderRadius: 6, border: '2px solid #D1D6DB' }} />
+                )}
+                <span style={{ fontSize: 16, fontWeight: 600, color: task.completed ? '#8B95A1' : '#191F28', textDecoration: task.completed ? 'line-through' : 'none', flex: 1 }}>{task.title}</span>
+                {task.bookmark && <Icon name="bookmarkFill" size={16} color="#F59E0B" />}
+              </div>
+              {proj && (
+                <div style={{ marginTop: 8 }}>
+                  <span style={{ padding: '4px 10px', borderRadius: 6, background: `${proj.color}15`, color: proj.color, fontSize: 12, fontWeight: 600 }}>{proj.name}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, padding: 24, overflow: 'auto' }}>
+            {/* 날짜 수정 영역 */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>날짜</span>
+              </div>
+              <input 
+                type="date" 
+                value={taskDate} 
+                onChange={(e) => {
+                  setTaskDate(e.target.value);
+                  onUpdateTask({ note: task.note, date: e.target.value });
+                }}
+                onClick={(e) => e.target.showPicker()}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, background: 'white', cursor: 'pointer' }} 
+              />
+            </div>
+
+            {/* 메모 영역 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>메모</span>
+              {!isEditing && (
+                <button onClick={() => setIsEditing(true)} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#EBF4FF', color: '#3182F6', fontSize: 13, fontWeight: 500 }}>
+                  <Icon name="edit" size={14} color="#3182F6" /> 수정
+                </button>
+              )}
+            </div>
+
+            {isEditing ? (
+              <div>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="메모를 입력하세요..."
+                  style={{ width: '100%', minHeight: 200, padding: 16, borderRadius: 12, border: '2px solid #3182F6', fontSize: 14, lineHeight: 1.8, resize: 'none', outline: 'none' }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button onClick={() => { setNote(task.note || ''); setIsEditing(false); }} style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684' }}>취소</button>
+                  <button onClick={handleSave} style={{ flex: 1, padding: 12, borderRadius: 8, border: 'none', background: '#3182F6', fontSize: 14, fontWeight: 600, color: 'white' }}>저장</button>
+                </div>
+              </div>
+            ) : (
+              <div onClick={() => setIsEditing(true)} style={{ minHeight: 160, padding: 16, borderRadius: 12, background: '#F7F8FA', fontSize: 14, lineHeight: 1.8, color: note ? '#191F28' : '#8B95A1', whiteSpace: 'pre-wrap', cursor: 'pointer', border: '2px dashed transparent', transition: 'border-color 0.2s' }} onMouseEnter={(e) => e.target.style.borderColor = '#D1D6DB'} onMouseLeave={(e) => e.target.style.borderColor = 'transparent'}>
+                {note || '메모를 작성하려면 클릭하세요...'}
+              </div>
+            )}
+            
+            {/* 첨부파일 영역 */}
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>첨부파일</span>
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#EBF4FF', color: '#3182F6', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+                >
+                  <Icon name="paperclip" size={14} color="#3182F6" /> 추가
+                </button>
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  multiple
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+              </div>
+              
+              {attachments.length === 0 ? (
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ padding: 20, borderRadius: 12, background: '#F7F8FA', border: '2px dashed #E5E8EB', textAlign: 'center', cursor: 'pointer' }}
+                >
+                  <Icon name="paperclip" size={24} color="#D1D6DB" />
+                  <p style={{ fontSize: 13, color: '#8B95A1', marginTop: 8 }}>파일을 드래그하거나 클릭해서 추가하세요</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {attachments.map(file => (
+                    <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, background: '#F0F7FF', border: '1px solid #DBEAFE' }}>
+                      <Icon name="fileText" size={18} color="#3182F6" />
+                      <span style={{ flex: 1, fontSize: 13, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                      <span style={{ fontSize: 11, color: '#8B95A1' }}>{(file.size / 1024).toFixed(1)}KB</span>
+                      <button onClick={() => removeAttachment(file.id)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Icon name="x" size={12} color="#F04452" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E8EB', background: '#FAFBFC' }}>
+            <p style={{ fontSize: 12, color: '#8B95A1', textAlign: 'center' }}>💡 메모 영역을 클릭하면 바로 수정할 수 있어요</p>
+          </div>
+        </div>
+        </>
+      );
+    }
+
+    function TaskModal({ task, date, onSave, onClose }) {
+      const [form, setForm] = useState({ title: task?.title || '', projectId: task?.projectId || null, date: task?.date || date, note: task?.note || '', bookmark: task?.bookmark || false });
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 24, width: '100%', maxWidth: 420, maxHeight: '90vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>{task ? '업무 수정' : '업무 추가'}</h3>
+              <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="x" size={18} color="#8B95A1" /></button>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>업무명 *</label>
+              <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="업무 내용을 입력하세요" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>프로젝트</label>
+              <select value={form.projectId || ''} onChange={(e) => setForm({ ...form, projectId: e.target.value ? Number(e.target.value) : null })} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }}>
+                <option value="">개인 업무</option>
+                {BRANDS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>날짜</label>
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>메모</label>
+              <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="메모를 입력하세요 (선택사항)" rows={3} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, resize: 'none', lineHeight: 1.5 }} />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.bookmark} onChange={(e) => setForm({ ...form, bookmark: e.target.checked })} style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 14, color: '#191F28' }}>중요 업무로 표시</span>
+            </label>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684' }}>취소</button>
+              <button onClick={() => form.title.trim() && onSave({ ...task, ...form })} disabled={!form.title.trim()} style={{ flex: 1, padding: 14, borderRadius: 10, border: 'none', background: form.title.trim() ? '#3182F6' : '#E5E8EB', fontSize: 14, fontWeight: 600, color: form.title.trim() ? 'white' : '#8B95A1' }}>{task ? '수정' : '추가'}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============ 프로젝트 탭 ============
+    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments }) {
+      const [selectedBrand, setSelectedBrand] = useState(null);
+      const [selectedProject, setSelectedProject] = useState(null);
+      const [showAddProject, setShowAddProject] = useState(false);
+      const [filterStatus, setFilterStatus] = useState('progress');
+      const [searchQuery, setSearchQuery] = useState('');
+      const [searchDate, setSearchDate] = useState('');
+      const [isTeamExpanded, setIsTeamExpanded] = useState(false);
+
+      const filteredProjects = useMemo(() => { 
+        let r = projects; 
+        if (selectedBrand) r = r.filter(p => p.brandId === selectedBrand); 
+        if (filterStatus) r = r.filter(p => p.status === filterStatus); 
+        // 텍스트 검색 필터
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          r = r.filter(p => 
+            p.title.toLowerCase().includes(q) || 
+            p.description?.toLowerCase().includes(q)
+          );
+        }
+        // 날짜 검색 필터 (완료 탭에서만 사용, completedDate 기준)
+        if (searchDate && filterStatus === 'complete') {
+          r = r.filter(p => p.completedDate && p.completedDate.startsWith(searchDate.slice(0, 7)));
+        }
+        return r; 
+      }, [projects, selectedBrand, filterStatus, searchQuery, searchDate]);
+      const getProjectStats = (pid) => { const pt = tasks.filter(t => t.projectId === pid); return { total: pt.length, completed: pt.filter(t => t.completed).length }; };
+      const getUnreadCount = (pid) => { const p = projects.find(x => x.id === pid); return p ? Math.max(0, p.comments.length - (readComments[pid] || 0)) : 0; };
+      const openProject = (p) => { setSelectedProject(p); setReadComments(prev => ({ ...prev, [p.id]: p.comments.length })); };
+      const addProject = (p) => setProjects(prev => [...prev, { ...p, id: Date.now(), comments: [], creatorId: currentUser.id }]);
+      const updateProject = (p) => { setProjects(prev => prev.map(x => x.id === p.id ? { ...x, ...p } : x)); if (selectedProject?.id === p.id) setSelectedProject(prev => ({ ...prev, ...p })); };
+      const deleteProject = (pid) => { setProjects(prev => prev.filter(p => p.id !== pid)); setTasks(prev => prev.filter(t => t.projectId !== pid)); };
+      const addComment = (pid, text, file = null) => { const nc = { id: Date.now(), memberId: currentUser.id, text, file, createdAt: new Date().toISOString() }; setProjects(prev => prev.map(p => p.id === pid ? { ...p, comments: [...p.comments, nc] } : p)); setReadComments(prev => ({ ...prev, [pid]: (prev[pid] || 0) + 1 })); if (selectedProject?.id === pid) setSelectedProject(prev => ({ ...prev, comments: [...prev.comments, nc] })); };
+      const updateComment = (pid, cid, text) => { setProjects(prev => prev.map(p => p.id === pid ? { ...p, comments: p.comments.map(c => c.id === cid ? { ...c, text, editedAt: new Date().toISOString() } : c) } : p)); if (selectedProject?.id === pid) setSelectedProject(prev => ({ ...prev, comments: prev.comments.map(c => c.id === cid ? { ...c, text, editedAt: new Date().toISOString() } : c) })); };
+      const deleteComment = (pid, cid) => { setProjects(prev => prev.map(p => p.id === pid ? { ...p, comments: p.comments.filter(c => c.id !== cid) } : p)); setReadComments(prev => ({ ...prev, [pid]: Math.max(0, (prev[pid] || 0) - 1) })); if (selectedProject?.id === pid) setSelectedProject(prev => ({ ...prev, comments: prev.comments.filter(c => c.id !== cid) })); };
+      const addTask = (t) => { const pt = tasks.filter(x => x.projectId === t.projectId); const mx = Math.max(...pt.map(x => x.order), -1); setTasks(prev => [...prev, { ...t, id: Date.now(), order: mx + 1, completed: false, note: '', bookmark: false }]); };
+      const toggleTaskComplete = (id) => setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+      const deleteTask = (id) => setTasks(prev => prev.filter(t => t.id !== id));
+      const updateTask = (updatedTask) => setTasks(prev => prev.map(t => t.id === updatedTask.id ? { ...t, ...updatedTask } : t));
+      const reorderTasks = (updates) => setTasks(prev => prev.map(t => { const u = updates.find(x => x.id === t.id); return u ? { ...t, order: u.order } : t; }));
+
+      // 내가 참여한 프로젝트 (내가 만든 프로젝트 OR 내가 담당자인 업무가 있는 프로젝트)
+      const myTaskProjectIds = [...new Set(tasks.filter(t => t.memberId === currentUser.id).map(t => t.projectId))];
+      const myProjects = filteredProjects.filter(p => p.creatorId === currentUser.id || myTaskProjectIds.includes(p.id));
+      const teamProjects = filteredProjects.filter(p => p.creatorId !== currentUser.id && !myTaskProjectIds.includes(p.id));
+
+      // 프로젝트 카드 컴포넌트
+      const ProjectCard = ({ project }) => {
+        const st = getProjectStats(project.id), unread = getUnreadCount(project.id), brand = BRANDS.find(b => b.id === project.brandId), status = STATUS_OPTIONS.find(s => s.id === project.status), prog = st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0;
+        const memberIds = [...new Set(tasks.filter(t => t.projectId === project.id).map(t => t.memberId))], members = TEAM_MEMBERS.filter(m => memberIds.includes(m.id));
+        const projectMembers = project.memberIds ? TEAM_MEMBERS.filter(m => project.memberIds.includes(m.id)) : [];
+        return (
+          <div onClick={() => openProject(project)} style={{ background: 'white', borderRadius: 16, padding: 20, cursor: 'pointer', border: '1px solid #E5E8EB', position: 'relative' }}>
+            {unread > 0 && <div style={{ position: 'absolute', top: -8, right: -8, minWidth: 22, height: 22, borderRadius: 11, background: '#F04452', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, padding: '0 6px' }}>{unread}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <span style={{ padding: '4px 10px', borderRadius: 6, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700 }}>{brand.name}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, background: status.bg, color: status.color, fontSize: 11, fontWeight: 600 }}><Icon name={status.icon} size={12} color={status.color} /> {status.label}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, color: '#191F28' }}>{project.title}</h3>
+              {projectMembers.length > 0 && (
+                <div style={{ display: 'flex' }}>
+                  {projectMembers.slice(0, 3).map((m, i) => <div key={m.id} style={{ width: 22, height: 22, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, marginLeft: i > 0 ? -6 : 0, border: '2px solid white' }}>{m.initial}</div>)}
+                  {projectMembers.length > 3 && <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#E5E8EB', color: '#6B7684', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, marginLeft: -6, border: '2px solid white' }}>+{projectMembers.length - 3}</div>}
+                </div>
+              )}
+            </div>
+            <p style={{ fontSize: 13, color: '#6B7684', marginBottom: 16, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{project.description}</p>
+            {st.total > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}><span style={{ fontSize: 12, color: '#8B95A1' }}>업무 진행률</span><span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{st.completed}/{st.total}</span></div>
+                <div style={{ height: 6, background: '#F2F3F5', borderRadius: 3 }}><div style={{ height: '100%', borderRadius: 3, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} /></div>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex' }}>{members.slice(0, 4).map((m, i) => <div key={m.id} style={{ width: 26, height: 26, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, marginLeft: i > 0 ? -6 : 0, border: '2px solid white' }}>{m.initial}</div>)}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {project.createdDate && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#8B95A1' }}><Icon name="calendar" size={13} color="#8B95A1" /> {formatShortDate(project.createdDate)}</span>}
+                {project.completedDate && <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#00C471' }}><Icon name="checkCircle" size={13} color="#00C471" /> {formatShortDate(project.completedDate)}</span>}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: unread > 0 ? '#F04452' : '#8B95A1' }}><Icon name="message" size={13} color={unread > 0 ? '#F04452' : '#8B95A1'} /> {project.comments.length}</span>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div style={{ minHeight: '100vh' }}>
+          <header style={{ background: 'white', borderBottom: '1px solid #E5E8EB', padding: '20px 32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h1 style={{ fontSize: 24, fontWeight: 700, color: '#191F28' }}>프로젝트</h1>
+              <button onClick={() => setShowAddProject(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, background: '#3182F6', border: 'none', color: 'white', fontSize: 14, fontWeight: 600 }}><Icon name="plus" size={18} color="white" /> 새 프로젝트</button>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              <button onClick={() => setSelectedBrand(null)} style={{ padding: '10px 20px', borderRadius: 10, border: selectedBrand === null ? '2px solid #191F28' : '1px solid #E5E8EB', background: selectedBrand === null ? '#191F28' : 'white', fontSize: 14, fontWeight: 600, color: selectedBrand === null ? 'white' : '#6B7684' }}>전체 브랜드</button>
+              {BRANDS.map(b => <button key={b.id} onClick={() => setSelectedBrand(selectedBrand === b.id ? null : b.id)} style={{ padding: '10px 20px', borderRadius: 10, border: selectedBrand === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: selectedBrand === b.id ? `${b.color}15` : 'white', fontSize: 14, fontWeight: 600, color: selectedBrand === b.id ? b.color : '#6B7684' }}>{b.name}</button>)}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setFilterStatus(null)} style={{ padding: '8px 14px', borderRadius: 8, border: filterStatus === null ? '1.5px solid #3182F6' : '1px solid #E5E8EB', background: filterStatus === null ? '#EBF4FF' : 'white', fontSize: 13, fontWeight: 500, color: filterStatus === null ? '#3182F6' : '#6B7684' }}>전체</button>
+              {STATUS_OPTIONS.map(s => <button key={s.id} onClick={() => setFilterStatus(filterStatus === s.id ? null : s.id)} style={{ padding: '8px 14px', borderRadius: 8, border: filterStatus === s.id ? `1.5px solid ${s.color}` : '1px solid #E5E8EB', background: filterStatus === s.id ? s.bg : 'white', fontSize: 13, fontWeight: 500, color: filterStatus === s.id ? s.color : '#6B7684' }}>{s.label}</button>)}
+            </div>
+          </header>
+
+          <div style={{ padding: 32 }}>
+            {/* 내 프로젝트 섹션 */}
+            <div style={{ marginBottom: 40 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{currentUser.initial}</div>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>내 프로젝트</h2>
+                  <span style={{ padding: '4px 10px', borderRadius: 20, background: '#EBF4FF', color: '#3182F6', fontSize: 13, fontWeight: 600 }}>{myProjects.length}</span>
+                </div>
+              </div>
+              
+              {/* 검색 영역 - 완료 필터일 때만 표시 */}
+              {filterStatus === 'complete' && (
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                  {/* 텍스트 검색 */}
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#F7F8FA', borderRadius: 12, border: '1px solid #E5E8EB' }}>
+                    <Icon name="search" size={18} color="#8B95A1" />
+                    <input 
+                      type="text" 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      placeholder="프로젝트명으로 검색" 
+                      style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, outline: 'none' }} 
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} style={{ width: 20, height: 20, borderRadius: '50%', border: 'none', background: '#D1D6DB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="x" size={12} color="white" />
+                      </button>
+                    )}
+                  </div>
+                  {/* 년월 선택 드롭다운 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <select 
+                      value={searchDate ? searchDate.slice(0, 4) : ''} 
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const month = searchDate ? searchDate.slice(5, 7) : '01';
+                          setSearchDate(`${e.target.value}-${month}-01`);
+                        } else {
+                          setSearchDate('');
+                        }
+                      }}
+                      style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, color: '#191F28' }}
+                    >
+                      <option value="">년도</option>
+                      {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
+                    </select>
+                    <select 
+                      value={searchDate ? searchDate.slice(5, 7) : ''} 
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const year = searchDate ? searchDate.slice(0, 4) : '2025';
+                          setSearchDate(`${year}-${e.target.value}-01`);
+                        } else {
+                          setSearchDate('');
+                        }
+                      }}
+                      style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, color: '#191F28' }}
+                    >
+                      <option value="">월</option>
+                      {[...Array(12)].map((_, i) => <option key={i} value={String(i + 1).padStart(2, '0')}>{i + 1}월</option>)}
+                    </select>
+                    {searchDate && (
+                      <button onClick={() => setSearchDate('')} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="x" size={14} color="#8B95A1" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {myProjects.length === 0 ? (
+                <div style={{ background: '#F7F8FA', borderRadius: 16, padding: '40px 20px', textAlign: 'center', border: '1px dashed #D1D6DB' }}>
+                  <Icon name="user" size={36} color="#D1D6DB" />
+                  <p style={{ fontSize: 14, color: '#8B95A1', marginTop: 12 }}>{(searchQuery || searchDate) ? '검색 결과가 없습니다' : '참여 중인 프로젝트가 없습니다'}</p>
+                </div>
+              ) : filterStatus === 'complete' ? (
+                /* 완료 상태 - 리스트 형식 */
+                <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                  {myProjects.map((project, idx) => {
+                    const st = getProjectStats(project.id), unread = getUnreadCount(project.id), brand = BRANDS.find(b => b.id === project.brandId), status = STATUS_OPTIONS.find(s => s.id === project.status), prog = st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0;
+                    return (
+                      <div 
+                        key={project.id} 
+                        onClick={() => openProject(project)} 
+                        style={{ 
+                          display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', 
+                          borderBottom: idx < myProjects.length - 1 ? '1px solid #F2F3F5' : 'none',
+                          cursor: 'pointer', position: 'relative',
+                          background: 'white', transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#FAFBFC'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        {unread > 0 && <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: '#F04452' }} />}
+                        
+                        {/* 브랜드 & 상태 */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 100 }}>
+                          <span style={{ padding: '3px 8px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700, alignSelf: 'flex-start' }}>{brand.name}</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: status.color }}><Icon name={status.icon} size={10} color={status.color} /> {status.label}</span>
+                        </div>
+                        
+                        {/* 프로젝트 정보 */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h3 style={{ fontSize: 15, fontWeight: 600, color: '#191F28', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</h3>
+                          <p style={{ fontSize: 13, color: '#8B95A1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.description || '-'}</p>
+                        </div>
+                        
+                        {/* 진행률 */}
+                        {st.total > 0 && (
+                          <div style={{ width: 100 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, color: '#8B95A1' }}>진행률</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#191F28' }}>{prog}%</span>
+                            </div>
+                            <div style={{ height: 4, background: '#F2F3F5', borderRadius: 2 }}>
+                              <div style={{ height: '100%', borderRadius: 2, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} />
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* 완료일 */}
+                        <div style={{ minWidth: 80, textAlign: 'right' }}>
+                          {project.completedDate && <span style={{ fontSize: 12, color: '#00C471' }}>{formatShortDate(project.completedDate)}</span>}
+                        </div>
+                        
+                        {/* 댓글 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 40 }}>
+                          <Icon name="message" size={14} color={unread > 0 ? '#F04452' : '#D1D6DB'} />
+                          <span style={{ fontSize: 12, color: unread > 0 ? '#F04452' : '#8B95A1' }}>{project.comments.length}</span>
+                        </div>
+                        
+                        <Icon name="chevronRight" size={16} color="#D1D6DB" />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* 진행중/보류/전체 - 카드 형식 */
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
+                  {myProjects.map(project => <ProjectCard key={project.id} project={project} />)}
+                </div>
+              )}
+            </div>
+
+            {/* 팀 프로젝트 섹션 - 접기/펼치기 */}
+            <div>
+              <button 
+                onClick={() => setIsTeamExpanded(!isTeamExpanded)}
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '12px 0',
+                  background: 'none', border: 'none', cursor: 'pointer', marginBottom: isTeamExpanded ? 16 : 0
+                }}
+              >
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F2F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="users" size={18} color="#6B7684" />
+                </div>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>팀 프로젝트</h2>
+                <span style={{ padding: '4px 10px', borderRadius: 20, background: '#F2F3F5', color: '#6B7684', fontSize: 13, fontWeight: 600 }}>{teamProjects.length}</span>
+                <div style={{ marginLeft: 'auto', transform: isTeamExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                  <Icon name="chevronDown" size={20} color="#8B95A1" />
+                </div>
+              </button>
+              
+              {isTeamExpanded && (
+                teamProjects.length === 0 ? (
+                  <div style={{ background: '#F7F8FA', borderRadius: 16, padding: '40px 20px', textAlign: 'center', border: '1px dashed #D1D6DB' }}>
+                    <Icon name="folder" size={36} color="#D1D6DB" />
+                    <p style={{ fontSize: 14, color: '#8B95A1', marginTop: 12 }}>다른 팀 프로젝트가 없습니다</p>
+                  </div>
+                ) : filterStatus === 'complete' ? (
+                  /* 완료 상태 - 리스트 형식 */
+                  <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                    {teamProjects.map((project, idx) => {
+                      const st = getProjectStats(project.id), unread = getUnreadCount(project.id), brand = BRANDS.find(b => b.id === project.brandId), status = STATUS_OPTIONS.find(s => s.id === project.status), prog = st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0;
+                      return (
+                        <div 
+                          key={project.id} 
+                          onClick={() => openProject(project)} 
+                          style={{ 
+                            display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', 
+                            borderBottom: idx < teamProjects.length - 1 ? '1px solid #F2F3F5' : 'none',
+                            cursor: 'pointer', position: 'relative',
+                            background: 'white', transition: 'background 0.2s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#FAFBFC'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                        >
+                          {unread > 0 && <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: '#F04452' }} />}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 100 }}>
+                            <span style={{ padding: '3px 8px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700, alignSelf: 'flex-start' }}>{brand.name}</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: status.color }}><Icon name={status.icon} size={10} color={status.color} /> {status.label}</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <h3 style={{ fontSize: 15, fontWeight: 600, color: '#191F28', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</h3>
+                            <p style={{ fontSize: 13, color: '#8B95A1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.description || '-'}</p>
+                          </div>
+                          {st.total > 0 && (
+                            <div style={{ width: 100 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, color: '#8B95A1' }}>진행률</span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#191F28' }}>{prog}%</span>
+                              </div>
+                              <div style={{ height: 4, background: '#F2F3F5', borderRadius: 2 }}>
+                                <div style={{ height: '100%', borderRadius: 2, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} />
+                              </div>
+                            </div>
+                          )}
+                          <div style={{ minWidth: 80, textAlign: 'right' }}>
+                            {project.completedDate && <span style={{ fontSize: 12, color: '#00C471' }}>{formatShortDate(project.completedDate)}</span>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 40 }}>
+                            <Icon name="message" size={14} color={unread > 0 ? '#F04452' : '#D1D6DB'} />
+                            <span style={{ fontSize: 12, color: unread > 0 ? '#F04452' : '#8B95A1' }}>{project.comments.length}</span>
+                          </div>
+                          <Icon name="chevronRight" size={16} color="#D1D6DB" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* 진행중/보류/전체 - 카드 형식 */
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
+                    {teamProjects.map(project => <ProjectCard key={project.id} project={project} />)}
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+
+          {selectedProject && <ProjectDetailSlide project={selectedProject} tasks={tasks.filter(t => t.projectId === selectedProject.id)} currentUser={currentUser} onClose={() => setSelectedProject(null)} onAddComment={(t, f) => addComment(selectedProject.id, t, f)} onUpdateComment={(cid, t) => updateComment(selectedProject.id, cid, t)} onDeleteComment={(cid) => deleteComment(selectedProject.id, cid)} onAddTask={(t) => addTask({ ...t, projectId: selectedProject.id })} onToggleTask={toggleTaskComplete} onDeleteTask={deleteTask} onUpdateTask={updateTask} onUpdateProject={updateProject} onDeleteProject={deleteProject} onReorderTasks={reorderTasks} />}
+          {showAddProject && <ProjectModal project={null} onSave={(p) => { addProject(p); setShowAddProject(false); }} onClose={() => setShowAddProject(false)} />}
+        </div>
+      );
+    }
+
+    function ProjectDetailSlide({ project, tasks, currentUser, onClose, onAddComment, onUpdateComment, onDeleteComment, onAddTask, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, onDeleteProject, onReorderTasks }) {
+      const [activeTab, setActiveTab] = useState('tasks');
+      const [comment, setComment] = useState('');
+      const [showAddTask, setShowAddTask] = useState(false);
+      const [editingTaskId, setEditingTaskId] = useState(null);
+      const [editingCommentId, setEditingCommentId] = useState(null);
+      const [editText, setEditText] = useState('');
+      const [showEditProject, setShowEditProject] = useState(false);
+      const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+      const [draggedTask, setDraggedTask] = useState(null);
+      const [dragOverId, setDragOverId] = useState(null);
+      const [attachedFile, setAttachedFile] = useState(null);
+      const [selectedSubTask, setSelectedSubTask] = useState(null);
+      const fileInputRef = React.useRef(null);
+      
+      const brand = BRANDS.find(b => b.id === project.brandId);
+      const sorted = [...tasks].sort((a, b) => a.order - b.order);
+      const comp = tasks.filter(t => t.completed).length, prog = tasks.length > 0 ? Math.round((comp / tasks.length) * 100) : 0;
+
+      // 파일 선택 핸들러
+      const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          setAttachedFile({ name: file.name, size: file.size, type: file.type });
+        }
+      };
+      
+      // 댓글 등록 핸들러
+      const handleSubmitComment = () => {
+        if (comment.trim() || attachedFile) {
+          onAddComment(comment.trim(), attachedFile);
+          setComment('');
+          setAttachedFile(null);
+        }
+      };
+
+      // 상태 변경 핸들러
+      const handleStatusChange = (newStatus) => {
+        const updates = { ...project, status: newStatus };
+        if (newStatus === 'complete') {
+          updates.completedDate = today;
+        } else {
+          updates.completedDate = null;
+        }
+        onUpdateProject(updates);
+      };
+
+      // 드래그 앤 드롭 핸들러
+      const handleDragStart = (e, task) => { setDraggedTask(task); e.dataTransfer.effectAllowed = 'move'; };
+      const handleDragOver = (e, task) => { e.preventDefault(); if (!draggedTask || draggedTask.id === task.id) return; setDragOverId(task.id); };
+      const handleDragLeave = () => setDragOverId(null);
+      const handleDrop = (e, targetTask) => {
+        e.preventDefault();
+        setDragOverId(null);
+        if (!draggedTask || draggedTask.id === targetTask.id) return;
+        
+        const newTasks = [...sorted];
+        const dragIdx = newTasks.findIndex(t => t.id === draggedTask.id);
+        const targetIdx = newTasks.findIndex(t => t.id === targetTask.id);
+        newTasks.splice(dragIdx, 1);
+        newTasks.splice(targetIdx, 0, draggedTask);
+        
+        onReorderTasks(newTasks.map((t, i) => ({ id: t.id, order: i })));
+        setDraggedTask(null);
+      };
+      const handleDragEnd = () => { setDraggedTask(null); setDragOverId(null); };
+
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'flex-end', zIndex: 1000 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 600, height: '100%', background: 'white', display: 'flex', flexDirection: 'column', animation: 'slideIn 0.3s ease' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB' }}>
+              {/* 상단: 뒤로가기 + 제목 + 수정/삭제 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="chevronLeft" size={20} color="#6B7684" /></button>
+                <div style={{ flex: 1 }}>
+                  <span style={{ padding: '3px 8px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700 }}>{brand.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>{project.title}</h2>
+                    {project.memberIds && project.memberIds.length > 0 && (
+                      <div style={{ display: 'flex' }}>
+                        {TEAM_MEMBERS.filter(m => project.memberIds.includes(m.id)).slice(0, 4).map((m, i) => (
+                          <div key={m.id} style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, marginLeft: i > 0 ? -6 : 0, border: '2px solid white' }}>{m.initial}</div>
+                        ))}
+                        {project.memberIds.length > 4 && <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#E5E8EB', color: '#6B7684', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, marginLeft: -6, border: '2px solid white' }}>+{project.memberIds.length - 4}</div>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setShowEditProject(true)} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="edit" size={18} color="#6B7684" /></button>
+                <button onClick={() => setShowDeleteConfirm(true)} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="trash" size={18} color="#F04452" /></button>
+              </div>
+              
+              {/* 상태 선택 버튼 */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                {STATUS_OPTIONS.map(s => (
+                  <button 
+                    key={s.id} 
+                    onClick={() => handleStatusChange(s.id)}
+                    style={{ 
+                      display: 'flex', alignItems: 'center', gap: 6, 
+                      padding: '8px 14px', borderRadius: 8, 
+                      border: project.status === s.id ? `2px solid ${s.color}` : '1px solid #E5E8EB', 
+                      background: project.status === s.id ? s.bg : 'white', 
+                      color: project.status === s.id ? s.color : '#6B7684', 
+                      fontSize: 13, fontWeight: 600 
+                    }}
+                  >
+                    <Icon name={s.icon} size={14} color={project.status === s.id ? s.color : '#8B95A1'} />
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              
+              {/* 프로젝트 설명 */}
+              {project.description && (
+                <div style={{ background: '#F7F8FA', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                  <p style={{ fontSize: 13, color: '#4B5563', lineHeight: 1.6 }}>{project.description}</p>
+                </div>
+              )}
+              
+              {/* 날짜 정보 */}
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                {project.createdDate && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#6B7684' }}>
+                    <Icon name="calendar" size={14} color="#8B95A1" /> 등록일: {formatShortDate(project.createdDate)}
+                  </span>
+                )}
+                {project.completedDate && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#00C471' }}>
+                    <Icon name="checkCircle" size={14} color="#00C471" /> 완료일: {formatShortDate(project.completedDate)}
+                  </span>
+                )}
+              </div>
+              
+              {tasks.length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}><span style={{ fontSize: 13, color: '#6B7684' }}>업무 진행률</span><span style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{comp}/{tasks.length} ({prog}%)</span></div>
+                  <div style={{ height: 8, background: '#F2F3F5', borderRadius: 4 }}><div style={{ height: '100%', borderRadius: 4, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} /></div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', borderBottom: '1px solid #E5E8EB' }}>
+              <button onClick={() => setActiveTab('tasks')} style={{ flex: 1, padding: 14, border: 'none', background: 'white', fontSize: 14, fontWeight: 600, color: activeTab === 'tasks' ? '#3182F6' : '#8B95A1', borderBottom: activeTab === 'tasks' ? '2px solid #3182F6' : '2px solid transparent' }}>하위업무 ({tasks.length})</button>
+              <button onClick={() => setActiveTab('comments')} style={{ flex: 1, padding: 14, border: 'none', background: 'white', fontSize: 14, fontWeight: 600, color: activeTab === 'comments' ? '#3182F6' : '#8B95A1', borderBottom: activeTab === 'comments' ? '2px solid #3182F6' : '2px solid transparent' }}>댓글 ({project.comments.length})</button>
+            </div>
+
+            <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
+              {activeTab === 'tasks' ? (
+                <>
+                  <button onClick={() => setShowAddTask(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 14, marginBottom: 16, border: '2px dashed #D1D6DB', borderRadius: 12, background: '#FAFBFC', fontSize: 14, fontWeight: 500, color: '#6B7684' }}><Icon name="plus" size={18} color="#6B7684" /> 하위업무 추가</button>
+                  {sorted.length === 0 ? <p style={{ textAlign: 'center', color: '#8B95A1', padding: '40px 0' }}>등록된 하위업무가 없습니다</p> : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {sorted.map(t => {
+                        const m = TEAM_MEMBERS.find(x => x.id === t.memberId);
+                        const isDragging = draggedTask?.id === t.id;
+                        const isDragOver = dragOverId === t.id;
+                        return (
+                          <div 
+                            key={t.id} 
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, t)}
+                            onDragOver={(e) => handleDragOver(e, t)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, t)}
+                            onDragEnd={handleDragEnd}
+                            style={{ 
+                              display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', 
+                              background: isDragOver ? '#EBF4FF' : 'white', 
+                              border: isDragOver ? '2px solid #3182F6' : '1px solid #E5E8EB', 
+                              borderRadius: 12,
+                              opacity: isDragging ? 0.5 : 1,
+                              cursor: 'grab'
+                            }}
+                          >
+                            <Icon name="grip" size={16} color="#D1D6DB" />
+                            <button onClick={() => onToggleTask(t.id)} style={{ width: 22, height: 22, borderRadius: 6, border: t.completed ? 'none' : '2px solid #D1D6DB', background: t.completed ? '#3182F6' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{t.completed && <Icon name="check" size={14} color="white" />}</button>
+                            <div onClick={() => setSelectedSubTask(t)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <p style={{ fontSize: 14, fontWeight: 500, color: t.completed ? '#8B95A1' : '#191F28', textDecoration: t.completed ? 'line-through' : 'none' }}>{t.title}</p>
+                                {t.note && <Icon name="fileText" size={14} color="#3182F6" />}
+                                {t.attachments && t.attachments.length > 0 && <Icon name="paperclip" size={14} color="#8B95A1" />}
+                              </div>
+                              <p style={{ fontSize: 12, color: '#8B95A1', marginTop: 2 }}>{formatShortDate(t.date)}</p>
+                            </div>
+                            {m && <div style={{ width: 28, height: 28, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{m.initial}</div>}
+                            <button onClick={() => setEditingTaskId(t.id)} style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="edit" size={14} color="#6B7684" /></button>
+                            <button onClick={() => onDeleteTask(t.id)} style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="trash" size={14} color="#F04452" /></button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {project.comments.length === 0 ? <p style={{ textAlign: 'center', color: '#8B95A1', padding: '40px 0' }}>아직 댓글이 없습니다</p> : project.comments.map(c => {
+                      const a = TEAM_MEMBERS.find(m => m.id === c.memberId), isMy = c.memberId === currentUser.id, isEdit = editingCommentId === c.id;
+                      return (
+                        <div key={c.id} style={{ display: 'flex', gap: 12 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: a?.color || '#8B95A1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{a?.initial || '?'}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{a?.name}</span>
+                              <span style={{ fontSize: 12, color: '#8B95A1' }}>{formatDateTime(c.createdAt)}</span>
+                              {c.editedAt && <span style={{ fontSize: 11, color: '#B0B8C1' }}>(수정됨)</span>}
+                              {isMy && !isEdit && <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}><button onClick={() => { setEditingCommentId(c.id); setEditText(c.text); }} style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#F7F8FA', fontSize: 12, color: '#6B7684' }}>수정</button><button onClick={() => onDeleteComment(c.id)} style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#FEE4E2', fontSize: 12, color: '#F04452' }}>삭제</button></div>}
+                            </div>
+                            {isEdit ? (
+                              <div><textarea value={editText} onChange={(e) => setEditText(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #3182F6', fontSize: 14, resize: 'none', minHeight: 60 }} autoFocus /><div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button onClick={() => setEditingCommentId(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, color: '#6B7684' }}>취소</button><button onClick={() => { if (editText.trim()) { onUpdateComment(c.id, editText.trim()); setEditingCommentId(null); } }} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#3182F6', fontSize: 13, color: 'white' }}>저장</button></div></div>
+                            ) : (
+                              <>
+                                {c.text && <p style={{ fontSize: 14, color: '#4B5563', lineHeight: 1.5 }}>{c.text}</p>}
+                                {c.file && (
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: c.text ? 8 : 0, padding: '8px 12px', background: '#F0F7FF', borderRadius: 8, cursor: 'pointer' }}>
+                                    <Icon name="fileText" size={16} color="#3182F6" />
+                                    <span style={{ fontSize: 13, color: '#3182F6', fontWeight: 500 }}>{c.file.name}</span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {activeTab === 'comments' && (
+              <div style={{ padding: 16, borderTop: '1px solid #E5E8EB' }}>
+                {/* 첨부 파일 미리보기 */}
+                {attachedFile && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '8px 12px', background: '#F0F7FF', borderRadius: 8 }}>
+                    <Icon name="fileText" size={16} color="#3182F6" />
+                    <span style={{ flex: 1, fontSize: 13, color: '#3182F6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{attachedFile.name}</span>
+                    <button onClick={() => setAttachedFile(null)} style={{ width: 20, height: 20, borderRadius: 4, border: 'none', background: '#E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="x" size={12} color="#6B7684" /></button>
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{currentUser.initial}</div>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#F7F8FA', borderRadius: 12, padding: '4px 4px 4px 16px' }}>
+                    <input type="text" value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (comment.trim() || attachedFile)) { handleSubmitComment(); } }} placeholder="댓글을 입력하세요..." style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, padding: '10px 0' }} />
+                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} />
+                    <button onClick={() => fileInputRef.current?.click()} style={{ width: 36, height: 36, borderRadius: 8, border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="paperclip" size={18} color="#8B95A1" /></button>
+                    <button onClick={handleSubmitComment} disabled={!comment.trim() && !attachedFile} style={{ width: 36, height: 36, borderRadius: 8, border: 'none', background: (comment.trim() || attachedFile) ? '#3182F6' : '#E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="send" size={16} color={(comment.trim() || attachedFile) ? 'white' : '#8B95A1'} /></button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 하위업무 상세 보기 모달 - 인라인 편집 가능 */}
+            {selectedSubTask && (
+              <SubTaskDetailModal 
+                task={selectedSubTask}
+                brand={brand}
+                project={project}
+                onClose={() => setSelectedSubTask(null)}
+                onToggle={() => { onToggleTask(selectedSubTask.id); setSelectedSubTask(prev => ({ ...prev, completed: !prev.completed })); }}
+                onSave={(updated) => { onUpdateTask(updated); setSelectedSubTask(updated); }}
+                onDelete={() => { if(confirm('정말 삭제하시겠습니까?')) { onDeleteTask(selectedSubTask.id); setSelectedSubTask(null); } }}
+                onEdit={() => { setEditingTaskId(selectedSubTask.id); setSelectedSubTask(null); }}
+              />
+            )}
+
+            {showAddTask && <SubTaskModal onSave={(t) => { onAddTask(t); setShowAddTask(false); }} onClose={() => setShowAddTask(false)} />}
+            
+            {/* 하위업무 수정 모달 */}
+            {editingTaskId && <SubTaskModal task={sorted.find(t => t.id === editingTaskId)} onSave={(t) => { onUpdateTask(t); setEditingTaskId(null); }} onClose={() => setEditingTaskId(null)} />}
+            
+            {/* 프로젝트 수정 모달 */}
+            {showEditProject && <ProjectModal project={project} onSave={(p) => { onUpdateProject(p); setShowEditProject(false); }} onClose={() => setShowEditProject(false)} />}
+            
+            {/* 삭제 확인 모달 */}
+            {showDeleteConfirm && (
+              <div onClick={() => setShowDeleteConfirm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+                <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 24, width: '100%', maxWidth: 360 }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 12 }}>프로젝트 삭제</h3>
+                  <p style={{ fontSize: 14, color: '#6B7684', marginBottom: 24, lineHeight: 1.6 }}>
+                    <strong>"{project.title}"</strong> 프로젝트를 삭제하시겠습니까?<br/>
+                    <span style={{ color: '#F04452' }}>하위 업무도 함께 삭제됩니다.</span>
+                  </p>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button onClick={() => setShowDeleteConfirm(false)} style={{ flex: 1, padding: 14, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684' }}>취소</button>
+                    <button onClick={() => { onDeleteProject(project.id); onClose(); }} style={{ flex: 1, padding: 14, borderRadius: 10, border: 'none', background: '#F04452', fontSize: 14, fontWeight: 600, color: 'white' }}>삭제</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // 하위업무 상세 모달 (인라인 편집 가능)
+    function SubTaskDetailModal({ task, brand, project, onClose, onToggle, onSave, onDelete, onEdit }) {
+      const [note, setNote] = useState(task.note || '');
+      const [attachments, setAttachments] = useState(task.attachments || []);
+      const [hasChanges, setHasChanges] = useState(false);
+      const [isUploading, setIsUploading] = useState(false);
+      const fileInputRef = React.useRef(null);
+      const m = TEAM_MEMBERS.find(x => x.id === task.memberId);
+      
+      const handleNoteChange = (e) => {
+        setNote(e.target.value);
+        setHasChanges(true);
+      };
+      
+      const handleFileSelect = async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+        
+        setIsUploading(true);
+        
+        for (const file of files) {
+          try {
+            // Firebase Storage에 업로드
+            const path = `attachments/tasks/${task.id}/${Date.now()}_${file.name}`;
+            const result = await FirebaseService.uploadFile(file, path);
+            
+            if (result) {
+              setAttachments(prev => [...prev, {
+                id: Date.now() + Math.random(),
+                name: result.name,
+                size: result.size,
+                type: result.type,
+                url: result.url,
+                path: path
+              }]);
+              setHasChanges(true);
+            }
+          } catch (error) {
+            console.error('File upload error:', error);
+            alert('파일 업로드에 실패했습니다.');
+          }
+        }
+        
+        setIsUploading(false);
+        e.target.value = '';
+      };
+      
+      const removeAttachment = async (attachment) => {
+        // Firebase Storage에서 파일 삭제
+        if (attachment.path) {
+          await FirebaseService.deleteFile(attachment.path);
+        }
+        setAttachments(prev => prev.filter(a => a.id !== attachment.id));
+        setHasChanges(true);
+      };
+      
+      const handleSave = () => {
+        onSave({ ...task, note, attachments });
+        setHasChanges(false);
+      };
+      
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 24, width: '100%', maxWidth: 480, maxHeight: '85vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>📋 하위업무 상세</h2>
+              <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="x" size={18} color="#8B95A1" /></button>
+            </div>
+            
+            {/* 업로드 중 표시 */}
+            {isUploading && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 20 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div className="loading-spinner" style={{ margin: '0 auto 12px' }}></div>
+                  <p style={{ fontSize: 14, color: '#6B7684' }}>파일 업로드 중...</p>
+                </div>
+              </div>
+            )}
+            
+            {/* 업무 정보 */}
+            <div style={{ background: '#F7F8FA', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span style={{ padding: '4px 10px', borderRadius: 6, background: `${brand.color}15`, color: brand.color, fontSize: 12, fontWeight: 600 }}>{brand.name}</span>
+                <span style={{ padding: '4px 10px', borderRadius: 6, background: '#E5E8EB', color: '#6B7684', fontSize: 11, fontWeight: 600 }}>{project.title}</span>
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 8, textDecoration: task.completed ? 'line-through' : 'none' }}>{task.title}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <p style={{ fontSize: 14, color: '#6B7684' }}>📅 {formatShortDate(task.date)}</p>
+                {m && <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 20, height: 20, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 12, color: '#6B7684' }}>{m.name}</span></div>}
+              </div>
+            </div>
+            
+            {/* 메모 영역 - 편집 가능 */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <Icon name="fileText" size={16} color="#F59E0B" />
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#92400E' }}>메모</span>
+              </div>
+              <textarea 
+                value={note} 
+                onChange={handleNoteChange}
+                placeholder="메모를 입력하세요..."
+                rows={4}
+                style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 14, resize: 'none', lineHeight: 1.6, background: '#FFFBEB' }}
+              />
+            </div>
+            
+            {/* 첨부파일 영역 - 추가/삭제 가능 */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon name="paperclip" size={16} color="#3182F6" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1E40AF' }}>첨부파일 {attachments.length > 0 && `(${attachments.length})`}</span>
+                </div>
+                <button onClick={() => fileInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#EBF4FF', color: '#3182F6', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                  <Icon name="plus" size={14} color="#3182F6" /> 파일 추가
+                </button>
+                <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
+              </div>
+              
+              {attachments.length === 0 ? (
+                <div onClick={() => fileInputRef.current?.click()} style={{ padding: 20, borderRadius: 12, background: '#F0F7FF', border: '2px dashed #DBEAFE', textAlign: 'center', cursor: 'pointer' }}>
+                  <Icon name="paperclip" size={24} color="#93C5FD" />
+                  <p style={{ fontSize: 13, color: '#6B7684', marginTop: 8 }}>클릭하여 파일을 첨부하세요</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F0F7FF', borderRadius: 12, padding: 12, border: '1px solid #DBEAFE' }}>
+                  {attachments.map(file => (
+                    <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, background: 'white', border: '1px solid #E5E8EB' }}>
+                      <Icon name="fileText" size={18} color="#3182F6" />
+                      {file.url ? (
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, fontSize: 13, color: '#3182F6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: 'none' }}>{file.name}</a>
+                      ) : (
+                        <span style={{ flex: 1, fontSize: 13, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                      )}
+                      <span style={{ fontSize: 11, color: '#8B95A1' }}>{(file.size / 1024).toFixed(1)}KB</span>
+                      <button onClick={() => removeAttachment(file)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Icon name="x" size={14} color="#F04452" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* 저장 버튼 (변경사항 있을 때만 활성화) */}
+            {hasChanges && (
+              <button onClick={handleSave} style={{ width: '100%', padding: 14, marginBottom: 12, borderRadius: 12, border: 'none', background: '#00C471', color: 'white', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                <Icon name="check" size={18} color="white" /> 변경사항 저장
+              </button>
+            )}
+            
+            {/* 버튼 영역 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button onClick={onToggle} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: task.completed ? '#F7F8FA' : '#3182F6', color: task.completed ? '#6B7684' : 'white', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                <Icon name="check" size={18} color={task.completed ? '#6B7684' : 'white'} /> {task.completed ? '완료 취소' : '완료 처리'}
+              </button>
+              
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={onEdit} style={{ flex: 1, padding: 14, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', color: '#191F28', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                  <Icon name="edit" size={18} color="#6B7684" /> 상세 수정
+                </button>
+                <button onClick={onDelete} style={{ flex: 1, padding: 14, borderRadius: 12, border: 'none', background: '#FEE4E2', color: '#F04452', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                  <Icon name="trash" size={18} color="#F04452" /> 삭제
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SubTaskModal({ task, onSave, onClose }) {
+      const [form, setForm] = useState({ 
+        title: task?.title || '', 
+        memberId: task?.memberId || null, 
+        date: task?.date || today,
+        note: task?.note || '',
+        attachments: task?.attachments || []
+      });
+      const [pendingFiles, setPendingFiles] = useState([]); // 업로드 대기 중인 파일들
+      const [isUploading, setIsUploading] = useState(false);
+      const fileInputRef = React.useRef(null);
+      const isEdit = !!task;
+      
+      const handleFileSelect = (e) => {
+        const files = Array.from(e.target.files);
+        // 파일 정보를 임시로 저장 (실제 업로드는 저장 시 진행)
+        const newAttachments = files.map(f => ({
+          id: Date.now() + Math.random(),
+          name: f.name,
+          size: f.size,
+          type: f.type,
+          file: f  // 실제 파일 객체 보관
+        }));
+        setForm(prev => ({ ...prev, attachments: [...prev.attachments, ...newAttachments] }));
+        setPendingFiles(prev => [...prev, ...files]);
+        e.target.value = '';
+      };
+      
+      const removeAttachment = (id) => {
+        const att = form.attachments.find(a => a.id === id);
+        if (att && att.file) {
+          // 대기 중인 파일에서도 제거
+          setPendingFiles(prev => prev.filter(f => f.name !== att.name));
+        }
+        setForm(prev => ({ ...prev, attachments: prev.attachments.filter(a => a.id !== id) }));
+      };
+      
+      const handleSave = async () => {
+        if (!form.title.trim() || !form.memberId) return;
+        
+        setIsUploading(true);
+        
+        // 새 파일들 업로드
+        const uploadedAttachments = [];
+        const taskId = task?.id || Date.now();
+        
+        for (const att of form.attachments) {
+          if (att.file) {
+            // 새로 추가된 파일 - Firebase에 업로드
+            try {
+              const path = `attachments/subtasks/${taskId}/${Date.now()}_${att.file.name}`;
+              const result = await FirebaseService.uploadFile(att.file, path);
+              if (result) {
+                uploadedAttachments.push({
+                  id: att.id,
+                  name: result.name,
+                  size: result.size,
+                  type: result.type,
+                  url: result.url,
+                  path: path
+                });
+              }
+            } catch (error) {
+              console.error('Upload error:', error);
+            }
+          } else {
+            // 기존 파일 - 그대로 유지
+            uploadedAttachments.push(att);
+          }
+        }
+        
+        setIsUploading(false);
+        onSave({ ...(task || {}), ...form, title: form.title.trim(), attachments: uploadedAttachments });
+      };
+      
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 24, width: '100%', maxWidth: 420, maxHeight: '90vh', overflow: 'auto', position: 'relative' }}>
+            {/* 업로드 중 표시 */}
+            {isUploading && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 20 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div className="loading-spinner" style={{ margin: '0 auto 12px' }}></div>
+                  <p style={{ fontSize: 14, color: '#6B7684' }}>파일 업로드 중...</p>
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}><h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>{isEdit ? '하위업무 수정' : '하위업무 추가'}</h3><button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="x" size={18} color="#8B95A1" /></button></div>
+            <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>업무명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 디자인 시안 제작" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} /></div>
+            <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>담당자 *</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => setForm({ ...form, memberId: m.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: form.memberId === m.id ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: form.memberId === m.id ? `${m.color}15` : 'white', cursor: 'pointer' }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: form.memberId === m.id ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
+            <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>기한</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} onClick={(e) => e.target.showPicker()} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, cursor: 'pointer' }} /></div>
+            <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>메모 (선택)</label><textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="메모를 입력하세요" rows={3} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, resize: 'none' }} /></div>
+            
+            {/* 첨부파일 영역 */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <label style={{ fontSize: 13, fontWeight: 600 }}>첨부파일 (선택)</label>
+                <button onClick={() => fileInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#EBF4FF', color: '#3182F6', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                  <Icon name="paperclip" size={14} color="#3182F6" /> 파일 추가
+                </button>
+                <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
+              </div>
+              
+              {form.attachments.length === 0 ? (
+                <div onClick={() => fileInputRef.current?.click()} style={{ padding: 16, borderRadius: 10, background: '#F7F8FA', border: '2px dashed #E5E8EB', textAlign: 'center', cursor: 'pointer' }}>
+                  <Icon name="paperclip" size={20} color="#D1D6DB" />
+                  <p style={{ fontSize: 12, color: '#8B95A1', marginTop: 6 }}>클릭하여 파일 첨부</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {form.attachments.map(file => (
+                    <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: '#F0F7FF', border: '1px solid #DBEAFE' }}>
+                      <Icon name="fileText" size={16} color="#3182F6" />
+                      <span style={{ flex: 1, fontSize: 12, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                      <span style={{ fontSize: 10, color: '#8B95A1' }}>{(file.size / 1024).toFixed(1)}KB</span>
+                      <button onClick={() => removeAttachment(file.id)} style={{ width: 20, height: 20, borderRadius: 4, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Icon name="x" size={12} color="#F04452" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div style={{ display: 'flex', gap: 12 }}><button onClick={onClose} style={{ flex: 1, padding: 14, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>취소</button><button onClick={handleSave} disabled={!form.title.trim() || !form.memberId} style={{ flex: 1, padding: 14, borderRadius: 10, border: 'none', background: (form.title.trim() && form.memberId) ? '#3182F6' : '#E5E8EB', fontSize: 14, fontWeight: 600, color: (form.title.trim() && form.memberId) ? 'white' : '#8B95A1', cursor: (form.title.trim() && form.memberId) ? 'pointer' : 'not-allowed' }}>{isEdit ? '수정하기' : '추가하기'}</button></div>
+          </div>
+        </div>
+      );
+    }
+
+    function ProjectModal({ project, onSave, onClose }) {
+      const descriptionTemplate = `타겟 : 
+목표 : 
+프로젝트 설명 : `;
+      const [form, setForm] = useState({ 
+        brandId: project?.brandId || BRANDS[0].id, 
+        title: project?.title || '', 
+        memberIds: project?.memberIds || [],
+        description: project?.description || (project ? '' : descriptionTemplate), 
+        status: project?.status || 'progress', 
+        createdDate: project?.createdDate || today 
+      });
+      const isEdit = !!project;
+      
+      const toggleMember = (id) => {
+        setForm(prev => ({
+          ...prev,
+          memberIds: prev.memberIds.includes(id) 
+            ? prev.memberIds.filter(m => m !== id) 
+            : [...prev.memberIds, id]
+        }));
+      };
+      
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28' }}>{isEdit ? '프로젝트 수정' : '새 프로젝트'}</h2><button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="x" size={20} color="#8B95A1" /></button></div>
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>브랜드 *</label><div style={{ display: 'flex', gap: 8 }}>{BRANDS.map(b => <button key={b.id} onClick={() => setForm({ ...form, brandId: b.id })} style={{ padding: '10px 16px', borderRadius: 10, border: form.brandId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: form.brandId === b.id ? `${b.color}15` : 'white', color: form.brandId === b.id ? b.color : '#6B7684', fontSize: 14, fontWeight: 500 }}>{b.name}</button>)}</div></div>
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 2025 신년 캠페인" style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15 }} /></div>
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>담당자</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => toggleMember(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: form.memberIds.includes(m.id) ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: form.memberIds.includes(m.id) ? `${m.color}15` : 'white' }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: form.memberIds.includes(m.id) ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>설명</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="프로젝트에 대한 설명" rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, resize: 'none', lineHeight: 1.6 }} /></div>
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>상태</label><div style={{ display: 'flex', gap: 8 }}>{STATUS_OPTIONS.map(s => <button key={s.id} onClick={() => setForm({ ...form, status: s.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: form.status === s.id ? `2px solid ${s.color}` : '1px solid #E5E8EB', background: form.status === s.id ? s.bg : 'white', color: form.status === s.id ? s.color : '#6B7684', fontSize: 14, fontWeight: 500 }}><Icon name={s.icon} size={16} color={form.status === s.id ? s.color : '#6B7684'} /> {s.label}</button>)}</div></div>
+            <div style={{ marginBottom: 24 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트 등록일</label><input type="date" value={form.createdDate} onChange={(e) => setForm({ ...form, createdDate: e.target.value })} onClick={(e) => e.target.showPicker()} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, cursor: 'pointer' }} /></div>
+            <div style={{ display: 'flex', gap: 12 }}><button onClick={onClose} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', fontSize: 15, fontWeight: 600, color: '#6B7684' }}>취소</button><button onClick={() => form.title.trim() && onSave({ ...project, ...form })} disabled={!form.title.trim()} style={{ flex: 1, padding: 16, borderRadius: 12, border: 'none', background: form.title.trim() ? '#3182F6' : '#E5E8EB', fontSize: 15, fontWeight: 600, color: form.title.trim() ? 'white' : '#8B95A1' }}>{isEdit ? '수정' : '만들기'}</button></div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============ 전체업무 탭 ============
+    function CalendarTab({ tasks, setTasks, projects, currentUser }) {
+      const [viewMode, setViewMode] = useState('list'); // 'calendar' or 'list'
+      const [currentMonth, setCurrentMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() });
+      const [selectedTask, setSelectedTask] = useState(null);
+      const [editingTask, setEditingTask] = useState(null);
+      const [showEditModal, setShowEditModal] = useState(false);
+      
+      // 리스트 뷰 필터 상태
+      const [searchQuery, setSearchQuery] = useState('');
+      const [dateRange, setDateRange] = useState({ start: '', end: '' });
+      const [filterProject, setFilterProject] = useState(null);
+      const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'completed', 'incomplete'
+      
+      // 팀원 필터 (기본값: 내 업무만)
+      const [selectedMembers, setSelectedMembers] = useState([currentUser.id]);
+      
+      // 팀원 필터 토글
+      const toggleMember = (memberId) => {
+        setSelectedMembers(prev => {
+          if (prev.includes(memberId)) {
+            // 최소 1명은 선택되어 있어야 함
+            if (prev.length === 1) return prev;
+            return prev.filter(id => id !== memberId);
+          }
+          return [...prev, memberId];
+        });
+      };
+      
+      // 전체 선택/해제
+      const toggleAllMembers = () => {
+        if (selectedMembers.length === TEAM_MEMBERS.length) {
+          setSelectedMembers([currentUser.id]);
+        } else {
+          setSelectedMembers(TEAM_MEMBERS.map(m => m.id));
+        }
+      };
+      
+      // 선택된 팀원의 업무만 필터링
+      const memberTasks = useMemo(() => tasks.filter(t => selectedMembers.includes(t.memberId)), [tasks, selectedMembers]);
+
+      const monthDates = useMemo(() => getMonthDates(currentMonth.year, currentMonth.month), [currentMonth]);
+      const tasksByDate = useMemo(() => { const g = {}; memberTasks.forEach(t => { if (!g[t.date]) g[t.date] = []; g[t.date].push(t); }); return g; }, [memberTasks]);
+      const stats = useMemo(() => { const tm = memberTasks.filter(t => { const d = new Date(t.date); return d.getFullYear() === currentMonth.year && d.getMonth() === currentMonth.month; }); return { total: tm.length, completed: tm.filter(t => t.completed).length }; }, [memberTasks, currentMonth]);
+      
+      // 리스트 뷰용 필터링된 업무
+      const filteredTasks = useMemo(() => {
+        return memberTasks
+          .filter(t => !searchQuery || t.title.toLowerCase().includes(searchQuery.toLowerCase()) || (t.note && t.note.toLowerCase().includes(searchQuery.toLowerCase())))
+          .filter(t => !dateRange.start || t.date >= dateRange.start)
+          .filter(t => !dateRange.end || t.date <= dateRange.end)
+          .filter(t => filterProject === null || t.projectId === filterProject || (filterProject === 0 && !t.projectId))
+          .filter(t => filterStatus === 'all' || (filterStatus === 'completed' && t.completed) || (filterStatus === 'incomplete' && !t.completed))
+          .sort((a, b) => b.date.localeCompare(a.date));
+      }, [memberTasks, searchQuery, dateRange, filterProject, filterStatus]);
+
+      const moveMonth = (dir) => setCurrentMonth(prev => { let m = prev.month + (dir === 'prev' ? -1 : 1), y = prev.year; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } return { year: y, month: m }; });
+      const toggleTaskComplete = (id) => { setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t)); if (selectedTask?.id === id) setSelectedTask(prev => ({ ...prev, completed: !prev.completed })); };
+      const deleteTask = (id) => { setTasks(prev => prev.filter(t => t.id !== id)); setSelectedTask(null); };
+      const updateTask = (task) => { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...task } : t)); };
+
+      return (
+        <div style={{ minHeight: '100vh' }}>
+          <header style={{ background: 'white', borderBottom: '1px solid #E5E8EB', padding: '20px 32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: '#191F28' }}>전체 업무</h1>
+                {/* 뷰 모드 토글 */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => setViewMode('list')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: viewMode === 'list' ? '2px solid #3182F6' : '1px solid #E5E8EB', background: viewMode === 'list' ? '#EBF4FF' : 'white', fontSize: 15, fontWeight: 600, color: viewMode === 'list' ? '#3182F6' : '#6B7684', cursor: 'pointer' }}>
+                    <Icon name="clipboard" size={18} color={viewMode === 'list' ? '#3182F6' : '#6B7684'} /> 리스트
+                  </button>
+                  <button onClick={() => setViewMode('calendar')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10, border: viewMode === 'calendar' ? '2px solid #3182F6' : '1px solid #E5E8EB', background: viewMode === 'calendar' ? '#EBF4FF' : 'white', fontSize: 15, fontWeight: 600, color: viewMode === 'calendar' ? '#3182F6' : '#6B7684', cursor: 'pointer' }}>
+                    <Icon name="calendar" size={18} color={viewMode === 'calendar' ? '#3182F6' : '#6B7684'} /> 캘린더
+                  </button>
+                </div>
+              </div>
+              
+              {/* 팀원 필터 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: '#6B7684', marginRight: 4 }}>팀원</span>
+                <button 
+                  onClick={toggleAllMembers}
+                  style={{ 
+                    padding: '6px 12px', borderRadius: 8, 
+                    border: selectedMembers.length === TEAM_MEMBERS.length ? '2px solid #3182F6' : '1px solid #E5E8EB', 
+                    background: selectedMembers.length === TEAM_MEMBERS.length ? '#EBF4FF' : 'white',
+                    fontSize: 12, fontWeight: 600, 
+                    color: selectedMembers.length === TEAM_MEMBERS.length ? '#3182F6' : '#6B7684',
+                    cursor: 'pointer'
+                  }}
+                >
+                  전체
+                </button>
+                {TEAM_MEMBERS.map(m => (
+                  <button 
+                    key={m.id}
+                    onClick={() => toggleMember(m.id)}
+                    style={{ 
+                      display: 'flex', alignItems: 'center', gap: 6, 
+                      padding: '6px 12px', borderRadius: 8,
+                      border: selectedMembers.includes(m.id) ? `2px solid ${m.color}` : '1px solid #E5E8EB',
+                      background: selectedMembers.includes(m.id) ? `${m.color}15` : 'white',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ 
+                      width: 22, height: 22, borderRadius: '50%', 
+                      background: m.color, color: 'white', 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                      fontSize: 10, fontWeight: 700 
+                    }}>{m.initial}</div>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: selectedMembers.includes(m.id) ? '#191F28' : '#6B7684' }}>{m.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {viewMode === 'list' ? (
+              /* 리스트 뷰 필터 */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* 검색 + 날짜 범위 */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F7F8FA', borderRadius: 10, padding: '0 14px', flex: 1, maxWidth: 400 }}>
+                    <Icon name="search" size={18} color="#8B95A1" />
+                    <input 
+                      type="text" 
+                      value={searchQuery} 
+                      onChange={(e) => setSearchQuery(e.target.value)} 
+                      placeholder="업무명 또는 메모 검색..." 
+                      style={{ flex: 1, border: 'none', background: 'transparent', padding: '12px 0', fontSize: 14, color: '#191F28', outline: 'none' }} 
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                        <Icon name="x" size={16} color="#8B95A1" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: '#6B7684' }}>기간</span>
+                    <input 
+                      type="date" 
+                      value={dateRange.start} 
+                      onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                      onClick={(e) => e.target.showPicker()}
+                      style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13, cursor: 'pointer' }}
+                    />
+                    <span style={{ color: '#8B95A1' }}>~</span>
+                    <input 
+                      type="date" 
+                      value={dateRange.end} 
+                      onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                      onClick={(e) => e.target.showPicker()}
+                      style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13, cursor: 'pointer' }}
+                    />
+                    {(dateRange.start || dateRange.end) && (
+                      <button onClick={() => setDateRange({ start: '', end: '' })} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, color: '#8B95A1', cursor: 'pointer' }}>초기화</button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* 프로젝트 + 상태 필터 */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: '#6B7684' }}>프로젝트</span>
+                    <button onClick={() => setFilterProject(null)} style={{ padding: '6px 14px', borderRadius: 8, border: filterProject === null ? '1.5px solid #3182F6' : '1px solid #E5E8EB', background: filterProject === null ? '#EBF4FF' : 'white', fontSize: 13, fontWeight: 500, color: filterProject === null ? '#3182F6' : '#6B7684', cursor: 'pointer' }}>전체</button>
+                    {BRANDS.map(b => (
+                      <button key={b.id} onClick={() => setFilterProject(b.id)} style={{ padding: '6px 14px', borderRadius: 8, border: filterProject === b.id ? `1.5px solid ${b.color}` : '1px solid #E5E8EB', background: filterProject === b.id ? `${b.color}15` : 'white', fontSize: 13, fontWeight: 500, color: filterProject === b.id ? b.color : '#6B7684', cursor: 'pointer' }}>{b.name}</button>
+                    ))}
+                    <button onClick={() => setFilterProject(0)} style={{ padding: '6px 14px', borderRadius: 8, border: filterProject === 0 ? '1.5px solid #8B95A1' : '1px solid #E5E8EB', background: filterProject === 0 ? '#8B95A115' : 'white', fontSize: 13, fontWeight: 500, color: filterProject === 0 ? '#8B95A1' : '#6B7684', cursor: 'pointer' }}>기타 업무</button>
+                  </div>
+                  
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: '#6B7684' }}>상태</span>
+                    <button onClick={() => setFilterStatus('all')} style={{ padding: '6px 14px', borderRadius: 8, border: filterStatus === 'all' ? '1.5px solid #3182F6' : '1px solid #E5E8EB', background: filterStatus === 'all' ? '#EBF4FF' : 'white', fontSize: 13, fontWeight: 500, color: filterStatus === 'all' ? '#3182F6' : '#6B7684', cursor: 'pointer' }}>전체</button>
+                    <button onClick={() => setFilterStatus('incomplete')} style={{ padding: '6px 14px', borderRadius: 8, border: filterStatus === 'incomplete' ? '1.5px solid #F59E0B' : '1px solid #E5E8EB', background: filterStatus === 'incomplete' ? '#FEF3C7' : 'white', fontSize: 13, fontWeight: 500, color: filterStatus === 'incomplete' ? '#F59E0B' : '#6B7684', cursor: 'pointer' }}>미완료</button>
+                    <button onClick={() => setFilterStatus('completed')} style={{ padding: '6px 14px', borderRadius: 8, border: filterStatus === 'completed' ? '1.5px solid #00C471' : '1px solid #E5E8EB', background: filterStatus === 'completed' ? '#DCFCE7' : 'white', fontSize: 13, fontWeight: 500, color: filterStatus === 'completed' ? '#00C471' : '#6B7684', cursor: 'pointer' }}>완료</button>
+                  </div>
+                </div>
+                
+                {/* 검색 결과 카운트 */}
+                <div style={{ fontSize: 14, color: '#6B7684' }}>
+                  총 <strong style={{ color: '#191F28' }}>{filteredTasks.length}</strong>개의 업무
+                </div>
+              </div>
+            ) : (
+              /* 캘린더 뷰 헤더 */
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button onClick={() => moveMonth('prev')} style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="chevronLeft" size={20} color="#6B7684" /></button>
+                    <h2 style={{ fontSize: 24, fontWeight: 700, color: '#191F28', minWidth: 160, textAlign: 'center' }}>{currentMonth.year}년 {currentMonth.month + 1}월</h2>
+                    <button onClick={() => moveMonth('next')} style={{ width: 36, height: 36, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="chevronRight" size={20} color="#6B7684" /></button>
+                    <button onClick={() => setCurrentMonth({ year: new Date().getFullYear(), month: new Date().getMonth() })} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 500, color: '#3182F6', cursor: 'pointer' }}>오늘</button>
+                  </div>
+                  <div style={{ textAlign: 'right' }}><p style={{ fontSize: 12, color: '#8B95A1' }}>{currentMonth.month + 1}월 업무</p><p style={{ fontSize: 18, fontWeight: 700 }}><span style={{ color: '#00C471' }}>{stats.completed}</span><span style={{ color: '#8B95A1', fontWeight: 400 }}> / {stats.total}</span></p></div>
+                </div>
+              </>
+            )}
+          </header>
+
+          {viewMode === 'list' ? (
+            /* 리스트 뷰 */
+            <div style={{ padding: 32 }}>
+              <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                {/* 테이블 헤더 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '44px 100px 1fr 80px 120px 44px', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid #E5E8EB', background: '#FAFBFC' }}>
+                  <div></div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7684' }}>날짜</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7684' }}>업무</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7684', textAlign: 'center' }}>담당자</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7684', textAlign: 'center' }}>프로젝트</div>
+                  <div></div>
+                </div>
+                
+                {filteredTasks.length === 0 ? (
+                  <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+                    <Icon name="search" size={48} color="#D1D6DB" />
+                    <p style={{ fontSize: 16, color: '#8B95A1', marginTop: 16 }}>검색 결과가 없습니다</p>
+                  </div>
+                ) : (
+                  filteredTasks.map(task => {
+                    const project = projects.find(p => p.id === task.projectId);
+                    const proj = project ? BRANDS.find(b => b.id === project.brandId) : BRANDS.find(p => p.id === task.projectId);
+                    const member = TEAM_MEMBERS.find(m => m.id === task.memberId);
+                    return (
+                      <div 
+                        key={task.id} 
+                        onClick={() => setSelectedTask(task)}
+                        style={{ display: 'grid', gridTemplateColumns: '44px 100px 1fr 80px 120px 44px', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F2F3F5', cursor: 'pointer', transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                      >
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task.id); }} 
+                          style={{ width: 28, height: 28, borderRadius: 8, border: task.completed ? 'none' : '2px solid #D1D6DB', background: task.completed ? '#3182F6' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                        >
+                          {task.completed && <Icon name="check" size={16} color="white" />}
+                        </button>
+                        
+                        <span style={{ fontSize: 13, color: '#6B7684' }}>{task.date.slice(5).replace('-', '/')}</span>
+                        
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 500, color: task.completed ? '#8B95A1' : '#191F28', textDecoration: task.completed ? 'line-through' : 'none' }}>{task.title}</span>
+                            {task.bookmark && <Icon name="bookmarkFill" size={14} color="#F59E0B" />}
+                            {task.note && <Icon name="fileText" size={14} color="#3182F6" />}
+                          </div>
+                          {task.note && <p style={{ fontSize: 12, color: '#8B95A1', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 400 }}>{task.note.split('\n')[0]}</p>}
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          {member && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ width: 24, height: 24, borderRadius: '50%', background: member.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{member.initial}</div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                          {proj ? <span style={{ padding: '4px 10px', borderRadius: 6, background: `${proj.color}15`, color: proj.color, fontSize: 12, fontWeight: 600 }}>{proj.name}</span> : <span style={{ padding: '4px 10px', borderRadius: 6, background: '#8B95A115', color: '#8B95A1', fontSize: 12, fontWeight: 600 }}>기타 업무</span>}
+                        </div>
+                        
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setTasks(prev => prev.filter(t => t.id !== task.id)); }} 
+                          style={{ width: 32, height: 32, borderRadius: 6, border: 'none', background: '#FEE4E2', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                        >
+                          <Icon name="trash" size={16} color="#F04452" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : (
+            /* 캘린더 뷰 */
+            <div style={{ padding: 32 }}>
+              <div style={{ background: 'white', borderRadius: 20, overflow: 'hidden', border: '1px solid #E5E8EB' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #E5E8EB', background: '#FAFBFC' }}>{['월', '화', '수', '목', '금', '토', '일'].map((d, i) => <div key={d} style={{ padding: '14px 8px', textAlign: 'center', fontSize: 14, fontWeight: 600, color: i >= 5 ? '#F04452' : '#6B7684' }}>{d}</div>)}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                  {monthDates.map(({ date, isCurrentMonth, day }, idx) => {
+                    const isToday = date === today, dt = tasksByDate[date] || [], dow = idx % 7;
+                    return (
+                      <div key={date} style={{ minHeight: 140, padding: 8, borderRight: dow < 6 ? '1px solid #F2F3F5' : 'none', borderBottom: idx < 35 ? '1px solid #F2F3F5' : 'none', background: isToday ? '#EBF4FF' : 'white', opacity: isCurrentMonth ? 1 : 0.4, display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexShrink: 0 }}>
+                          <span style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: isToday ? 700 : 500, color: isToday ? 'white' : dow >= 5 ? '#F04452' : '#191F28', background: isToday ? '#3182F6' : 'transparent' }}>{day}</span>
+                          {dt.length > 0 && <span style={{ fontSize: 11, color: '#8B95A1' }}>{dt.length}건</span>}
+                        </div>
+                        {/* 스크롤 가능한 업무 리스트 */}
+                        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {dt.map(t => { 
+                            const project = projects.find(p => p.id === t.projectId);
+                            const proj = project ? BRANDS.find(b => b.id === project.brandId) : BRANDS.find(p => p.id === t.projectId);
+                            const member = TEAM_MEMBERS.find(m => m.id === t.memberId);
+                            return (
+                              <div key={t.id} onClick={() => setSelectedTask(t)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 6, background: proj ? `${proj.color}15` : '#F7F8FA', borderLeft: `3px solid ${proj ? proj.color : '#8B95A1'}`, cursor: 'pointer', flexShrink: 0 }}>
+                                <span style={{ fontSize: 11, fontWeight: 500, color: t.completed ? '#8B95A1' : '#191F28', textDecoration: t.completed ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</span>
+                                {member && <div style={{ width: 18, height: 18, borderRadius: '50%', background: member.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{member.initial}</div>}
+                              </div>
+                            ); 
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 업무 상세 모달 - 메모 포함 */}
+          {selectedTask && (
+            <div onClick={() => setSelectedTask(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 24, width: '100%', maxWidth: 420, maxHeight: '80vh', overflow: 'auto' }}>
+                {(() => { 
+                  const project = projects.find(p => p.id === selectedTask.projectId);
+                  const proj = project ? BRANDS.find(b => b.id === project.brandId) : BRANDS.find(x => x.id === selectedTask.projectId);
+                  return <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                      <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>📝 업무 상세</h2>
+                      <button onClick={() => setSelectedTask(null)} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="x" size={18} color="#8B95A1" /></button>
+                    </div>
+                    
+                    <div style={{ background: '#F7F8FA', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        {proj ? <span style={{ padding: '4px 10px', borderRadius: 6, background: `${proj.color}15`, color: proj.color, fontSize: 12, fontWeight: 600 }}>{proj.name}</span> : <span style={{ padding: '4px 10px', borderRadius: 6, background: '#8B95A115', color: '#8B95A1', fontSize: 12, fontWeight: 600 }}>기타 업무</span>}
+                        {selectedTask.bookmark && <Icon name="bookmarkFill" size={16} color="#F59E0B" />}
+                      </div>
+                      <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 8, textDecoration: selectedTask.completed ? 'line-through' : 'none' }}>{selectedTask.title}</h3>
+                      <p style={{ fontSize: 14, color: '#6B7684' }}>📅 {formatShortDate(selectedTask.date)}</p>
+                    </div>
+                    
+                    {/* 메모 영역 */}
+                    {selectedTask.note && (
+                      <div style={{ background: '#FFFBEB', borderRadius: 12, padding: 16, marginBottom: 16, border: '1px solid #FEF3C7' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                          <Icon name="fileText" size={16} color="#F59E0B" />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#92400E' }}>메모</span>
+                        </div>
+                        <p style={{ fontSize: 14, color: '#191F28', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{selectedTask.note}</p>
+                      </div>
+                    )}
+                    
+                    {/* 첨부파일 영역 */}
+                    {selectedTask.attachments && selectedTask.attachments.length > 0 && (
+                      <div style={{ background: '#F0F7FF', borderRadius: 12, padding: 16, marginBottom: 16, border: '1px solid #DBEAFE' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+                          <Icon name="paperclip" size={16} color="#3182F6" />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E40AF' }}>첨부파일 ({selectedTask.attachments.length})</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {selectedTask.attachments.map(file => (
+                            <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, background: 'white', border: '1px solid #E5E8EB' }}>
+                              <Icon name="fileText" size={18} color="#3182F6" />
+                              <span style={{ flex: 1, fontSize: 13, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                              <span style={{ fontSize: 11, color: '#8B95A1' }}>{(file.size / 1024).toFixed(1)}KB</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* 버튼 영역 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <button onClick={() => toggleTaskComplete(selectedTask.id)} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: selectedTask.completed ? '#F7F8FA' : '#3182F6', color: selectedTask.completed ? '#6B7684' : 'white', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                        <Icon name="check" size={18} color={selectedTask.completed ? '#6B7684' : 'white'} /> {selectedTask.completed ? '완료 취소' : '완료 처리'}
+                      </button>
+                      
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => { setEditingTask(selectedTask); setShowEditModal(true); setSelectedTask(null); }} style={{ flex: 1, padding: 14, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', color: '#191F28', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                          <Icon name="edit" size={18} color="#6B7684" /> 수정
+                        </button>
+                        <button onClick={() => { if(confirm('정말 삭제하시겠습니까?')) deleteTask(selectedTask.id); }} style={{ flex: 1, padding: 14, borderRadius: 12, border: 'none', background: '#FEE4E2', color: '#F04452', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                          <Icon name="trash" size={18} color="#F04452" /> 삭제
+                        </button>
+                      </div>
+                    </div>
+                  </>;
+                })()}
+              </div>
+            </div>
+          )}
+          
+          {/* 업무 수정 모달 */}
+          {showEditModal && (
+            <TaskModal 
+              task={editingTask} 
+              date={editingTask?.date || today} 
+              onSave={(task) => { updateTask(task); setShowEditModal(false); setEditingTask(null); }} 
+              onClose={() => { setShowEditModal(false); setEditingTask(null); }} 
+            />
+          )}
+        </div>
+      );
+    }
+
+    // 렌더링
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<TeamWorkApp />);
+  </script>
+</body>
+</html>
