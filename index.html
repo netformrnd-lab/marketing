@@ -80,7 +80,7 @@
   </script>
   
   <script type="text/babel">
-    const { useState, useMemo, useEffect } = React;
+    const { useState, useMemo, useEffect, useRef } = React;
 
     // ============ ESC 키 훅 ============
     const useEscapeKey = (onEscape) => {
@@ -653,6 +653,7 @@
     }
 
     // ============ 메인 앱 ============
+    // ============ 메인 앱 ============
     function TeamWorkApp() {
       // ===== 모든 State 선언 (조건문 전에) =====
       const [activeTab, setActiveTab] = useState('home');
@@ -661,9 +662,9 @@
       const [projects, setProjects] = useState([]);
       const [tasks, setTasks] = useState([]);
       const [fixedTasks, setFixedTasks] = useState([]);
-      const [teamRequests, setTeamRequests] = useState([]); // 타팀 요청 업무
+      const [teamRequests, setTeamRequests] = useState([]);
       const [isLoading, setIsLoading] = useState(true);
-      const [dataLoaded, setDataLoaded] = useState(false); // 데이터 로드 완료 플래그
+      const [dataLoaded, setDataLoaded] = useState(false);
       const [isSaving, setIsSaving] = useState(false);
       const [readComments, setReadComments] = useState(() => {
         const init = {};
@@ -678,31 +679,31 @@
       // 즐겨찾기 메뉴 관리 (개인별)
       const [favoriteMenus, setFavoriteMenus] = useState([]);
       
-      // ===== 모든 Effect (조건문 전에) =====
-      // Firebase Auth 상태 확인
+      // 초기 데이터 개수 저장 (첫 로드 시점) - 저장 보호용
+      const initialDataCount = useRef({ projects: 0, tasks: 0, fixedTasks: 0, teamRequests: 0 });
+      const isFirstSave = useRef({ projects: true, tasks: true, fixedTasks: true, teamRequests: true });
+      
+      // ===== Firebase Auth 상태 확인 =====
       useEffect(() => {
         const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
           if (firebaseUser) {
-            // Firebase에 로그인된 상태 - 이메일로 팀원 찾기
             const member = TEAM_MEMBERS.find(m => m.email === firebaseUser.email);
             if (member) {
               setCurrentUser(member);
               localStorage.setItem('teamwork_user', JSON.stringify(member));
             }
           } else {
-            // 로그아웃 상태
             setCurrentUser(null);
             localStorage.removeItem('teamwork_user');
           }
           setAuthChecked(true);
         });
-        
         return () => unsubscribe();
       }, []);
       
-      // Firebase에서 초기 데이터 로드
+      // ===== Firebase에서 초기 데이터 로드 (로그인 후에만) =====
       useEffect(() => {
-        if (!currentUser) return; // 로그인 안 되어 있으면 실행 안 함
+        if (!currentUser) return;
         
         // 개인별 즐겨찾기 로드
         const savedFavorites = localStorage.getItem(`favoriteMenus_${currentUser.id}`);
@@ -773,30 +774,80 @@
       
       // 프로젝트 변경 시 Firebase에 저장
       useEffect(() => {
-        if (currentUser && !isLoading && dataLoaded && projects.length > 0) {
-          FirebaseService.syncCollection('projects', projects);
+        if (!currentUser || !dataLoaded || isLoading) return;
+        
+        // 첫 저장 시 초기 개수 기록
+        if (isFirstSave.current.projects) {
+          initialDataCount.current.projects = projects.length;
+          isFirstSave.current.projects = false;
+          console.log('[Firebase] 프로젝트 초기 개수:', projects.length);
+          return; // 첫 번째는 저장하지 않음
         }
+        
+        // 데이터가 비어있으면 저장 안 함
+        if (projects.length === 0) {
+          console.warn('[Firebase] 프로젝트 저장 차단: 빈 배열');
+          return;
+        }
+        
+        console.log('[Firebase] 프로젝트 저장:', projects.length, '개');
+        FirebaseService.syncCollection('projects', projects);
       }, [projects, isLoading, dataLoaded, currentUser]);
       
       // 업무 변경 시 Firebase에 저장
       useEffect(() => {
-        if (currentUser && !isLoading && dataLoaded && tasks.length > 0) {
-          FirebaseService.syncCollection('tasks', tasks);
+        if (!currentUser || !dataLoaded || isLoading) return;
+        
+        if (isFirstSave.current.tasks) {
+          initialDataCount.current.tasks = tasks.length;
+          isFirstSave.current.tasks = false;
+          console.log('[Firebase] 업무 초기 개수:', tasks.length);
+          return;
         }
+        
+        if (tasks.length === 0) {
+          console.warn('[Firebase] 업무 저장 차단: 빈 배열');
+          return;
+        }
+        
+        console.log('[Firebase] 업무 저장:', tasks.length, '개');
+        FirebaseService.syncCollection('tasks', tasks);
       }, [tasks, isLoading, dataLoaded, currentUser]);
       
       // 루틴 업무 변경 시 Firebase에 저장
       useEffect(() => {
-        if (currentUser && !isLoading && dataLoaded && fixedTasks.length > 0) {
-          FirebaseService.syncCollection('fixedTasks', fixedTasks);
+        if (!currentUser || !dataLoaded || isLoading) return;
+        
+        if (isFirstSave.current.fixedTasks) {
+          initialDataCount.current.fixedTasks = fixedTasks.length;
+          isFirstSave.current.fixedTasks = false;
+          console.log('[Firebase] 루틴 초기 개수:', fixedTasks.length);
+          return;
         }
+        
+        if (fixedTasks.length === 0) {
+          console.warn('[Firebase] 루틴 저장 차단: 빈 배열');
+          return;
+        }
+        
+        console.log('[Firebase] 루틴 저장:', fixedTasks.length, '개');
+        FirebaseService.syncCollection('fixedTasks', fixedTasks);
       }, [fixedTasks, isLoading, dataLoaded, currentUser]);
       
       // 타팀 요청 업무 변경 시 Firebase에 저장
       useEffect(() => {
-        if (currentUser && !isLoading && dataLoaded && teamRequests.length > 0) {
-          FirebaseService.syncCollection('teamRequests', teamRequests);
+        if (!currentUser || !dataLoaded || isLoading) return;
+        
+        if (isFirstSave.current.teamRequests) {
+          initialDataCount.current.teamRequests = teamRequests.length;
+          isFirstSave.current.teamRequests = false;
+          console.log('[Firebase] 타팀요청 초기 개수:', teamRequests.length);
+          return;
         }
+        
+        // 타팀요청은 0개일 수 있으므로 다른 조건 (초기값보다 작아지면 주의)
+        console.log('[Firebase] 타팀요청 저장:', teamRequests.length, '개');
+        FirebaseService.syncCollection('teamRequests', teamRequests);
       }, [teamRequests, isLoading, dataLoaded, currentUser]);
 
       // 7일 지난 휴지통 항목 자동 영구삭제
@@ -838,24 +889,6 @@
         }
       }, [isLoading, currentUser]);
       
-      // useMemo 선언
-      const totalUnread = useMemo(() => projects.reduce((sum, p) => sum + Math.max(0, (p.comments || []).length - (readComments[p.id] || 0)), 0), [projects, readComments]);
-
-      // 휴지통 항목 개수
-      const trashCount = useMemo(() => {
-        const trashedTasks = tasks.filter(t => t.deletedAt);
-        const trashedProjects = projects.filter(p => p.deletedAt);
-        const trashedFixedTasks = fixedTasks.filter(t => t.deletedAt);
-        return trashedTasks.length + trashedProjects.length + trashedFixedTasks.length;
-      }, [tasks, projects, fixedTasks]);
-      
-      // ===== 함수 선언 =====
-      // 로그인 처리
-      const handleLogin = (user) => {
-        setCurrentUser(user);
-        localStorage.setItem('teamwork_user', JSON.stringify(user));
-      };
-      
       // 로그아웃 처리
       const handleLogout = async () => {
         try {
@@ -867,20 +900,24 @@
         }
       };
       
-      // ===== 조건부 렌더링 =====
-      // Auth 확인 중
-      if (!authChecked) {
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#F7F8FA', gap: 20 }}>
-            <div className="loading-spinner"></div>
-            <p style={{ color: '#8B95A1' }}>로그인 확인 중...</p>
-          </div>
-        );
-      }
+      // useMemo 선언
+      const totalUnread = useMemo(() => projects.reduce((sum, p) => sum + Math.max(0, (p.comments || []).length - (readComments[p.id] || 0)), 0), [projects, readComments]);
+
+      // 휴지통 항목 개수
+      const trashCount = useMemo(() => {
+        const trashedTasks = tasks.filter(t => t.deletedAt);
+        const trashedProjects = projects.filter(p => p.deletedAt);
+        const trashedFixedTasks = fixedTasks.filter(t => t.deletedAt);
+        return trashedTasks.length + trashedProjects.length + trashedFixedTasks.length;
+      }, [tasks, projects, fixedTasks]);
       
-      // 로그인 안 되어있으면 로그인 화면 표시
+      // ===== 조건부 렌더링 =====
+      // 로그인 안 되어있으면 로그인 화면 표시 (Auth 확인 중이어도 로그인 화면 보여줌)
       if (!currentUser) {
-        return <LoginScreen onLogin={handleLogin} />;
+        return <LoginScreen onLogin={(user) => {
+          setCurrentUser(user);
+          localStorage.setItem('teamwork_user', JSON.stringify(user));
+        }} />;
       }
       
       const MENU_GROUPS = [
