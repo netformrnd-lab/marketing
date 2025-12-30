@@ -7180,6 +7180,7 @@
       const [newBranchName, setNewBranchName] = useState('');
       const [editingNode, setEditingNode] = useState(null);
       const [boards, setBoards] = useState({});
+      const [nodeWidths, setNodeWidths] = useState({}); // 노드 실제 너비 저장
       
       // 줌 & 패닝 상태 (transform 기반 무한 캔버스)
       const [zoom, setZoom] = useState(1);
@@ -7230,28 +7231,10 @@
             let loadedNodes = data.nodes || [];
             let loadedConnections = data.connections || [];
             
-            // "그 외 업무" 노드가 없으면 추가
-            if (!loadedNodes.find(n => n.id === 'other-tasks')) {
-              const otherNode = {
-                id: 'other-tasks',
-                type: 'other',
-                text: '그 외 업무',
-                x: 450,
-                y: 200,
-                color: '#8B95A1'
-              };
-              loadedNodes.push(otherNode);
-              loadedConnections.push({
-                id: 'conn-other',
-                from: 'center',
-                to: 'other-tasks'
-              });
-            }
-            
             setNodes(loadedNodes);
             setConnections(loadedConnections);
           } else {
-            // 새 보드 초기화 - 중심 노드 + 그 외 업무 노드
+            // 새 보드 초기화 - 중심 노드만
             const centerNode = {
               id: 'center',
               type: 'center',
@@ -7260,20 +7243,8 @@
               y: 300,
               color: '#3182F6'
             };
-            const otherNode = {
-              id: 'other-tasks',
-              type: 'other',
-              text: '그 외 업무',
-              x: 450,
-              y: 200,
-              color: '#8B95A1'
-            };
-            setNodes([centerNode, otherNode]);
-            setConnections([{
-              id: 'conn-other',
-              from: 'center',
-              to: 'other-tasks'
-            }]);
+            setNodes([centerNode]);
+            setConnections([]);
           }
         };
         loadBoard();
@@ -7459,57 +7430,23 @@
           }
         });
         
-        // 3. 업무일지 업무 동기화 - 모두 "그 외 업무" 노드 아래로
-        const weekRange = getWeekRange(selectedYear, selectedWeek);
-        const diaryTasks = tasks.filter(t => 
-          t.memberId === currentUser.id &&
-          t.completed &&
-          !t.parentTaskId &&
-          t.date >= weekRange.start &&
-          t.date <= weekRange.end &&
-          // 프로젝트 하위업무가 아닌 것 (projectId가 브랜드 ID이거나 null)
-          (BRANDS.some(b => b.id === t.projectId) || !t.projectId)
-        );
+        // 항상 레이아웃 재정렬 (변경사항 없어도)
+        const layoutedNodes = autoLayoutTree(updatedNodes, updatedConnections);
+        setNodeWidths({}); // 노드 너비 초기화
+        setNodes(layoutedNodes);
+        setConnections(updatedConnections);
+        saveBoard(layoutedNodes, updatedConnections);
         
-        // 이미 추가된 업무일지 업무 ID
-        const existingDiaryTaskIds = updatedNodes.filter(n => n.taskId && n.isDiaryTask).map(n => n.taskId);
-        
-        // 모든 업무일지 업무를 "그 외 업무" 노드 아래에 추가
-        diaryTasks.forEach(task => {
-          if (!existingDiaryTaskIds.includes(task.id)) {
-            hasChanges = true;
-            const brand = BRANDS.find(b => b.id === task.projectId);
-            const taskNodeId = `diary-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-            updatedNodes.push({
-              id: taskNodeId,
-              type: 'task',
-              taskId: task.id,
-              text: task.title,
-              x: 0,
-              y: 0,
-              completed: task.completed,
-              color: brand ? brand.color : '#8B95A1',
-              isDiaryTask: true,
-              brandId: task.projectId || null
-            });
-            updatedConnections.push({
-              id: `conn-diary-${taskNodeId}`,
-              from: 'other-tasks',
-              to: taskNodeId
-            });
-          }
-        });
+        // 노드 측정 후 연결선 다시 그리도록 강제 리렌더링
+        setTimeout(() => {
+          setNodes([...layoutedNodes]);
+        }, 50);
         
         if (hasChanges) {
-          // 자동 정렬 적용
-          const layoutedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-          setNodes(layoutedNodes);
-          setConnections(updatedConnections);
-          saveBoard(layoutedNodes, updatedConnections);
           const deleteMsg = deletedCount > 0 ? `\n삭제된 항목: ${deletedCount}개` : '';
           alert(`✅ 동기화 완료!\n프로젝트/업무 변경사항이 반영되었습니다.${deleteMsg}`);
         } else {
-          alert('ℹ️ 변경사항이 없습니다.');
+          alert('✅ 레이아웃 정렬 완료!');
         }
       };
       
@@ -7518,15 +7455,16 @@
         centerX: 200,
         centerY: 300,
         level1X: 330,   // 브랜드 노드
-        level2X: 490,   // 프로젝트 노드
+        level2X: 480,   // 프로젝트 노드 (브랜드+간격)
         level3X: 660,   // 하위업무 노드
-        level4X: 820,   // 서브태스크 노드
-        nodeGapY: 80,   // 레벨1 노드 간격 (고정)
-        taskGapY: 50,
-        subtaskGapY: 38
+        level4X: 840,   // 서브태스크 노드
+        nodeGapY: 25,   // 브랜드 노드 간 여백
+        taskGapY: 38,   // 프로젝트 노드 간 간격
+        subtaskGapY: 18, // 하위업무 노드 간 간격
+        nodeHeight: 36   // 노드 높이
       };
       
-      // 트리 자동 정렬 함수 - 레벨1 노드는 고정 간격, 하위는 부모 중심 배치
+      // 트리 자동 정렬 함수 - 서브트리 높이 계산 후 겹치지 않게 배치
       const autoLayoutTree = (nodeList, connList) => {
         const centerNode = nodeList.find(n => n.id === 'center');
         if (!centerNode) return nodeList;
@@ -7546,14 +7484,38 @@
           return connList.filter(c => c.from === parentId).map(c => nodeList.find(n => n.id === c.to)).filter(Boolean);
         };
         
+        // 서브트리 높이 계산 (재귀) - 해당 노드와 모든 자손이 차지하는 총 높이
+        const getSubtreeHeight = (node, level) => {
+          const children = getChildren(node.id);
+          if (children.length === 0) {
+            return LAYOUT.nodeHeight;
+          }
+          
+          // level 1 = 브랜드의 자식(프로젝트)들 간격 → taskGapY
+          // level 2+ = 프로젝트의 자식(하위업무)들 간격 → subtaskGapY
+          const gap = level === 1 ? LAYOUT.taskGapY : LAYOUT.subtaskGapY;
+          let totalHeight = 0;
+          children.forEach((child, idx) => {
+            totalHeight += getSubtreeHeight(child, level + 1);
+            if (idx < children.length - 1) totalHeight += gap;
+          });
+          
+          return Math.max(LAYOUT.nodeHeight, totalHeight);
+        };
+        
         // 레벨1 자식들 (중심에서 직접 연결된 노드들)
         const level1Children = getChildren('center');
         
-        // 레벨1 노드들을 고정 간격으로 배치
-        const level1StartY = 100;
+        // 각 레벨1 노드의 서브트리 높이 계산
+        const subtreeHeights = level1Children.map(child => getSubtreeHeight(child, 1));
+        
+        // 레벨1 노드들을 서브트리 높이 고려해서 배치
+        let currentY = 80;
         level1Children.forEach((child, idx) => {
+          const height = subtreeHeights[idx];
           child.x = levelX[1];
-          child.y = level1StartY + (idx * LAYOUT.nodeGapY);
+          child.y = currentY + height / 2;
+          currentY += height + LAYOUT.nodeGapY;
         });
         
         // 중심 노드는 레벨1 자식들의 중앙에 배치
@@ -7565,18 +7527,23 @@
           centerNode.y = LAYOUT.centerY;
         }
         
-        // 레벨2 이상 노드 배치 (각 부모 노드를 중심으로)
+        // 레벨2 이상 노드 배치 (각 부모 노드를 중심으로, 서브트리 높이 고려)
         const positionChildren = (parentNode, level) => {
           const children = getChildren(parentNode.id);
           if (children.length === 0) return;
           
           const gap = level === 2 ? LAYOUT.taskGapY : LAYOUT.subtaskGapY;
-          const totalHeight = (children.length - 1) * gap;
-          const startY = parentNode.y - totalHeight / 2;
           
+          // 각 자식의 서브트리 높이 계산
+          const childHeights = children.map(child => getSubtreeHeight(child, level));
+          const totalHeight = childHeights.reduce((sum, h) => sum + h, 0) + (children.length - 1) * gap;
+          
+          let currentY = parentNode.y - totalHeight / 2;
           children.forEach((child, idx) => {
+            const height = childHeights[idx];
             child.x = levelX[level] || (levelX[4] + (level - 4) * 160);
-            child.y = startY + (idx * gap);
+            child.y = currentY + height / 2;
+            currentY += height + gap;
             
             // 재귀적으로 자식의 자식들도 배치
             positionChildren(child, level + 1);
@@ -7595,6 +7562,160 @@
       const handleDropProject = (project) => {
         const centerNode = nodes.find(n => n.id === 'center');
         if (!centerNode) return;
+        
+        // 개별 업무일지 업무 드래그 처리
+        if (project.isDiaryTask) {
+          let updatedNodes = [...nodes];
+          let updatedConnections = [...connections];
+          
+          const task = project.task;
+          const brand = BRANDS.find(b => b.id === task.projectId);
+          
+          // 해당 브랜드의 노드가 이미 있는지 확인 (그 외 업무 또는 실제 브랜드)
+          let parentNodeId;
+          
+          if (brand) {
+            // 실제 브랜드가 있으면 그 브랜드 노드 아래에 추가
+            const brandNodeId = `brand-${brand.id}`;
+            let existingBrandNode = nodes.find(n => n.id === brandNodeId);
+            
+            if (!existingBrandNode) {
+              const brandNode = {
+                id: brandNodeId,
+                type: 'brand',
+                text: brand.name,
+                x: 0,
+                y: 0,
+                color: brand.color,
+                brandId: brand.id
+              };
+              
+              updatedNodes.push(brandNode);
+              updatedConnections.push({
+                id: `conn-brand-${brandNodeId}`,
+                from: 'center',
+                to: brandNodeId
+              });
+            }
+            parentNodeId = brandNodeId;
+          } else {
+            // 브랜드가 없으면 "그 외 업무" 노드 아래에 추가
+            const otherNodeId = 'brand-other';
+            let existingOtherNode = nodes.find(n => n.id === otherNodeId);
+            
+            if (!existingOtherNode) {
+              const otherNode = {
+                id: otherNodeId,
+                type: 'brand',
+                text: '그 외 업무',
+                x: 0,
+                y: 0,
+                color: '#8B95A1',
+                brandId: 'other'
+              };
+              
+              updatedNodes.push(otherNode);
+              updatedConnections.push({
+                id: `conn-brand-${otherNodeId}`,
+                from: 'center',
+                to: otherNodeId
+              });
+            }
+            parentNodeId = otherNodeId;
+          }
+          
+          // 업무 노드 추가
+          const taskNodeId = `diary-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+          
+          updatedNodes.push({
+            id: taskNodeId,
+            type: 'task',
+            taskId: task.id,
+            text: task.title,
+            x: 0,
+            y: 0,
+            completed: task.completed,
+            color: brand ? brand.color : '#8B95A1',
+            isDiaryTask: true,
+            brandId: task.projectId || null
+          });
+          
+          updatedConnections.push({
+            id: `conn-diary-${taskNodeId}`,
+            from: parentNodeId,
+            to: taskNodeId
+          });
+          
+          // 자동 레이아웃 적용
+          updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
+          
+          setNodes(updatedNodes);
+          setConnections(updatedConnections);
+          saveBoard(updatedNodes, updatedConnections);
+          return;
+        }
+        
+        // "그 외 업무" 브랜드 드래그 처리
+        if (project.isOtherBrand) {
+          let updatedNodes = [...nodes];
+          let updatedConnections = [...connections];
+          
+          // "그 외 업무" 브랜드 노드 생성
+          const brandNodeId = 'brand-other';
+          const existingBrandNode = nodes.find(n => n.id === brandNodeId);
+          
+          if (!existingBrandNode) {
+            const brandNode = {
+              id: brandNodeId,
+              type: 'brand',
+              text: '그 외 업무',
+              x: 0,
+              y: 0,
+              color: '#8B95A1',
+              brandId: 'other'
+            };
+            
+            updatedNodes.push(brandNode);
+            updatedConnections.push({
+              id: `conn-brand-${brandNodeId}`,
+              from: 'center',
+              to: brandNodeId
+            });
+          }
+          
+          // 업무일지 업무들을 자식 노드로 추가
+          project.diaryTasks?.forEach((task) => {
+            const taskNodeId = `diary-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+            const brand = BRANDS.find(b => b.id === task.projectId);
+            
+            updatedNodes.push({
+              id: taskNodeId,
+              type: 'task',
+              taskId: task.id,
+              text: task.title,
+              x: 0,
+              y: 0,
+              completed: task.completed,
+              color: brand ? brand.color : '#8B95A1',
+              isDiaryTask: true,
+              brandId: task.projectId || null
+            });
+            
+            updatedConnections.push({
+              id: `conn-diary-${taskNodeId}`,
+              from: brandNodeId,
+              to: taskNodeId
+            });
+          });
+          
+          // 자동 레이아웃 적용
+          updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
+          
+          setNodes(updatedNodes);
+          setConnections(updatedConnections);
+          saveBoard(updatedNodes, updatedConnections);
+          return;
+        }
         
         const projectBrand = getProjectBrand(project);
         if (!projectBrand) return;
@@ -7818,12 +7939,12 @@
             moveIds.includes(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n
           );
           
-          // 노드 너비 계산
+          // 노드 너비 계산 (연결선용 - 실제 노드 너비와 일치)
           const getNodeWidth = (n) => {
             if (n.type === 'center') return 120;
-            if (n.type === 'brand') return 130;
-            if (n.type === 'branch') return 140;
-            return n.isSubtask ? 110 : 130;
+            if (n.type === 'brand' || n.type === 'other') return 120;
+            if (n.type === 'branch') return 150;
+            return n.isSubtask ? 130 : 160;
           };
           
           // 노드 중심점 계산 (왼쪽 정렬 노드는 x + width/2)
@@ -8256,17 +8377,40 @@
                 
                 if (diaryTasks.length === 0) return null;
                 
+                // 그 외 업무 브랜드 노드가 이미 추가되었는지 확인
+                const isOtherAdded = nodes.some(n => n.id === 'other-tasks' || (n.type === 'brand' && n.text === '그 외 업무'));
+                
                 return (
                   <div style={{ marginBottom: 20 }}>
-                    {/* 그 외 업무 헤더 */}
-                    <div style={{ 
-                      display: 'flex', alignItems: 'center', gap: 8, 
-                      padding: '8px 12px', marginBottom: 8,
-                      background: '#F3F4F6', borderRadius: 8,
-                      borderLeft: '3px solid #8B95A1'
-                    }}>
+                    {/* 그 외 업무 헤더 - 드래그 가능 */}
+                    <div 
+                      draggable={!isOtherAdded}
+                      onDragStart={(e) => {
+                        if (isOtherAdded) return;
+                        // 가상의 프로젝트 객체로 처리
+                        setDraggedProject({
+                          id: 'other-brand',
+                          title: '그 외 업무',
+                          brandId: 'other',
+                          isOtherBrand: true,
+                          diaryTasks: diaryTasks
+                        });
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      onDragEnd={() => setDraggedProject(null)}
+                      style={{ 
+                        display: 'flex', alignItems: 'center', gap: 8, 
+                        padding: '8px 12px', marginBottom: 8,
+                        background: isOtherAdded ? '#E5E7EB' : '#F3F4F6', 
+                        borderRadius: 8,
+                        borderLeft: '3px solid #8B95A1',
+                        cursor: isOtherAdded ? 'default' : 'grab',
+                        opacity: isOtherAdded ? 0.5 : 1
+                      }}
+                    >
                       <span style={{ fontSize: 13, fontWeight: 700, color: '#6B7684' }}>그 외 업무</span>
                       <span style={{ fontSize: 11, color: '#8B95A1' }}>({diaryTasks.length})</span>
+                      {isOtherAdded && <span style={{ fontSize: 10, color: '#00C471', fontWeight: 600, marginLeft: 'auto' }}>✓ 추가됨</span>}
                     </div>
                     
                     {/* 업무일지 업무 카드들 */}
@@ -8277,12 +8421,26 @@
                         return (
                           <div
                             key={`diary-${task.id}`}
+                            draggable={!isAdded}
+                            onDragStart={(e) => {
+                              if (isAdded) return;
+                              setDraggedProject({
+                                id: `diary-task-${task.id}`,
+                                title: task.title,
+                                brandId: task.projectId || 'other',
+                                isDiaryTask: true,
+                                task: task
+                              });
+                              e.dataTransfer.effectAllowed = 'copy';
+                            }}
+                            onDragEnd={() => setDraggedProject(null)}
                             style={{
                               padding: '10px 12px', borderRadius: 8,
                               background: isAdded ? '#F9FAFB' : '#F3F4F6',
                               border: '1px solid #E5E7EB',
                               opacity: isAdded ? 0.6 : 1,
-                              borderLeft: `3px solid ${brand ? brand.color : '#8B95A1'}`
+                              borderLeft: `3px solid ${brand ? brand.color : '#8B95A1'}`,
+                              cursor: isAdded ? 'default' : 'grab'
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -8482,45 +8640,51 @@
               >
               
               {/* SVG 연결선 - EdrawMind 스타일 직각 */}
-              <svg style={{ position: 'absolute', left: 0, top: 0, width: 3000, height: 2000, pointerEvents: 'none', overflow: 'visible' }}>
+              <svg style={{ position: 'absolute', left: 0, top: 0, width: 3000, height: 2000, pointerEvents: 'none', overflow: 'visible', zIndex: 0 }}>
                 {connections.map(conn => {
                   const fromNode = nodes.find(n => n.id === conn.from);
                   const toNode = nodes.find(n => n.id === conn.to);
                   if (!fromNode || !toNode) return null;
                   
-                  // 노드 너비
-                  const getWidth = (n) => {
-                    if (n.type === 'center') return 120;
-                    if (n.type === 'brand') return 130;
-                    if (n.type === 'branch') return 140;
-                    return n.isSubtask ? 110 : 130;
+                  // 실제 측정된 너비 사용 (없으면 기본값)
+                  const getNodeWidth = (n) => {
+                    if (nodeWidths[n.id]) {
+                      return nodeWidths[n.id] / zoom; // zoom 보정
+                    }
+                    // 기본값 (측정 전)
+                    return 100;
                   };
                   
-                  // from 노드 오른쪽 끝 (center는 중앙 정렬, 나머지는 왼쪽 정렬)
-                  const fromX = fromNode.type === 'center' 
-                    ? fromNode.x + getWidth(fromNode) / 2
-                    : fromNode.x + getWidth(fromNode);
-                  const fromY = fromNode.y;
+                  const fromWidth = getNodeWidth(fromNode);
+                  
+                  // from 노드 오른쪽 끝
+                  let fromX;
+                  if (fromNode.type === 'center') {
+                    fromX = fromNode.x + fromWidth / 2; // center는 중앙정렬
+                  } else {
+                    fromX = fromNode.x + fromWidth; // 나머지는 왼쪽정렬
+                  }
                   
                   // to 노드 왼쪽 끝
                   const toX = toNode.x;
+                  
+                  const fromY = fromNode.y;
                   const toY = toNode.y;
                   
-                  // 직각 연결선: 오른쪽 → 수직 → 오른쪽
-                  const midX = fromX + 25;
+                  // 직각 연결선
+                  const midX = fromX + 15;
                   const pathD = `M ${fromX} ${fromY} H ${midX} V ${toY} H ${toX}`;
                   
-                  // 색상
-                  const lineColor = toNode.color || '#94A3B8';
+                  // 색상 - 모두 연한 회색
+                  const lineColor = '#D1D6DB';
                   
                   return (
                     <path
                       key={conn.id}
                       d={pathD}
                       stroke={lineColor}
-                      strokeWidth={2}
+                      strokeWidth={1.5}
                       fill="none"
-                      opacity={0.6}
                     />
                   );
                 })}
@@ -8535,7 +8699,7 @@
                   isEditing={editingNode === node.id}
                   isDragOver={(dragOverNodeId === node.id && draggedProject) || (dropTargetNodeId === node.id)}
                   onClick={() => setSelectedNode(node.id === selectedNode ? null : node.id)}
-                  onDoubleClick={() => node.type !== 'center' && setEditingNode(node.id)}
+                  onDoubleClick={() => setEditingNode(node.id)}
                   onDrag={handleNodeDrag}
                   onDragEnd={() => handleNodeDragEnd(node.id)}
                   onDelete={() => deleteNode(node.id)}
@@ -8552,6 +8716,14 @@
                     }
                   }}
                   draggingNodeId={draggingNodeId}
+                  onMeasure={(id, width) => {
+                    setNodeWidths(prev => {
+                      if (prev[id] !== width) {
+                        return { ...prev, [id]: width };
+                      }
+                      return prev;
+                    });
+                  }}
                 />
               ))}
               
@@ -8600,12 +8772,21 @@
     }
     
     // 마인드맵 노드 컴포넌트
-    function MindMapNode({ node, isSelected, isEditing, isDragOver, onClick, onDoubleClick, onDrag, onDragEnd, onDelete, onUpdateText, onUpdateKpi, onCancelEdit, onDragOver, onDragLeave, onDrop, draggingNodeId }) {
+    function MindMapNode({ node, isSelected, isEditing, isDragOver, onClick, onDoubleClick, onDrag, onDragEnd, onDelete, onUpdateText, onUpdateKpi, onCancelEdit, onDragOver, onDragLeave, onDrop, draggingNodeId, onMeasure }) {
       const [isDragging, setIsDragging] = useState(false);
       const [editText, setEditText] = useState(node.text);
       const [editKpiLabel, setEditKpiLabel] = useState(node.kpiLabel || '');
       const [editKpiValue, setEditKpiValue] = useState(node.kpiValue || '');
       const dragStart = React.useRef({ x: 0, y: 0 });
+      const nodeRef = React.useRef(null);
+      
+      // 노드 렌더링 후 실제 너비 측정
+      React.useEffect(() => {
+        if (nodeRef.current && onMeasure) {
+          const rect = nodeRef.current.getBoundingClientRect();
+          onMeasure(node.id, rect.width);
+        }
+      }, [node.text, node.id, isEditing]);
       
       const handleMouseDown = (e) => {
         if (isEditing || node.type === 'center') return; // other 노드도 드래그 가능
@@ -8647,7 +8828,8 @@
           transform: 'translateY(-50%)', // 왼쪽 정렬, Y만 중앙
           cursor: isDragging ? 'grabbing' : (node.type === 'center' ? 'default' : 'grab'),
           transition: isDragging ? 'none' : 'box-shadow 0.2s',
-          zIndex: isDragging ? 100 : 1,
+          zIndex: isDragging ? 100 : 10, // 연결선 위에 표시
+          boxSizing: 'border-box', // padding 포함한 너비 계산
         };
         
         if (node.type === 'center') {
@@ -8656,9 +8838,9 @@
             transform: 'translate(-50%, -50%)', // 센터만 중앙 정렬
             background: `linear-gradient(135deg, ${node.color}, ${node.color}dd)`,
             color: 'white',
-            padding: '14px 24px',
+            padding: '12px 20px',
             borderRadius: 8,
-            fontSize: 14,
+            fontSize: 15,
             fontWeight: 700,
             textAlign: 'center',
             boxShadow: isSelected ? `0 0 0 3px ${node.color}50, 0 6px 20px rgba(0,0,0,0.15)` : '0 4px 12px rgba(0,0,0,0.1)',
@@ -8667,84 +8849,72 @@
         }
         
         if (node.type === 'branch') {
-          const brandColor = node.color || '#6B7684';
           return {
             ...base,
             background: isDragOver ? '#EBF4FF' : 'white',
-            border: isDragOver ? '2px dashed #3182F6' : `1.5px solid ${isSelected ? brandColor : '#E5E8EB'}`,
-            borderLeft: `4px solid ${brandColor}`,
-            padding: '10px 14px',
+            border: isDragOver ? '2px dashed #3182F6' : `1px solid ${isSelected ? '#191F28' : '#E5E8EB'}`,
+            padding: '6px 12px',
             borderRadius: 4,
-            fontSize: 13,
-            fontWeight: 600,
-            boxShadow: isSelected ? '0 4px 12px rgba(0,0,0,0.1)' : '0 1px 3px rgba(0,0,0,0.05)',
-            width: 140,
+            fontSize: 14,
+            fontWeight: 500,
+            color: '#191F28',
+            boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
             whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
           };
         }
         
-        // brand - 브랜드 노드 스타일
+        // brand - 브랜드 노드 스타일 (색상 유지)
         if (node.type === 'brand') {
           const brandColor = node.color || '#6B7684';
           return {
             ...base,
             background: `linear-gradient(135deg, ${brandColor}15, ${brandColor}08)`,
             border: `2px solid ${brandColor}`,
-            padding: '10px 16px',
+            padding: '8px 14px',
             borderRadius: 6,
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: 700,
             color: brandColor,
             boxShadow: isSelected ? `0 0 0 3px ${brandColor}30, 0 4px 12px rgba(0,0,0,0.1)` : '0 2px 6px rgba(0,0,0,0.08)',
-            width: 130,
             whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
           };
         }
         
-        // other - 그 외 업무 노드 스타일 (center와 비슷하게)
+        // other - 그 외 업무 노드 스타일 (brand와 동일하게)
         if (node.type === 'other') {
+          const brandColor = node.color || '#6B7684';
           return {
             ...base,
-            transform: 'translate(-50%, -50%)', // 중앙 정렬
-            background: `linear-gradient(135deg, ${node.color}, ${node.color}dd)`,
-            color: 'white',
-            padding: '12px 20px',
-            borderRadius: 8,
-            fontSize: 13,
+            background: `linear-gradient(135deg, ${brandColor}15, ${brandColor}08)`,
+            border: `2px solid ${brandColor}`,
+            padding: '8px 14px',
+            borderRadius: 6,
+            fontSize: 14,
             fontWeight: 700,
-            textAlign: 'center',
-            boxShadow: isSelected ? `0 0 0 3px ${node.color}50, 0 6px 20px rgba(0,0,0,0.15)` : '0 4px 12px rgba(0,0,0,0.1)',
+            color: brandColor,
+            boxShadow: isSelected ? `0 0 0 3px ${brandColor}30, 0 4px 12px rgba(0,0,0,0.1)` : '0 2px 6px rgba(0,0,0,0.08)',
             whiteSpace: 'nowrap',
-            cursor: 'default',
           };
         }
         
-        // task - 각진 스타일
-        const isSubtask = node.isSubtask;
+        // task - 통일된 스타일 (색상 없음)
         return {
           ...base,
-          background: isSubtask ? '#F8FAFC' : '#F0FDF4',
-          border: `1px solid ${isSubtask ? '#E2E8F0' : '#BBF7D0'}`,
-          borderLeft: `3px solid ${isSubtask ? '#94A3B8' : '#22C55E'}`,
-          padding: '7px 12px',
-          borderRadius: 3,
-          fontSize: isSubtask ? 11 : 12,
+          background: 'white',
+          border: `1px solid ${isSelected ? '#191F28' : '#E5E8EB'}`,
+          padding: '6px 12px',
+          borderRadius: 4,
+          fontSize: 14,
           fontWeight: 500,
-          color: isSubtask ? '#475569' : '#166534',
-          width: isSubtask ? 110 : 130,
+          color: '#191F28',
           whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
           boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
         };
       };
       
       return (
         <div
+          ref={nodeRef}
           style={getNodeStyle()}
           onMouseDown={handleMouseDown}
           onClick={onClick}
