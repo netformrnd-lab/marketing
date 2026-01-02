@@ -166,14 +166,19 @@
     
     // 요청팀 옵션
     const REQUEST_TEAMS = [
-      { id: 'marketing', name: '마케팅팀', color: '#3182F6' },
-      { id: 'sales', name: '영업팀', color: '#00C471' },
-      { id: 'dev', name: '개발팀', color: '#9333EA' },
-      { id: 'hr', name: '인사팀', color: '#F59E0B' },
-      { id: 'finance', name: '재무팀', color: '#F04452' },
-      { id: 'operation', name: '운영팀', color: '#06B6D4' },
-      { id: 'design', name: '디자인팀', color: '#EC4899' },
-      { id: 'other', name: '기타', color: '#6B7684' },
+      { id: 'management', name: '경영관리팀', color: '#6B7684' },
+      { id: 'growth', name: '그로스팀', color: '#3182F6' },
+      { id: 'service1', name: '서비스운영1팀', color: '#00C471' },
+      { id: 'service2', name: '서비스운영2팀', color: '#10B981' },
+      { id: 'service3', name: '서비스운영3팀', color: '#059669' },
+      { id: 'sales', name: '영업팀', color: '#F59E0B' },
+      { id: 'grohome', name: '그로홈팀', color: '#EC4899' },
+      { id: 'overseas', name: '해외사업팀', color: '#9333EA' },
+      { id: 'moyeoradeal', name: '모여라딜팀', color: '#F04452' },
+      { id: 'aptsquare', name: '아파트스퀘어팀', color: '#06B6D4' },
+      { id: 'yongin', name: '용인사업장', color: '#8B5CF6' },
+      { id: 'research', name: '기술연구소팀', color: '#0EA5E9' },
+      { id: 'other', name: '기타', color: '#94A3B8' },
     ];
     
     // 요청 상태 옵션
@@ -667,11 +672,23 @@
       const [dataLoaded, setDataLoaded] = useState(false);
       const [isSaving, setIsSaving] = useState(false);
       const [readComments, setReadComments] = useState(() => {
+        // localStorage에서 읽음 상태 불러오기
+        try {
+          const saved = localStorage.getItem('teamwork_readComments');
+          if (saved) return JSON.parse(saved);
+        } catch (e) {}
         const init = {};
         INITIAL_PROJECTS.forEach(p => { init[p.id] = (p.comments || []).filter(c => c.memberId === 1).length; });
         return init;
       });
       const [movedTasksCount, setMovedTasksCount] = useState(0);
+      
+      // readComments 변경 시 localStorage에 저장
+      useEffect(() => {
+        if (Object.keys(readComments).length > 0) {
+          localStorage.setItem('teamwork_readComments', JSON.stringify(readComments));
+        }
+      }, [readComments]);
       
       // 펼침 상태 관리 (처음엔 모두 접힘)
       const [expandedGroups, setExpandedGroups] = useState([]);
@@ -2230,8 +2247,8 @@
                       key={req.id}
                       onClick={() => setSelectedRequest(req)}
                       style={{
-                        display: 'grid', gridTemplateColumns: '80px 120px 1fr 120px 80px 100px 60px',
-                        padding: '14px 20px', alignItems: 'center',
+                        display: 'grid', gridTemplateColumns: '80px 120px minmax(200px, 1fr) 120px 80px 100px 60px',
+                        padding: '14px 20px', alignItems: 'center', gap: 8,
                         borderBottom: idx < currentRequests.length - 1 ? '1px solid #F2F3F5' : 'none',
                         cursor: 'pointer', background: !req.assigneeId ? '#FFFBEB' : 'white', transition: 'background 0.2s'
                       }}
@@ -2244,9 +2261,9 @@
                       <span style={{ padding: '4px 10px', borderRadius: 6, background: team?.color + '20', color: team?.color, fontSize: 12, fontWeight: 600 }}>
                         {team?.name}
                       </span>
-                      <div>
-                        <p style={{ fontSize: 14, fontWeight: 500, color: '#191F28', marginBottom: 2 }}>{req.title}</p>
-                        {req.description && <p style={{ fontSize: 12, color: '#8B95A1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.description}</p>}
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 14, fontWeight: 500, color: '#191F28', marginBottom: 2, wordBreak: 'break-word' }}>{req.title}</p>
+                        {req.description && <p style={{ fontSize: 12, color: '#8B95A1', wordBreak: 'break-word', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{req.description}</p>}
                       </div>
                       {/* 담당자 컬럼 */}
                       <div style={{ display: 'flex', justifyContent: 'center' }}>
