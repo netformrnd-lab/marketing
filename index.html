@@ -683,6 +683,36 @@
       });
       const [movedTasksCount, setMovedTasksCount] = useState(0);
       
+      // 프로젝트 템플릿 상태 (업무 자동 생성용)
+      const DEFAULT_TEMPLATES = [
+        {
+          id: 'new_tech',
+          name: '신기술',
+          color: '#3182F6',
+          brandId: null, // null = 모든 브랜드에서 사용 가능
+          tasks: [
+            { title: '홈페이지 자료 업로드', order: 0 },
+            { title: '팝업창 업로드', order: 1 },
+            { title: '블로그 포스팅', order: 2 },
+            { title: '카페 포스팅', order: 3 },
+          ]
+        },
+        {
+          id: 'new_method',
+          name: '신공법',
+          color: '#00C471',
+          brandId: null,
+          tasks: [
+            { title: '홈페이지 자료 업로드', order: 0 },
+            { title: '팝업창 업로드', order: 1 },
+            { title: '블로그 포스팅', order: 2 },
+            { title: '카페 포스팅', order: 3 },
+          ]
+        },
+      ];
+      const [projectTemplates, setProjectTemplates] = useState(DEFAULT_TEMPLATES);
+      const [templateLastModified, setTemplateLastModified] = useState({ by: null, at: null });
+      
       // readComments 변경 시 localStorage에 저장
       useEffect(() => {
         if (Object.keys(readComments).length > 0) {
@@ -767,6 +797,18 @@
             const loadedTeamRequests = await FirebaseService.getAll('teamRequests');
             if (loadedTeamRequests && loadedTeamRequests.length > 0) {
               setTeamRequests(loadedTeamRequests.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            }
+            
+            // 프로젝트 템플릿 로드
+            const loadedTemplates = await FirebaseService.getDoc('settings', 'projectTemplates');
+            if (loadedTemplates && loadedTemplates.templates) {
+              setProjectTemplates(loadedTemplates.templates);
+              if (loadedTemplates.lastModifiedBy) {
+                setTemplateLastModified({
+                  by: loadedTemplates.lastModifiedBy,
+                  at: loadedTemplates.lastModifiedAt
+                });
+              }
             }
             
             // 기타 설정 로드 (오늘의 한마디, 고정 메모 등)
@@ -866,6 +908,19 @@
         console.log('[Firebase] 타팀요청 저장:', teamRequests.length, '개');
         FirebaseService.syncCollection('teamRequests', teamRequests);
       }, [teamRequests, isLoading, dataLoaded, currentUser]);
+      
+      // 템플릿 저장 함수
+      const saveTemplates = async (newTemplates, modifiedBy) => {
+        setProjectTemplates(newTemplates);
+        const now = new Date().toISOString();
+        setTemplateLastModified({ by: modifiedBy, at: now });
+        
+        await FirebaseService.setDoc('settings', 'projectTemplates', {
+          templates: newTemplates,
+          lastModifiedBy: modifiedBy,
+          lastModifiedAt: now
+        });
+      };
 
       // 7일 지난 휴지통 항목 자동 영구삭제
       useEffect(() => {
@@ -979,6 +1034,7 @@
           label: '관리',
           icon: 'settings',
           children: [
+            { id: 'templates', label: '템플릿 관리', icon: 'file' },
             { id: 'payment', label: '결제 주기 체크', icon: 'calendar', isNew: true },
             { id: 'vendor', label: '업체 관리', icon: 'users', isNew: true },
           ]
@@ -1246,7 +1302,7 @@
               <WorkLogTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} fixedTasks={fixedTasks.filter(t => !t.deletedAt && t.memberId === currentUser.id)} setFixedTasks={setFixedTasks} projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} teamRequests={teamRequests.filter(r => !r.deletedAt)} setTeamRequests={setTeamRequests} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'project' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <ProjectTab projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} />
+              <ProjectTab projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} projectTemplates={projectTemplates} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'teamrequest' ? 'flex' : 'none', flexDirection: 'column' }}>
               <TeamRequestTab teamRequests={teamRequests} setTeamRequests={setTeamRequests} currentUser={currentUser} />
@@ -1272,6 +1328,14 @@
             <div style={{ flex: 1, display: activeTab === 'drive' ? 'flex' : 'none', flexDirection: 'column' }}>
               <PlaceholderTab title="드라이브" icon="📁" description="팀 파일을 저장하고 공유합니다" />
             </div>
+            <div style={{ flex: 1, display: activeTab === 'templates' ? 'flex' : 'none', flexDirection: 'column' }}>
+              <TemplateManageTab 
+                templates={projectTemplates}
+                onSave={(newTemplates) => saveTemplates(newTemplates, currentUser.id)}
+                lastModified={templateLastModified}
+                currentUser={currentUser}
+              />
+            </div>
             <div style={{ flex: 1, display: activeTab === 'payment' ? 'flex' : 'none', flexDirection: 'column' }}>
               <PlaceholderTab title="결제 주기 체크" icon="💳" description="정기 결제 일정을 관리합니다" />
             </div>
@@ -1287,6 +1351,306 @@
               />
             </div>
           </main>
+        </div>
+      );
+    }
+
+    // ============ 템플릿 관리 탭 ============
+    function TemplateManageTab({ templates, onSave, lastModified, currentUser }) {
+      const [editingTemplate, setEditingTemplate] = useState(null);
+      const [showAddModal, setShowAddModal] = useState(false);
+      const [confirmDelete, setConfirmDelete] = useState(null);
+      
+      // 새 템플릿 추가
+      const handleAddTemplate = (template) => {
+        const newTemplate = {
+          id: `template_${Date.now()}`,
+          name: template.name,
+          color: template.color || '#3182F6',
+          tasks: template.tasks || []
+        };
+        onSave([...templates, newTemplate]);
+        setShowAddModal(false);
+      };
+      
+      // 템플릿 수정
+      const handleUpdateTemplate = (updatedTemplate) => {
+        onSave(templates.map(t => t.id === updatedTemplate.id ? updatedTemplate : t));
+        setEditingTemplate(null);
+      };
+      
+      // 템플릿 삭제
+      const handleDeleteTemplate = (templateId) => {
+        onSave(templates.filter(t => t.id !== templateId));
+        setConfirmDelete(null);
+      };
+      
+      const lastModifiedUser = lastModified.by ? TEAM_MEMBERS.find(m => m.id === lastModified.by) : null;
+      
+      return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA' }}>
+          {/* 헤더 */}
+          <header style={{ background: 'white', padding: '20px 32px', borderBottom: '1px solid #E5E8EB' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <h1 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>📋 업무 템플릿 관리</h1>
+                {lastModifiedUser && (
+                  <p style={{ fontSize: 13, color: '#8B95A1' }}>
+                    마지막 수정: {lastModifiedUser.name} ({new Date(lastModified.at).toLocaleDateString('ko-KR')} {new Date(lastModified.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })})
+                  </p>
+                )}
+              </div>
+              <button 
+                onClick={() => setShowAddModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="plus" size={18} color="white" /> 새 템플릿
+              </button>
+            </div>
+          </header>
+          
+          {/* 템플릿 목록 */}
+          <div style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
+            {templates.length === 0 ? (
+              <div style={{ background: 'white', borderRadius: 16, padding: '60px 40px', textAlign: 'center', border: '1px dashed #D1D6DB' }}>
+                <Icon name="file" size={48} color="#D1D6DB" />
+                <p style={{ fontSize: 15, color: '#8B95A1', marginTop: 16 }}>등록된 템플릿이 없습니다</p>
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  style={{ marginTop: 16, padding: '10px 20px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  첫 템플릿 만들기
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 20 }}>
+                {templates.map(template => {
+                  const templateBrand = template.brandId ? BRANDS.find(b => b.id === template.brandId) : null;
+                  return (
+                  <div key={template.id} style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                    {/* 템플릿 헤더 */}
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid #F2F3F5', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: template.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 18 }}>📋</span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>{template.name}</span>
+                          <div style={{ fontSize: 11, color: templateBrand ? templateBrand.color : '#8B95A1', marginTop: 2 }}>
+                            {templateBrand ? templateBrand.name : '전체 브랜드'}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button 
+                          onClick={() => setEditingTemplate(template)}
+                          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, color: '#4E5968', cursor: 'pointer' }}
+                        >
+                          수정
+                        </button>
+                        <button 
+                          onClick={() => setConfirmDelete(template)}
+                          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #FEE2E2', background: '#FEF2F2', fontSize: 13, color: '#DC2626', cursor: 'pointer' }}
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                    {/* 업무 목록 */}
+                    <div style={{ padding: '12px 20px' }}>
+                      {template.tasks.length === 0 ? (
+                        <p style={{ fontSize: 13, color: '#8B95A1', textAlign: 'center', padding: 12 }}>등록된 업무가 없습니다</p>
+                      ) : (
+                        template.tasks.map((task, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: idx < template.tasks.length - 1 ? '1px solid #F2F3F5' : 'none' }}>
+                            <div style={{ width: 20, height: 20, borderRadius: 4, border: '2px solid #D1D6DB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ fontSize: 11, color: '#8B95A1' }}>{idx + 1}</span>
+                            </div>
+                            <span style={{ fontSize: 14, color: '#191F28' }}>{task.title}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          
+          {/* 추가/수정 모달 */}
+          {(showAddModal || editingTemplate) && (
+            <TemplateEditModal
+              template={editingTemplate}
+              onSave={editingTemplate ? handleUpdateTemplate : handleAddTemplate}
+              onClose={() => { setShowAddModal(false); setEditingTemplate(null); }}
+            />
+          )}
+          
+          {/* 삭제 확인 모달 */}
+          {confirmDelete && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 400, maxWidth: '90vw' }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 12 }}>⚠️ 템플릿 삭제</h3>
+                <p style={{ fontSize: 14, color: '#4E5968', marginBottom: 20 }}>
+                  "<strong>{confirmDelete.name}</strong>" 템플릿을 삭제하시겠습니까?<br/>
+                  삭제하면 복구할 수 없습니다.
+                </p>
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setConfirmDelete(null)} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#4E5968', cursor: 'pointer' }}>취소</button>
+                  <button onClick={() => handleDeleteTemplate(confirmDelete.id)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#DC2626', fontSize: 14, fontWeight: 600, color: 'white', cursor: 'pointer' }}>삭제</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    // 템플릿 수정 모달
+    function TemplateEditModal({ template, onSave, onClose }) {
+      const [form, setForm] = useState({
+        id: template?.id || '',
+        name: template?.name || '',
+        color: template?.color || '#3182F6',
+        brandId: template?.brandId || null,
+        tasks: template?.tasks || []
+      });
+      const [newTaskTitle, setNewTaskTitle] = useState('');
+      
+      const handleAddTask = () => {
+        if (!newTaskTitle.trim()) return;
+        setForm(prev => ({
+          ...prev,
+          tasks: [...prev.tasks, { title: newTaskTitle.trim(), order: prev.tasks.length }]
+        }));
+        setNewTaskTitle('');
+      };
+      
+      const handleRemoveTask = (index) => {
+        setForm(prev => ({
+          ...prev,
+          tasks: prev.tasks.filter((_, i) => i !== index).map((t, i) => ({ ...t, order: i }))
+        }));
+      };
+      
+      const handleSave = () => {
+        if (!form.name.trim()) return alert('템플릿명을 입력해주세요.');
+        onSave(form);
+      };
+      
+      const TEMPLATE_COLORS = ['#3182F6', '#00C471', '#F59E0B', '#8B5CF6', '#EC4899', '#6B7684'];
+      
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'white', borderRadius: 16, width: 480, maxWidth: '90vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            {/* 헤더 */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>{template ? '템플릿 수정' : '새 템플릿'}</h3>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <Icon name="x" size={20} color="#6B7684" />
+              </button>
+            </div>
+            
+            {/* 본문 */}
+            <div style={{ flex: 1, padding: 24, overflowY: 'auto' }}>
+              {/* 템플릿명 */}
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>템플릿명 *</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="예: 신기술, 신공법"
+                  style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+              
+              {/* 적용 브랜드 */}
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>
+                  적용 브랜드 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택 안하면 전체 브랜드에 적용)</span>
+                </label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setForm({ ...form, brandId: null })}
+                    style={{
+                      padding: '8px 12px', borderRadius: 8,
+                      border: form.brandId === null ? '2px solid #3182F6' : '1px solid #E5E8EB',
+                      background: form.brandId === null ? '#EBF4FF' : 'white',
+                      color: form.brandId === null ? '#3182F6' : '#6B7684',
+                      fontSize: 13, fontWeight: 500, cursor: 'pointer'
+                    }}
+                  >
+                    전체
+                  </button>
+                  {BRANDS.map(b => (
+                    <button
+                      key={b.id}
+                      onClick={() => setForm({ ...form, brandId: b.id })}
+                      style={{
+                        padding: '8px 12px', borderRadius: 8,
+                        border: form.brandId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB',
+                        background: form.brandId === b.id ? `${b.color}15` : 'white',
+                        color: form.brandId === b.id ? b.color : '#6B7684',
+                        fontSize: 13, fontWeight: 500, cursor: 'pointer'
+                      }}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              
+              {/* 업무 목록 */}
+              <div>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>업무 목록</label>
+                <div style={{ background: '#F7F8FA', borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                  {form.tasks.length === 0 ? (
+                    <p style={{ fontSize: 13, color: '#8B95A1', textAlign: 'center', padding: 12 }}>등록된 업무가 없습니다</p>
+                  ) : (
+                    form.tasks.map((task, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'white', borderRadius: 8, marginBottom: idx < form.tasks.length - 1 ? 8 : 0 }}>
+                        <span style={{ fontSize: 12, color: '#8B95A1', width: 20 }}>{idx + 1}</span>
+                        <span style={{ flex: 1, fontSize: 14, color: '#191F28' }}>{task.title}</span>
+                        <button 
+                          onClick={() => handleRemoveTask(idx)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+                        >
+                          <Icon name="trash" size={16} color="#DC2626" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                {/* 업무 추가 */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                    placeholder="새 업무 입력 후 Enter"
+                    style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  />
+                  <button 
+                    onClick={handleAddTask}
+                    style={{ padding: '10px 16px', borderRadius: 8, background: '#F2F3F5', border: 'none', fontSize: 14, fontWeight: 600, color: '#4E5968', cursor: 'pointer' }}
+                  >
+                    추가
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* 푸터 */}
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #E5E8EB', display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#4E5968', cursor: 'pointer' }}>취소</button>
+              <button onClick={handleSave} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#3182F6', fontSize: 14, fontWeight: 600, color: 'white', cursor: 'pointer' }}>저장</button>
+            </div>
+          </div>
         </div>
       );
     }
@@ -4720,7 +5084,7 @@
     }
 
     // ============ 프로젝트 탭 ============
-    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments }) {
+    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments, projectTemplates }) {
       const [viewMode, setViewMode] = useState('projects'); // 'projects' | 'tasks'
       const [selectedBrand, setSelectedBrand] = useState(null);
       const [selectedProject, setSelectedProject] = useState(null);
@@ -4728,7 +5092,6 @@
       const [filterStatus, setFilterStatus] = useState('progress');
       const [searchQuery, setSearchQuery] = useState('');
       const [searchDate, setSearchDate] = useState('');
-      const [isTeamExpanded, setIsTeamExpanded] = useState(false);
       
       // 삭제 확인 모달 상태
       const [confirmDelete, setConfirmDelete] = useState(null); // { type: 'project' | 'task', id, title }
@@ -4835,7 +5198,30 @@
       const getProjectStats = (pid) => { const pt = tasks.filter(t => t.projectId === pid); return { total: pt.length, completed: pt.filter(t => t.completed).length }; };
       const getUnreadCount = (pid) => { const p = projects.find(x => x.id === pid); return p ? Math.max(0, (p.comments || []).length - (readComments[pid] || 0)) : 0; };
       const openProject = (p) => { setSelectedProject(p); setReadComments(prev => ({ ...prev, [p.id]: (p.comments || []).length })); };
-      const addProject = (p) => setProjects(prev => [...prev, { ...p, id: Date.now(), comments: [], creatorId: currentUser.id, memberIds: (p.memberIds && p.memberIds.length > 0) ? p.memberIds : [currentUser.id] }]);
+      const addProject = (p) => {
+        const projectId = Date.now();
+        const newProject = { ...p, id: projectId, comments: [], creatorId: currentUser.id, memberIds: (p.memberIds && p.memberIds.length > 0) ? p.memberIds : [currentUser.id] };
+        setProjects(prev => [...prev, newProject]);
+        
+        // 템플릿이 선택된 경우 업무 자동 생성
+        if (p.templateId) {
+          const template = projectTemplates.find(t => t.id === p.templateId);
+          if (template) {
+            const newTasks = template.tasks.map((task, idx) => ({
+              id: projectId + idx + 1,
+              projectId: projectId,
+              title: task.title,
+              order: task.order,
+              completed: false,
+              note: '',
+              bookmark: false,
+              memberId: currentUser.id,
+              date: today
+            }));
+            setTasks(prev => [...prev, ...newTasks]);
+          }
+        }
+      };
       const updateProject = (p) => { setProjects(prev => prev.map(x => x.id === p.id ? { ...x, ...p } : x)); if (selectedProject?.id === p.id) setSelectedProject(prev => ({ ...prev, ...p })); };
       // 휴지통으로 이동 (deletedAt 추가)
       const deleteProject = (pid) => { 
@@ -4923,18 +5309,14 @@
       // 내 프로젝트: 내가 담당자(memberIds)로 지정되어 있고 나 혼자인 프로젝트
       const myProjects = filteredProjects.filter(p => {
         const memberIds = p.memberIds || [];
-        // 담당자에 내가 없으면 제외
         if (!memberIds.includes(currentUser.id)) return false;
-        // 담당자가 나 혼자인 경우
         return memberIds.length === 1;
       });
       
       // 협력 프로젝트: 내가 담당자이고 다른 사람도 담당자인 프로젝트
       const collabProjects = filteredProjects.filter(p => {
         const memberIds = p.memberIds || [];
-        // 담당자에 내가 없으면 제외
         if (!memberIds.includes(currentUser.id)) return false;
-        // 다른 담당자도 있는 경우
         return memberIds.length > 1;
       });
       
@@ -5070,19 +5452,6 @@
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#6B7684' }}>상태</span>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button 
-                      onClick={() => setFilterStatus(null)}
-                      style={{ 
-                        padding: '8px 14px', borderRadius: 8, 
-                        border: !filterStatus ? '2px solid #3182F6' : '1px solid #E5E8EB',
-                        background: !filterStatus ? '#EBF4FF' : 'white',
-                        fontSize: 13, fontWeight: 600, 
-                        color: !filterStatus ? '#3182F6' : '#6B7684',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      전체
-                    </button>
                     {STATUS_OPTIONS.map(s => (
                       <button 
                         key={s.id}
@@ -5220,278 +5589,276 @@
             )}
           </header>
 
-          {/* 프로젝트 뷰 */}
+          {/* 프로젝트 뷰 - 컴팩트 리스트 */}
           {viewMode === 'projects' && (
           <div style={{ padding: 32 }}>
-            {/* 내 프로젝트 섹션 */}
-            <div style={{ marginBottom: 40 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{currentUser.initial}</div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>내 프로젝트</h2>
-                <span style={{ padding: '4px 10px', borderRadius: 20, background: '#EBF4FF', color: '#3182F6', fontSize: 13, fontWeight: 600 }}>{myProjects.length}</span>
-                <button onClick={() => setShowAddProject(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                  <Icon name="plus" size={18} color="white" /> 새 프로젝트
-                </button>
-              </div>
-              
-              {myProjects.length === 0 ? (
-                <div style={{ background: '#F7F8FA', borderRadius: 16, padding: '40px 20px', textAlign: 'center', border: '1px dashed #D1D6DB' }}>
-                  <Icon name="user" size={36} color="#D1D6DB" />
-                  <p style={{ fontSize: 14, color: '#8B95A1', marginTop: 12 }}>{(searchQuery || searchDate) ? '검색 결과가 없습니다' : '참여 중인 프로젝트가 없습니다'}</p>
-                </div>
-              ) : (filterStatus === 'complete' || filterStatus === 'hold') ? (
-                /* 완료/보류 상태 - 리스트 형식 */
-                <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
-                  {myProjects.map((project, idx) => {
-                    const st = getProjectStats(project.id), unread = getUnreadCount(project.id), brand = BRANDS.find(b => b.id === project.brandId), status = STATUS_OPTIONS.find(s => s.id === project.status), prog = st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0;
-                    return (
+            
+            {/* 프로젝트 리스트 아이템 컴포넌트 */}
+            {(() => {
+              const ProjectListItem = ({ project, isLast }) => {
+                const [showPriorityMenu, setShowPriorityMenu] = React.useState(false);
+                const [priorityMenuPos, setPriorityMenuPos] = React.useState({ top: 0, left: 0 });
+                const st = getProjectStats(project.id);
+                const unread = getUnreadCount(project.id);
+                const brand = BRANDS.find(b => b.id === project.brandId);
+                const status = STATUS_OPTIONS.find(s => s.id === project.status);
+                const priority = PRIORITY_OPTIONS.find(p => p.id === project.priority) || PRIORITY_OPTIONS.find(p => p.id === 'none');
+                const members = (project.memberIds || []).map(id => TEAM_MEMBERS.find(m => m.id === id)).filter(Boolean);
+                
+                const handlePriorityChange = (e, priorityId) => {
+                  e.stopPropagation();
+                  setProjects(prev => prev.map(p => 
+                    p.id === project.id ? { ...p, priority: priorityId } : p
+                  ));
+                  setShowPriorityMenu(false);
+                };
+                
+                return (
+                  <div
+                    onClick={() => openProject(project)}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '55px 1fr 70px 55px 80px 75px 28px',
+                      gap: 8,
+                      padding: '12px 16px',
+                      alignItems: 'center',
+                      borderBottom: isLast ? 'none' : '1px solid #F2F3F5',
+                      cursor: 'pointer',
+                      background: 'white',
+                      transition: 'background 0.15s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    {/* 우선순위 - 클릭 가능 */}
+                    <div style={{ position: 'relative' }}>
                       <div 
-                        key={project.id} 
-                        onClick={() => openProject(project)} 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setPriorityMenuPos({ top: rect.top, left: rect.left });
+                          setShowPriorityMenu(!showPriorityMenu); 
+                        }}
+                        title={`우선순위: ${priority.label}`}
                         style={{ 
-                          display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', 
-                          borderBottom: idx < myProjects.length - 1 ? '1px solid #F2F3F5' : 'none',
-                          cursor: 'pointer', position: 'relative',
-                          background: 'white', transition: 'background 0.2s'
+                          fontSize: 16, 
+                          textAlign: 'center', 
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 6,
+                          transition: 'background 0.15s'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#FAFBFC'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#F2F3F5'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
-                        {unread > 0 && <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: '#F04452' }} />}
-                        
-                        {/* 날짜 (맨 앞) */}
-                        <div style={{ minWidth: 75, textAlign: 'center' }}>
-                          {project.completedDate ? (
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#00C471' }}>{formatShortDate(project.completedDate)}</span>
-                          ) : project.createdDate ? (
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>{formatShortDate(project.createdDate)}</span>
-                          ) : (
-                            <span style={{ fontSize: 13, color: '#D1D6DB' }}>-</span>
-                          )}
-                        </div>
-                        
-                        {/* 브랜드 */}
-                        <div style={{ minWidth: 80 }}>
-                          <span style={{ padding: '3px 8px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700 }}>{brand.name}</span>
-                        </div>
-                        
-                        {/* 프로젝트 정보 */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ fontSize: 15, fontWeight: 600, color: '#191F28', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</h3>
-                          <p style={{ fontSize: 13, color: '#8B95A1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.description || '-'}</p>
-                        </div>
-                        
-                        {/* 진행률 */}
-                        {st.total > 0 && (
-                          <div style={{ width: 100 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                              <span style={{ fontSize: 11, color: '#8B95A1' }}>진행률</span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#191F28' }}>{prog}%</span>
-                            </div>
-                            <div style={{ height: 4, background: '#F2F3F5', borderRadius: 2 }}>
-                              <div style={{ height: '100%', borderRadius: 2, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} />
-                            </div>
-                          </div>
-                        )}
-                        
-                        {/* 댓글 */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 40 }}>
-                          <Icon name="message" size={14} color={unread > 0 ? '#F04452' : '#D1D6DB'} />
-                          <span style={{ fontSize: 12, color: unread > 0 ? '#F04452' : '#8B95A1' }}>{(project.comments || []).length}</span>
-                        </div>
-                        
-                        <Icon name="chevronRight" size={16} color="#D1D6DB" />
+                        {priority.icon}
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* 진행중/전체 - 카드 형식 */
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
-                  {myProjects.map(project => <ProjectCard key={project.id} project={project} />)}
-                </div>
-              )}
-            </div>
-
-            {/* 협력 프로젝트 섹션 */}
-            <div style={{ marginBottom: 40 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="users" size={18} color="#F59E0B" />
-                </div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>협력 프로젝트</h2>
-                <span style={{ padding: '4px 10px', borderRadius: 20, background: '#FEF3C7', color: '#F59E0B', fontSize: 13, fontWeight: 600 }}>{collabProjects.length}</span>
-              </div>
-              
-              {collabProjects.length === 0 ? (
-                <div style={{ background: '#FFFBEB', borderRadius: 16, padding: '40px 20px', textAlign: 'center', border: '1px dashed #FDE68A' }}>
-                  <Icon name="users" size={36} color="#FDE68A" />
-                  <p style={{ fontSize: 14, color: '#B45309', marginTop: 12 }}>{(searchQuery || searchDate) ? '검색 결과가 없습니다' : '협력 중인 프로젝트가 없습니다'}</p>
-                </div>
-              ) : (filterStatus === 'complete' || filterStatus === 'hold') ? (
-                /* 완료/보류 필터 - 리스트 형식 */
-                <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
-                  {collabProjects.map((project, idx) => {
-                    const st = getProjectStats(project.id), unread = getUnreadCount(project.id), brand = BRANDS.find(b => b.id === project.brandId), status = STATUS_OPTIONS.find(s => s.id === project.status), prog = st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0;
-                    const projectMembers = project.memberIds ? TEAM_MEMBERS.filter(m => (project.memberIds || []).includes(m.id)) : [];
-                    return (
-                      <div
-                        key={project.id}
-                        onClick={() => openProject(project)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', cursor: 'pointer',
-                          borderBottom: idx < collabProjects.length - 1 ? '1px solid #F2F3F5' : 'none',
-                          background: 'white', transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#FAFBFC'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                      >
-                        {/* 날짜 (맨 앞) */}
-                        <div style={{ minWidth: 75, textAlign: 'center' }}>
-                          {project.completedDate ? (
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#00C471' }}>{formatShortDate(project.completedDate)}</span>
-                          ) : project.createdDate ? (
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>{formatShortDate(project.createdDate)}</span>
-                          ) : (
-                            <span style={{ fontSize: 13, color: '#D1D6DB' }}>-</span>
-                          )}
-                        </div>
-                        
-                        {/* 브랜드 */}
-                        <div style={{ minWidth: 80 }}>
-                          <span style={{ padding: '3px 8px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700 }}>{brand.name}</span>
-                        </div>
-                        
-                        {/* 프로젝트 정보 */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ fontSize: 15, fontWeight: 600, color: '#191F28', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</h3>
-                          <p style={{ fontSize: 13, color: '#8B95A1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.description || '-'}</p>
-                        </div>
-                        
-                        {projectMembers.length > 0 && (
-                          <div style={{ display: 'flex' }}>
-                            {projectMembers.slice(0, 3).map((m, i) => <div key={m.id} style={{ width: 22, height: 22, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, marginLeft: i > 0 ? -6 : 0, border: '2px solid white' }}>{m.initial}</div>)}
-                          </div>
-                        )}
-                        {st.total > 0 && (
-                          <div style={{ width: 100 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                              <span style={{ fontSize: 11, color: '#8B95A1' }}>진행률</span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#191F28' }}>{prog}%</span>
-                            </div>
-                            <div style={{ height: 4, background: '#F2F3F5', borderRadius: 2 }}>
-                              <div style={{ height: '100%', borderRadius: 2, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} />
-                            </div>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 40 }}>
-                          <Icon name="message" size={14} color={unread > 0 ? '#F04452' : '#D1D6DB'} />
-                          <span style={{ fontSize: 12, color: unread > 0 ? '#F04452' : '#8B95A1' }}>{(project.comments || []).length}</span>
-                        </div>
-                        <Icon name="chevronRight" size={16} color="#D1D6DB" />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* 진행중/전체 - 카드 형식 */
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
-                  {collabProjects.map(project => <ProjectCard key={project.id} project={project} />)}
-                </div>
-              )}
-            </div>
-
-            {/* 팀 프로젝트 섹션 - 접기/펼치기 */}
-            <div>
-              <button 
-                onClick={() => setIsTeamExpanded(!isTeamExpanded)}
-                style={{ 
-                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '12px 0',
-                  background: 'none', border: 'none', cursor: 'pointer', marginBottom: isTeamExpanded ? 16 : 0
-                }}
-              >
-                <div style={{ transform: isTeamExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
-                  <Icon name="chevronDown" size={20} color="#8B95A1" />
-                </div>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F2F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name="users" size={18} color="#6B7684" />
-                </div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>팀 프로젝트</h2>
-                <span style={{ padding: '4px 10px', borderRadius: 20, background: '#F2F3F5', color: '#6B7684', fontSize: 13, fontWeight: 600 }}>{teamProjects.length}</span>
-              </button>
-              
-              {isTeamExpanded && (
-                teamProjects.length === 0 ? (
-                  <div style={{ background: '#F7F8FA', borderRadius: 16, padding: '40px 20px', textAlign: 'center', border: '1px dashed #D1D6DB' }}>
-                    <Icon name="folder" size={36} color="#D1D6DB" />
-                    <p style={{ fontSize: 14, color: '#8B95A1', marginTop: 12 }}>다른 팀 프로젝트가 없습니다</p>
-                  </div>
-                ) : (filterStatus === 'complete' || filterStatus === 'hold') ? (
-                  /* 완료/보류 상태 - 리스트 형식 */
-                  <div style={{ background: 'white', borderRadius: 16, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
-                    {teamProjects.map((project, idx) => {
-                      const st = getProjectStats(project.id), unread = getUnreadCount(project.id), brand = BRANDS.find(b => b.id === project.brandId), status = STATUS_OPTIONS.find(s => s.id === project.status), prog = st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0;
-                      return (
+                      {showPriorityMenu && (
                         <div 
-                          key={project.id} 
-                          onClick={() => openProject(project)} 
+                          onClick={(e) => e.stopPropagation()}
                           style={{ 
-                            display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', 
-                            borderBottom: idx < teamProjects.length - 1 ? '1px solid #F2F3F5' : 'none',
-                            cursor: 'pointer', position: 'relative',
-                            background: 'white', transition: 'background 0.2s'
+                            position: 'fixed', 
+                            top: priorityMenuPos.top + 30, 
+                            left: priorityMenuPos.left, 
+                            background: 'white', 
+                            borderRadius: 10, 
+                            boxShadow: '0 4px 20px rgba(0,0,0,0.15)', 
+                            padding: 8, 
+                            zIndex: 9999,
+                            minWidth: 140
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#FAFBFC'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                         >
-                          {unread > 0 && <div style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: '#F04452' }} />}
-                          
-                          {/* 날짜 (맨 앞) */}
-                          <div style={{ minWidth: 75, textAlign: 'center' }}>
-                            {project.completedDate ? (
-                              <span style={{ fontSize: 13, fontWeight: 600, color: '#00C471' }}>{formatShortDate(project.completedDate)}</span>
-                            ) : project.createdDate ? (
-                              <span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>{formatShortDate(project.createdDate)}</span>
-                            ) : (
-                              <span style={{ fontSize: 13, color: '#D1D6DB' }}>-</span>
-                            )}
-                          </div>
-                          
-                          <div style={{ minWidth: 80 }}>
-                            <span style={{ padding: '3px 8px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 11, fontWeight: 700 }}>{brand.name}</span>
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <h3 style={{ fontSize: 15, fontWeight: 600, color: '#191F28', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</h3>
-                            <p style={{ fontSize: 13, color: '#8B95A1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.description || '-'}</p>
-                          </div>
-                          {st.total > 0 && (
-                            <div style={{ width: 100 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 11, color: '#8B95A1' }}>진행률</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#191F28' }}>{prog}%</span>
-                              </div>
-                              <div style={{ height: 4, background: '#F2F3F5', borderRadius: 2 }}>
-                                <div style={{ height: '100%', borderRadius: 2, background: prog === 100 ? '#00C471' : '#3182F6', width: `${prog}%` }} />
-                              </div>
+                          <p style={{ fontSize: 11, color: '#8B95A1', padding: '4px 8px', marginBottom: 4 }}>우선순위 변경</p>
+                          {PRIORITY_OPTIONS.map(p => (
+                            <div 
+                              key={p.id}
+                              onClick={(e) => handlePriorityChange(e, p.id)}
+                              style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: 8, 
+                                padding: '8px 10px', 
+                                borderRadius: 6, 
+                                cursor: 'pointer',
+                                background: priority.id === p.id ? '#F2F3F5' : 'white',
+                                transition: 'background 0.15s'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = priority.id === p.id ? '#F2F3F5' : 'white'}
+                            >
+                              <span style={{ fontSize: 16 }}>{p.icon}</span>
+                              <span style={{ fontSize: 13, color: '#191F28' }}>{p.label}</span>
                             </div>
-                          )}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 40 }}>
-                            <Icon name="message" size={14} color={unread > 0 ? '#F04452' : '#D1D6DB'} />
-                            <span style={{ fontSize: 12, color: unread > 0 ? '#F04452' : '#8B95A1' }}>{(project.comments || []).length}</span>
-                          </div>
-                          <Icon name="chevronRight" size={16} color="#D1D6DB" />
+                          ))}
                         </div>
-                      );
-                    })}
+                      )}
+                    </div>
+                    
+                    {/* 브랜드 + 프로젝트명 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: brand?.color || '#6B7684', flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {project.title}
+                      </span>
+                      {unread > 0 && (
+                        <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: '#F04452', color: 'white', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {unread}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* 상태 */}
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <span style={{ padding: '3px 8px', borderRadius: 4, background: status?.bg, color: status?.color, fontSize: 11, fontWeight: 600 }}>
+                        {status?.label}
+                      </span>
+                    </div>
+                    
+                    {/* 진행률 */}
+                    <div style={{ textAlign: 'center', fontSize: 13, color: '#6B7684' }}>
+                      <span style={{ color: '#00C471', fontWeight: 600 }}>{st.completed}</span>
+                      <span>/{st.total}</span>
+                    </div>
+                    
+                    {/* 담당자 */}
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex' }}>
+                        {members.slice(0, 2).map((m, i) => (
+                          <div key={m.id} style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: 'white', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid white', marginLeft: i > 0 ? -6 : 0 }}>
+                            {m.initial}
+                          </div>
+                        ))}
+                        {members.length > 2 && (
+                          <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#E5E8EB', color: '#6B7684', fontSize: 9, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid white', marginLeft: -6 }}>
+                            +{members.length - 2}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* 등록일 */}
+                    <div style={{ textAlign: 'center', fontSize: 12, color: '#8B95A1' }}>
+                      {project.createdDate ? formatShortDate(project.createdDate) : '-'}
+                    </div>
+                    
+                    {/* 화살표 */}
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                      <Icon name="chevronRight" size={14} color="#B0B8C1" />
+                    </div>
                   </div>
-                ) : (
-                  /* 진행중/전체 - 카드 형식 */
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
-                    {teamProjects.map(project => <ProjectCard key={project.id} project={project} />)}
+                );
+              };
+              
+              return (
+                <>
+                  {/* 내 프로젝트 섹션 */}
+                  <div style={{ marginBottom: 24, position: 'relative', zIndex: 30 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{currentUser.initial}</div>
+                      <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>내 프로젝트</h2>
+                      <span style={{ padding: '3px 10px', borderRadius: 12, background: '#EBF4FF', color: '#3182F6', fontSize: 12, fontWeight: 600 }}>{myProjects.length}</span>
+                      <button onClick={() => setShowAddProject(true)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        <Icon name="plus" size={16} color="white" /> 새 프로젝트
+                      </button>
+                    </div>
+                    
+                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'visible' }}>
+                      {/* 테이블 헤더 */}
+                      {myProjects.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '55px 1fr 70px 55px 80px 75px 28px', gap: 8, padding: '10px 16px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, color: '#8B95A1' }}>
+                          <span style={{ textAlign: 'center' }}>우선순위</span>
+                          <span>프로젝트명</span>
+                          <span style={{ textAlign: 'center' }}>상태</span>
+                          <span style={{ textAlign: 'center' }}>진행</span>
+                          <span style={{ textAlign: 'center' }}>담당</span>
+                          <span style={{ textAlign: 'center' }}>등록일</span>
+                          <span></span>
+                        </div>
+                      )}
+                      {myProjects.length === 0 ? (
+                        <div style={{ padding: '32px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>
+                          참여 중인 프로젝트가 없습니다
+                        </div>
+                      ) : (
+                        myProjects.map((project, idx) => (
+                          <ProjectListItem key={project.id} project={project} isLast={idx === myProjects.length - 1} />
+                        ))
+                      )}
+                    </div>
                   </div>
-                )
-              )}
-            </div>
+                  
+                  {/* 협력 프로젝트 섹션 */}
+                  <div style={{ marginBottom: 24, position: 'relative', zIndex: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="users" size={14} color="#F59E0B" />
+                      </div>
+                      <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>협력 프로젝트</h2>
+                      <span style={{ padding: '3px 10px', borderRadius: 12, background: '#FEF3C7', color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>{collabProjects.length}</span>
+                    </div>
+                    
+                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'visible' }}>
+                      {/* 테이블 헤더 */}
+                      {collabProjects.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '55px 1fr 70px 55px 80px 75px 28px', gap: 8, padding: '10px 16px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, color: '#8B95A1' }}>
+                          <span style={{ textAlign: 'center' }}>우선순위</span>
+                          <span>프로젝트명</span>
+                          <span style={{ textAlign: 'center' }}>상태</span>
+                          <span style={{ textAlign: 'center' }}>진행</span>
+                          <span style={{ textAlign: 'center' }}>담당</span>
+                          <span style={{ textAlign: 'center' }}>등록일</span>
+                          <span></span>
+                        </div>
+                      )}
+                      {collabProjects.length === 0 ? (
+                        <div style={{ padding: '32px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>
+                          협력 중인 프로젝트가 없습니다
+                        </div>
+                      ) : (
+                        collabProjects.map((project, idx) => (
+                          <ProjectListItem key={project.id} project={project} isLast={idx === collabProjects.length - 1} />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* 팀 프로젝트 섹션 */}
+                  <div style={{ marginBottom: 24, position: 'relative', zIndex: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: '#F2F3F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon name="folder" size={14} color="#6B7684" />
+                      </div>
+                      <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>팀 프로젝트</h2>
+                      <span style={{ padding: '3px 10px', borderRadius: 12, background: '#F2F3F5', color: '#6B7684', fontSize: 12, fontWeight: 600 }}>{teamProjects.length}</span>
+                    </div>
+                    
+                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'visible' }}>
+                      {/* 테이블 헤더 */}
+                      {teamProjects.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '55px 1fr 70px 55px 80px 75px 28px', gap: 8, padding: '10px 16px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, color: '#8B95A1' }}>
+                          <span style={{ textAlign: 'center' }}>우선순위</span>
+                          <span>프로젝트명</span>
+                          <span style={{ textAlign: 'center' }}>상태</span>
+                          <span style={{ textAlign: 'center' }}>진행</span>
+                          <span style={{ textAlign: 'center' }}>담당</span>
+                          <span style={{ textAlign: 'center' }}>등록일</span>
+                          <span></span>
+                        </div>
+                      )}
+                      {teamProjects.length === 0 ? (
+                        <div style={{ padding: '32px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>
+                          팀 프로젝트가 없습니다
+                        </div>
+                      ) : (
+                        teamProjects.map((project, idx) => (
+                          <ProjectListItem key={project.id} project={project} isLast={idx === teamProjects.length - 1} />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
           )}
 
@@ -5576,8 +5943,8 @@
           </div>
           )}
 
-          {selectedProject && <ProjectDetailSlide project={selectedProject} tasks={tasks.filter(t => t.projectId === selectedProject.id)} currentUser={currentUser} onClose={() => setSelectedProject(null)} onAddComment={(t, f) => addComment(selectedProject.id, t, f)} onUpdateComment={(cid, t) => updateComment(selectedProject.id, cid, t)} onDeleteComment={(cid) => deleteComment(selectedProject.id, cid)} onAddTask={(t) => addTask({ ...t, projectId: selectedProject.id })} onToggleTask={toggleTaskComplete} onDeleteTask={requestDeleteTask} onUpdateTask={updateTask} onUpdateProject={updateProject} onDeleteProject={requestDeleteProject} onReorderTasks={reorderTasks} />}
-          {showAddProject && <ProjectModal project={null} currentUser={currentUser} onSave={(p) => { addProject(p); setShowAddProject(false); }} onClose={() => setShowAddProject(false)} />}
+          {selectedProject && <ProjectDetailSlide project={selectedProject} tasks={tasks.filter(t => t.projectId === selectedProject.id)} currentUser={currentUser} onClose={() => setSelectedProject(null)} onAddComment={(t, f) => addComment(selectedProject.id, t, f)} onUpdateComment={(cid, t) => updateComment(selectedProject.id, cid, t)} onDeleteComment={(cid) => deleteComment(selectedProject.id, cid)} onAddTask={(t) => addTask({ ...t, projectId: selectedProject.id })} onToggleTask={toggleTaskComplete} onDeleteTask={requestDeleteTask} onUpdateTask={updateTask} onUpdateProject={updateProject} onDeleteProject={requestDeleteProject} onReorderTasks={reorderTasks} projectTemplates={projectTemplates} />}
+          {showAddProject && <ProjectModal project={null} currentUser={currentUser} onSave={(p) => { addProject(p); setShowAddProject(false); }} onClose={() => setShowAddProject(false)} projectTemplates={projectTemplates} />}
           
           {/* 삭제 확인 모달 */}
           {confirmDelete && (
@@ -5595,7 +5962,7 @@
       );
     }
 
-    function ProjectDetailSlide({ project, tasks, currentUser, onClose, onAddComment, onUpdateComment, onDeleteComment, onAddTask, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, onDeleteProject, onReorderTasks }) {
+    function ProjectDetailSlide({ project, tasks, currentUser, onClose, onAddComment, onUpdateComment, onDeleteComment, onAddTask, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, onDeleteProject, onReorderTasks, projectTemplates }) {
       const [activeTab, setActiveTab] = useState('tasks');
       const [comment, setComment] = useState('');
       const [showAddTask, setShowAddTask] = useState(false);
@@ -5911,7 +6278,7 @@
             {editingTaskId && <SubTaskModal task={sorted.find(t => t.id === editingTaskId)} currentUser={currentUser} onSave={(t) => { onUpdateTask(t); setEditingTaskId(null); }} onClose={() => setEditingTaskId(null)} />}
             
             {/* 프로젝트 수정 모달 */}
-            {showEditProject && <ProjectModal project={project} currentUser={currentUser} onSave={(p) => { onUpdateProject(p); setShowEditProject(false); }} onClose={() => setShowEditProject(false)} />}
+            {showEditProject && <ProjectModal project={project} currentUser={currentUser} onSave={(p) => { onUpdateProject(p); setShowEditProject(false); }} onClose={() => setShowEditProject(false)} projectTemplates={projectTemplates} />}
             
           </div>
         </div>
@@ -6256,7 +6623,7 @@
       );
     }
 
-    function ProjectModal({ project, currentUser, onSave, onClose }) {
+    function ProjectModal({ project, currentUser, onSave, onClose, projectTemplates }) {
       // ESC 키는 부모 컴포넌트에서 처리
       const descriptionTemplate = `타겟 : 
 목표 : 
@@ -6267,7 +6634,8 @@
         memberIds: project?.memberIds || [],
         description: project?.description || (project ? '' : descriptionTemplate), 
         status: project?.status || 'progress', 
-        createdDate: project?.createdDate || today 
+        createdDate: project?.createdDate || today,
+        templateId: null  // 템플릿 선택 
       });
       const isEdit = !!project;
       const isTeamLeader = currentUser?.role === '팀장';
@@ -6285,11 +6653,58 @@
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28' }}>{isEdit ? '프로젝트 수정' : '새 프로젝트'}</h2><button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="x" size={20} color="#8B95A1" /></button></div>
-            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>브랜드 *</label><div style={{ display: 'flex', gap: 8 }}>{BRANDS.map(b => <button key={b.id} onClick={() => setForm({ ...form, brandId: b.id })} style={{ padding: '10px 16px', borderRadius: 10, border: form.brandId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: form.brandId === b.id ? `${b.color}15` : 'white', color: form.brandId === b.id ? b.color : '#6B7684', fontSize: 14, fontWeight: 500 }}>{b.name}</button>)}</div></div>
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>브랜드 *</label><div style={{ display: 'flex', gap: 8 }}>{BRANDS.map(b => <button key={b.id} onClick={() => setForm({ ...form, brandId: b.id, templateId: null })} style={{ padding: '10px 16px', borderRadius: 10, border: form.brandId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: form.brandId === b.id ? `${b.color}15` : 'white', color: form.brandId === b.id ? b.color : '#6B7684', fontSize: 14, fontWeight: 500 }}>{b.name}</button>)}</div></div>
+            {/* 템플릿 선택 (새 프로젝트일 때만) - 프로젝트명 위에 배치 */}
+            {!isEdit && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                  업무 템플릿 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택 시 업무 자동 생성)</span>
+                </label>
+                {!form.brandId ? (
+                  <p style={{ fontSize: 13, color: '#8B95A1', padding: '12px 0' }}>브랜드를 먼저 선택해주세요</p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {projectTemplates
+                        .filter(t => !t.brandId || t.brandId === form.brandId)
+                        .map(t => (
+                          <button 
+                            key={t.id} 
+                            onClick={() => setForm({ ...form, templateId: form.templateId === t.id ? null : t.id })}
+                            style={{ 
+                              padding: '10px 16px', 
+                              borderRadius: 10, 
+                              border: form.templateId === t.id ? `2px solid ${t.color}` : '1px solid #E5E8EB', 
+                              background: form.templateId === t.id ? `${t.color}15` : 'white', 
+                              color: form.templateId === t.id ? t.color : '#6B7684', 
+                              fontSize: 14, 
+                              fontWeight: 500,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            📋 {t.name}
+                          </button>
+                        ))}
+                      {projectTemplates.filter(t => !t.brandId || t.brandId === form.brandId).length === 0 && (
+                        <p style={{ fontSize: 13, color: '#8B95A1' }}>이 브랜드에 등록된 템플릿이 없습니다</p>
+                      )}
+                    </div>
+                    {form.templateId && (
+                      <div style={{ marginTop: 10, padding: 12, background: '#F7F8FA', borderRadius: 8 }}>
+                        <p style={{ fontSize: 12, color: '#6B7684', marginBottom: 6 }}>자동 생성될 업무:</p>
+                        {projectTemplates.find(t => t.id === form.templateId)?.tasks.map((task, idx) => (
+                          <p key={idx} style={{ fontSize: 13, color: '#191F28', marginBottom: 2 }}>☐ {task.title}</p>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 2025 신년 캠페인" style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15 }} /></div>
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>담당자 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택)</span></label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => toggleMember(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: (form.memberIds || []).includes(m.id) ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: (form.memberIds || []).includes(m.id) ? `${m.color}15` : 'white' }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: (form.memberIds || []).includes(m.id) ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>설명</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="프로젝트에 대한 설명" rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, resize: 'none', lineHeight: 1.6 }} /></div>
-            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>상태</label><div style={{ display: 'flex', gap: 8 }}>{STATUS_OPTIONS.map(s => <button key={s.id} onClick={() => setForm({ ...form, status: s.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: form.status === s.id ? `2px solid ${s.color}` : '1px solid #E5E8EB', background: form.status === s.id ? s.bg : 'white', color: form.status === s.id ? s.color : '#6B7684', fontSize: 14, fontWeight: 500 }}><Icon name={s.icon} size={16} color={form.status === s.id ? s.color : '#6B7684'} /> {s.label}</button>)}</div></div>
+            {isEdit && <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>상태</label><div style={{ display: 'flex', gap: 8 }}>{STATUS_OPTIONS.map(s => <button key={s.id} onClick={() => setForm({ ...form, status: s.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: form.status === s.id ? `2px solid ${s.color}` : '1px solid #E5E8EB', background: form.status === s.id ? s.bg : 'white', color: form.status === s.id ? s.color : '#6B7684', fontSize: 14, fontWeight: 500 }}><Icon name={s.icon} size={16} color={form.status === s.id ? s.color : '#6B7684'} /> {s.label}</button>)}</div></div>}
             <div style={{ marginBottom: 24 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트 등록일</label><input type="date" value={form.createdDate} onChange={(e) => setForm({ ...form, createdDate: e.target.value })} onClick={(e) => e.target.showPicker()} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, cursor: 'pointer' }} /></div>
             <div style={{ display: 'flex', gap: 12 }}><button onClick={onClose} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', fontSize: 15, fontWeight: 600, color: '#6B7684' }}>취소</button><button onClick={() => form.title.trim() && onSave({ ...project, ...form })} disabled={!form.title.trim()} style={{ flex: 1, padding: 16, borderRadius: 12, border: 'none', background: form.title.trim() ? '#3182F6' : '#E5E8EB', fontSize: 15, fontWeight: 600, color: form.title.trim() ? 'white' : '#8B95A1' }}>{isEdit ? '수정' : '만들기'}</button></div>
           </div>
