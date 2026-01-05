@@ -730,6 +730,8 @@
       // 초기 데이터 개수 저장 (첫 로드 시점) - 저장 보호용
       const initialDataCount = useRef({ projects: 0, tasks: 0, fixedTasks: 0, teamRequests: 0 });
       const isFirstSave = useRef({ projects: true, tasks: true, fixedTasks: true, teamRequests: true });
+      // 실시간 동기화에서 받은 업데이트인지 구분 (무한 저장 방지)
+      const isRemoteUpdate = useRef({ projects: false, tasks: false, fixedTasks: false, teamRequests: false, meetings: false });
       
       // ===== Firebase Auth 상태 확인 =====
       useEffect(() => {
@@ -838,9 +840,102 @@
         loadData();
       }, [currentUser]);
       
+      // ===== 회의록 실시간 동기화 =====
+      useEffect(() => {
+        if (!currentUser) return;
+        
+        // 회의록 실시간 리스너 등록
+        const unsubscribeMeetings = FirebaseService.onDataChange('meetings', (updatedMeetings) => {
+          if (updatedMeetings) {
+            isRemoteUpdate.current.meetings = true;
+            setMeetings(updatedMeetings);
+            console.log('[Firebase] 회의록 실시간 업데이트:', updatedMeetings.length, '개');
+          }
+        });
+        
+        // 컴포넌트 언마운트 시 리스너 해제
+        return () => {
+          if (unsubscribeMeetings) unsubscribeMeetings();
+        };
+      }, [currentUser]);
+      
+      // ===== 프로젝트 실시간 동기화 =====
+      useEffect(() => {
+        if (!currentUser) return;
+        
+        const unsubscribeProjects = FirebaseService.onDataChange('projects', (updatedProjects) => {
+          if (updatedProjects && updatedProjects.length > 0) {
+            isRemoteUpdate.current.projects = true;
+            setProjects(updatedProjects.map(p => ({ ...p, id: Number(p.id) || p.id })));
+            console.log('[Firebase] 프로젝트 실시간 업데이트:', updatedProjects.length, '개');
+          }
+        });
+        
+        return () => {
+          if (unsubscribeProjects) unsubscribeProjects();
+        };
+      }, [currentUser]);
+      
+      // ===== 업무 실시간 동기화 =====
+      useEffect(() => {
+        if (!currentUser) return;
+        
+        const unsubscribeTasks = FirebaseService.onDataChange('tasks', (updatedTasks) => {
+          if (updatedTasks) {
+            isRemoteUpdate.current.tasks = true;
+            setTasks(updatedTasks.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            console.log('[Firebase] 업무 실시간 업데이트:', updatedTasks.length, '개');
+          }
+        });
+        
+        return () => {
+          if (unsubscribeTasks) unsubscribeTasks();
+        };
+      }, [currentUser]);
+      
+      // ===== 루틴 업무 실시간 동기화 =====
+      useEffect(() => {
+        if (!currentUser) return;
+        
+        const unsubscribeFixedTasks = FirebaseService.onDataChange('fixedTasks', (updatedFixedTasks) => {
+          if (updatedFixedTasks) {
+            isRemoteUpdate.current.fixedTasks = true;
+            setFixedTasks(updatedFixedTasks.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            console.log('[Firebase] 루틴업무 실시간 업데이트:', updatedFixedTasks.length, '개');
+          }
+        });
+        
+        return () => {
+          if (unsubscribeFixedTasks) unsubscribeFixedTasks();
+        };
+      }, [currentUser]);
+      
+      // ===== 타팀요청 실시간 동기화 =====
+      useEffect(() => {
+        if (!currentUser) return;
+        
+        const unsubscribeTeamRequests = FirebaseService.onDataChange('teamRequests', (updatedTeamRequests) => {
+          if (updatedTeamRequests) {
+            isRemoteUpdate.current.teamRequests = true;
+            setTeamRequests(updatedTeamRequests.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            console.log('[Firebase] 타팀요청 실시간 업데이트:', updatedTeamRequests.length, '개');
+          }
+        });
+        
+        return () => {
+          if (unsubscribeTeamRequests) unsubscribeTeamRequests();
+        };
+      }, [currentUser]);
+      
       // 프로젝트 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
+        
+        // 리모트 업데이트면 저장 스킵
+        if (isRemoteUpdate.current.projects) {
+          isRemoteUpdate.current.projects = false;
+          return;
+        }
         
         // 첫 저장 시 초기 개수 기록
         if (isFirstSave.current.projects) {
@@ -864,6 +959,12 @@
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
         
+        // 리모트 업데이트면 저장 스킵
+        if (isRemoteUpdate.current.tasks) {
+          isRemoteUpdate.current.tasks = false;
+          return;
+        }
+        
         if (isFirstSave.current.tasks) {
           initialDataCount.current.tasks = tasks.length;
           isFirstSave.current.tasks = false;
@@ -883,6 +984,12 @@
       // 루틴 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
+        
+        // 리모트 업데이트면 저장 스킵
+        if (isRemoteUpdate.current.fixedTasks) {
+          isRemoteUpdate.current.fixedTasks = false;
+          return;
+        }
         
         if (isFirstSave.current.fixedTasks) {
           initialDataCount.current.fixedTasks = fixedTasks.length;
@@ -904,6 +1011,12 @@
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
         
+        // 리모트 업데이트면 저장 스킵
+        if (isRemoteUpdate.current.teamRequests) {
+          isRemoteUpdate.current.teamRequests = false;
+          return;
+        }
+        
         if (isFirstSave.current.teamRequests) {
           initialDataCount.current.teamRequests = teamRequests.length;
           isFirstSave.current.teamRequests = false;
@@ -919,6 +1032,13 @@
       // 회의록 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
+        
+        // 리모트 업데이트면 저장 스킵
+        if (isRemoteUpdate.current.meetings) {
+          isRemoteUpdate.current.meetings = false;
+          return;
+        }
+        
         if (meetings.length === 0) return; // 빈 배열 저장 방지
         
         console.log('[Firebase] 회의록 저장:', meetings.length, '개');
