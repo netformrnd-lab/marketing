@@ -3049,12 +3049,31 @@
     // ============ 타팀요청 업무 탭 ============
     function TeamRequestTab({ teamRequests, setTeamRequests, currentUser }) {
       const [filterTeam, setFilterTeam] = useState(null);
-      const [filterStatus, setFilterStatus] = useState(null);
+      const [filterStatus, setFilterStatus] = useState('pending'); // 기본값: 대기중
       const [filterAssignee, setFilterAssignee] = useState(null);
       const [showAddModal, setShowAddModal] = useState(false);
       const [editingRequest, setEditingRequest] = useState(null);
       const [selectedRequest, setSelectedRequest] = useState(null);
       const [confirmDelete, setConfirmDelete] = useState(null);
+      const hasMigrated = useRef(false);
+      
+      // 담당자가 지정되어 있는데 대기중인 항목은 자동으로 진행중으로 변경 (최초 1회)
+      useEffect(() => {
+        if (hasMigrated.current || teamRequests.length === 0) return;
+        
+        const needsUpdate = teamRequests.filter(r => 
+          r.assigneeId && r.status === 'pending' && !r.deletedAt
+        );
+        if (needsUpdate.length > 0) {
+          console.log('[Auto] 담당자 있는 대기중 항목 → 진행중 변경:', needsUpdate.length, '개');
+          setTeamRequests(prev => prev.map(r => 
+            r.assigneeId && r.status === 'pending' && !r.deletedAt
+              ? { ...r, status: 'progress' }
+              : r
+          ));
+        }
+        hasMigrated.current = true;
+      }, [teamRequests.length]); // teamRequests가 로드된 후 실행
       
       // ESC 키로 모달 닫기
       useEffect(() => {
@@ -3148,10 +3167,15 @@
         setTeamRequests(prev => [...prev, newRequest]);
       };
       
-      // 담당자 배정
+      // 담당자 배정 (배정 시 자동으로 진행중으로 변경)
       const assignRequest = (id, memberId) => {
         setTeamRequests(prev => prev.map(r => 
-          r.id === id ? { ...r, assigneeId: memberId } : r
+          r.id === id ? { 
+            ...r, 
+            assigneeId: memberId,
+            // 담당자가 지정되면 대기중 → 진행중으로 자동 변경
+            status: memberId && r.status === 'pending' ? 'progress' : r.status
+          } : r
         ));
       };
       
@@ -3648,14 +3672,7 @@
             )}
             
             {/* 통계 카드 - 필터 버튼 역할 */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, marginBottom: 32 }}>
-                <button
-                  onClick={() => setFilterStatus(null)}
-                  style={{ background: 'white', borderRadius: 12, padding: 20, border: filterStatus === null ? '3px solid #3182F6' : '1px solid #E5E8EB', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s', transform: filterStatus === null ? 'scale(1.02)' : 'scale(1)' }}
-                >
-                  <p style={{ fontSize: 13, color: '#8B95A1', marginBottom: 8 }}>전체</p>
-                  <p style={{ fontSize: 28, fontWeight: 700, color: '#191F28' }}>{stats.total}</p>
-                </button>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
                 <button
                   onClick={() => setFilterStatus('pending')}
                   style={{ background: '#F2F3F5', borderRadius: 12, padding: 20, border: filterStatus === 'pending' ? '3px solid #6B7684' : 'none', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s', transform: filterStatus === 'pending' ? 'scale(1.02)' : 'scale(1)' }}
@@ -3679,7 +3696,7 @@
                 </button>
                 {stats.unassigned > 0 && (
                   <button
-                    onClick={() => setFilterStatus(null)}
+                    onClick={() => setFilterStatus('pending')}
                     style={{ background: '#FFFBEB', borderRadius: 12, padding: 20, border: '2px dashed #F59E0B', cursor: 'pointer', textAlign: 'left' }}
                   >
                     <p style={{ fontSize: 13, color: '#F59E0B', marginBottom: 8 }}>⚠️ 미배정</p>
