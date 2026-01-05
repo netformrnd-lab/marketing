@@ -1344,6 +1344,8 @@
                 setMeetings={setMeetings}
                 projects={projects}
                 currentUser={currentUser}
+                tasks={tasks}
+                setTasks={setTasks}
               />
             </div>
             <div style={{ flex: 1, display: activeTab === 'drive' ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -1691,7 +1693,7 @@
       { id: 'project', name: '📋 프로젝트미팅', content: '## 프로젝트 현황\n- \n\n## 이슈 및 리스크\n- \n\n## 다음 단계\n- \n\n## 담당자별 할일\n- ' },
     ];
 
-    function MeetingTab({ meetings, setMeetings, projects, currentUser }) {
+    function MeetingTab({ meetings, setMeetings, projects, currentUser, tasks, setTasks }) {
       const [showAddModal, setShowAddModal] = useState(false);
       const [selectedMeeting, setSelectedMeeting] = useState(null);
       const [filterType, setFilterType] = useState('all');
@@ -1758,17 +1760,31 @@
       
       // 액션 아이템 상태 변경
       const toggleActionItem = (meetingId, actionItemId) => {
-        setMeetings(prev => prev.map(m => {
-          if (m.id !== meetingId) return m;
-          return {
-            ...m,
-            actionItems: m.actionItems.map(ai => 
-              ai.id === actionItemId 
-                ? { ...ai, status: ai.status === 'done' ? 'pending' : 'done' }
-                : ai
-            )
-          };
-        }));
+        // meetings 상태 업데이트
+        setMeetings(prev => {
+          const updated = prev.map(m => {
+            if (m.id !== meetingId) return m;
+            return {
+              ...m,
+              actionItems: m.actionItems.map(ai => 
+                ai.id === actionItemId 
+                  ? { ...ai, status: ai.status === 'done' ? 'pending' : 'done' }
+                  : ai
+              ),
+              updatedAt: new Date().toISOString()
+            };
+          });
+          // Firebase에도 저장
+          const updatedMeeting = updated.find(m => m.id === meetingId);
+          if (updatedMeeting) {
+            FirebaseService.saveDoc('meetings', meetingId, updatedMeeting);
+            // selectedMeeting도 업데이트
+            if (selectedMeeting && selectedMeeting.id === meetingId) {
+              setSelectedMeeting(updatedMeeting);
+            }
+          }
+          return updated;
+        });
       };
       
       return (
@@ -1931,6 +1947,18 @@
               onDelete={deleteMeeting}
               onClose={() => setSelectedMeeting(null)}
               onToggleActionItem={toggleActionItem}
+              onAddToPersonalTask={(actionItem) => {
+                const newTask = {
+                  id: Date.now(),
+                  title: actionItem.title,
+                  memberId: actionItem.assignee || currentUser.id,
+                  date: actionItem.dueDate || new Date().toISOString().split('T')[0],
+                  completed: actionItem.status === 'done',
+                  createdAt: new Date().toISOString(),
+                  fromMeeting: selectedMeeting.id
+                };
+                setTasks(prev => [...prev, newTask]);
+              }}
             />
           )}
           
@@ -1949,15 +1977,17 @@
     }
     
     // 회의록 상세 패널
-    function MeetingDetailPanel({ meeting, projects, currentUser, onUpdate, onDelete, onClose, onToggleActionItem }) {
+    function MeetingDetailPanel({ meeting, projects, currentUser, onUpdate, onDelete, onClose, onToggleActionItem, onAddToPersonalTask }) {
       const [isEditing, setIsEditing] = useState(false);
       const [editForm, setEditForm] = useState(meeting);
       const [newActionItem, setNewActionItem] = useState({ title: '', assignee: currentUser.id, dueDate: '' });
       const [showAddAction, setShowAddAction] = useState(false);
+      const [editingActionItem, setEditingActionItem] = useState(null); // 수정 중인 액션 아이템
       
       useEffect(() => {
         setEditForm(meeting);
         setIsEditing(false);
+        setEditingActionItem(null);
       }, [meeting.id]);
       
       const meetingType = MEETING_TYPES.find(t => t.id === meeting.type) || MEETING_TYPES[0];
@@ -1988,6 +2018,17 @@
           ...meeting,
           actionItems: (meeting.actionItems || []).filter(ai => ai.id !== actionItemId)
         });
+      };
+      
+      // 액션 아이템 수정
+      const updateActionItem = (actionItemId, updates) => {
+        onUpdate({
+          ...meeting,
+          actionItems: (meeting.actionItems || []).map(ai => 
+            ai.id === actionItemId ? { ...ai, ...updates } : ai
+          )
+        });
+        setEditingActionItem(null);
       };
       
       // 내용 저장
@@ -2163,7 +2204,57 @@
                     const assignee = TEAM_MEMBERS.find(m => m.id === ai.assignee);
                     const isDone = ai.status === 'done';
                     const isOverdue = ai.dueDate && new Date(ai.dueDate) < new Date() && !isDone;
+                    const hasNoProject = linkedProjects.length === 0;
+                    const isEditingThis = editingActionItem?.id === ai.id;
                     
+                    // 수정 모드
+                    if (isEditingThis) {
+                      return (
+                        <div key={ai.id} style={{ padding: '12px 16px', background: '#FFF8E6', borderRadius: 10, border: '2px solid #F59E0B' }}>
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                            <input
+                              type="text"
+                              value={editingActionItem.title}
+                              onChange={(e) => setEditingActionItem({ ...editingActionItem, title: e.target.value })}
+                              style={{ flex: 1, padding: '8px 12px', borderRadius: 6, border: '1px solid #E5E8EB', fontSize: 14 }}
+                              autoFocus
+                            />
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <select
+                              value={editingActionItem.assignee}
+                              onChange={(e) => setEditingActionItem({ ...editingActionItem, assignee: Number(e.target.value) })}
+                              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #E5E8EB', fontSize: 13 }}
+                            >
+                              {TEAM_MEMBERS.map(m => (
+                                <option key={m.id} value={m.id}>{m.name}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="date"
+                              value={editingActionItem.dueDate || ''}
+                              onChange={(e) => setEditingActionItem({ ...editingActionItem, dueDate: e.target.value })}
+                              style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #E5E8EB', fontSize: 13 }}
+                            />
+                            <div style={{ flex: 1 }} />
+                            <button
+                              onClick={() => setEditingActionItem(null)}
+                              style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, color: '#6B7684', cursor: 'pointer' }}
+                            >
+                              취소
+                            </button>
+                            <button
+                              onClick={() => updateActionItem(ai.id, editingActionItem)}
+                              style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#3182F6', fontSize: 12, color: 'white', fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              저장
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    
+                    // 일반 모드
                     return (
                       <div key={ai.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: isDone ? '#F7F8FA' : 'white', borderRadius: 10, border: '1px solid #E5E8EB' }}>
                         <button
@@ -2189,9 +2280,32 @@
                           <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: isDone ? '#D1FAE5' : isOverdue ? '#FEE2E2' : '#EBF4FF', color: isDone ? '#059669' : isOverdue ? '#DC2626' : '#3182F6' }}>
                             {isDone ? '완료' : isOverdue ? '지연' : '진행중'}
                           </span>
+                          {/* 프로젝트 연동 없으면 개인 업무일지 추가 버튼 */}
+                          {hasNoProject && (
+                            <button
+                              onClick={() => {
+                                onAddToPersonalTask(ai);
+                                alert('✅ 개인 업무일지에 추가되었습니다!');
+                              }}
+                              style={{ padding: '4px 8px', background: '#EBF4FF', border: '1px solid #3182F6', borderRadius: 4, fontSize: 11, color: '#3182F6', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              title="개인 업무일지로 추가"
+                            >
+                              📋 업무추가
+                            </button>
+                          )}
+                          {/* 수정 버튼 */}
+                          <button
+                            onClick={() => setEditingActionItem({ ...ai })}
+                            style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}
+                            title="수정"
+                          >
+                            <Icon name="edit" size={14} color="#3182F6" />
+                          </button>
+                          {/* 삭제 버튼 */}
                           <button
                             onClick={() => deleteActionItem(ai.id)}
                             style={{ padding: 4, background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}
+                            title="삭제"
                           >
                             <Icon name="trash" size={14} color="#DC2626" />
                           </button>
