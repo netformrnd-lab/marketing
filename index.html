@@ -4009,10 +4009,10 @@
             </div>
 
             {/* 오늘의 한마디 메모 */}
-            <DailyMemo selectedDate={selectedDate} />
+            <DailyMemo selectedDate={selectedDate} currentUser={currentUser} />
 
             {/* 고정 메모 */}
-            <FixedMemo />
+            <FixedMemo currentUser={currentUser} />
           </div>
 
           {/* 오른쪽 - 업무 리스트 */}
@@ -5569,23 +5569,24 @@
     }
 
     // ============ 데일리 메모 컴포넌트 ============
-    function DailyMemo({ selectedDate }) {
+    function DailyMemo({ selectedDate, currentUser }) {
       const [memos, setMemos] = useState({});
       const [memo, setMemo] = useState('');
       const [isEditing, setIsEditing] = useState(false);
       const [isLoaded, setIsLoaded] = useState(false);
 
-      // Firebase에서 메모 로드
+      // Firebase에서 메모 로드 (개인별)
       useEffect(() => {
+        if (!currentUser) return;
         const loadMemos = async () => {
-          const data = await FirebaseService.getDoc('settings', 'dailyMemos');
+          const data = await FirebaseService.getDoc('settings', `dailyMemos_${currentUser.id}`);
           if (data && data.memos) {
             setMemos(data.memos);
           }
           setIsLoaded(true);
         };
         loadMemos();
-      }, []);
+      }, [currentUser]);
 
       useEffect(() => {
         if (isLoaded) {
@@ -5597,8 +5598,8 @@
         const newMemos = { ...memos, [selectedDate]: memo };
         setMemos(newMemos);
         setIsEditing(false);
-        // Firebase에 저장
-        await FirebaseService.saveDoc('settings', 'dailyMemos', { memos: newMemos });
+        // Firebase에 저장 (개인별)
+        await FirebaseService.saveDoc('settings', `dailyMemos_${currentUser.id}`, { memos: newMemos });
       };
 
       return (
@@ -5642,23 +5643,24 @@
     }
 
     // ============ 고정 메모 컴포넌트 ============
-    function FixedMemo() {
+    function FixedMemo({ currentUser }) {
       const [memo, setMemo] = useState('');
       const [isEditing, setIsEditing] = useState(false);
       const [tempMemo, setTempMemo] = useState('');
       const [isLoaded, setIsLoaded] = useState(false);
 
-      // Firebase에서 고정 메모 로드
+      // Firebase에서 고정 메모 로드 (개인별)
       useEffect(() => {
+        if (!currentUser) return;
         const loadMemo = async () => {
-          const data = await FirebaseService.getDoc('settings', 'fixedMemo');
+          const data = await FirebaseService.getDoc('settings', `fixedMemo_${currentUser.id}`);
           if (data && data.content) {
             setMemo(data.content);
           }
           setIsLoaded(true);
         };
         loadMemo();
-      }, []);
+      }, [currentUser]);
 
       const startEdit = () => {
         setTempMemo(memo);
@@ -5668,8 +5670,8 @@
       const saveMemo = async () => {
         setMemo(tempMemo);
         setIsEditing(false);
-        // Firebase에 저장
-        await FirebaseService.saveDoc('settings', 'fixedMemo', { content: tempMemo });
+        // Firebase에 저장 (개인별)
+        await FirebaseService.saveDoc('settings', `fixedMemo_${currentUser.id}`, { content: tempMemo });
       };
 
       const cancelEdit = () => {
