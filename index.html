@@ -7752,7 +7752,7 @@
                               <div><textarea value={editText} onChange={(e) => setEditText(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #3182F6', fontSize: 14, resize: 'none', minHeight: 60 }} autoFocus /><div style={{ display: 'flex', gap: 8, marginTop: 8 }}><button onClick={() => setEditingCommentId(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, color: '#6B7684' }}>취소</button><button onClick={() => { if (editText.trim()) { onUpdateComment(c.id, editText.trim()); setEditingCommentId(null); } }} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#3182F6', fontSize: 13, color: 'white' }}>저장</button></div></div>
                             ) : (
                               <>
-                                {c.text && <p style={{ fontSize: 14, color: '#4B5563', lineHeight: 1.5 }}>{c.text}</p>}
+                                {c.text && <p style={{ fontSize: 14, color: '#4B5563', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.text}</p>}
                                 {c.file && (
                                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: c.text ? 8 : 0, padding: '8px 12px', background: '#F0F7FF', borderRadius: 8, cursor: 'pointer' }}>
                                     <Icon name="fileText" size={16} color="#3182F6" />
@@ -7981,8 +7981,35 @@
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{ width: 36, height: 36, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{currentUser.initial}</div>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#F7F8FA', borderRadius: 12, padding: '4px 4px 4px 16px' }}>
-                    <input type="text" value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (comment.trim() || attachedFile)) { handleSubmitComment(); } }} placeholder="댓글을 입력하세요..." style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, padding: '10px 0' }} />
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', background: '#F7F8FA', borderRadius: 12, padding: '4px 4px 4px 16px' }}>
+                    <textarea 
+                      value={comment} 
+                      onChange={(e) => setComment(e.target.value)} 
+                      onKeyDown={(e) => { 
+                        if (e.key === 'Enter' && !e.shiftKey && (comment.trim() || attachedFile)) { 
+                          e.preventDefault();
+                          handleSubmitComment(); 
+                        } 
+                      }} 
+                      placeholder="댓글을 입력하세요... (Shift+Enter: 줄바꿈)" 
+                      rows={1}
+                      style={{ 
+                        flex: 1, 
+                        border: 'none', 
+                        background: 'transparent', 
+                        fontSize: 14, 
+                        padding: '10px 0', 
+                        resize: 'none',
+                        minHeight: 40,
+                        maxHeight: 120,
+                        lineHeight: 1.4,
+                        fontFamily: 'inherit'
+                      }} 
+                      onInput={(e) => {
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                      }}
+                    />
                     <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} />
                     <button onClick={() => fileInputRef.current?.click()} style={{ width: 36, height: 36, borderRadius: 8, border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="paperclip" size={18} color="#8B95A1" /></button>
                     <button onClick={handleSubmitComment} disabled={!comment.trim() && !attachedFile} style={{ width: 36, height: 36, borderRadius: 8, border: 'none', background: (comment.trim() || attachedFile) ? '#3182F6' : '#E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="send" size={16} color={(comment.trim() || attachedFile) ? 'white' : '#8B95A1'} /></button>
