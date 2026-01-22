@@ -1458,7 +1458,7 @@
               <PlaceholderTab title="브랜드별 성과" icon="📊" description="브랜드별 성과를 분석하고 확인합니다" />
             </div>
             <div style={{ flex: 1, display: activeTab === 'onboarding' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <PlaceholderTab title="온보딩/매뉴얼" icon="📚" description="신입사원 온보딩 자료와 업무 매뉴얼을 관리합니다" />
+              <ManualTab currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'meeting' ? 'flex' : 'none', flexDirection: 'column' }}>
               <MeetingTab 
@@ -3049,6 +3049,840 @@
               <button onClick={handleSave} style={{ flex: 1, padding: 14, borderRadius: 10, border: 'none', background: '#3182F6', fontSize: 15, fontWeight: 600, color: 'white', cursor: 'pointer' }}>{isEdit ? '저장' : '만들기'}</button>
             </div>
           </div>
+        </div>
+      );
+    }
+
+    // ============ 매뉴얼 탭 ============
+    function ManualTab({ currentUser }) {
+      const [categories, setCategories] = useState([]);
+      const [documents, setDocuments] = useState([]);
+      const [selectedCategory, setSelectedCategory] = useState(null);
+      const [selectedDoc, setSelectedDoc] = useState(null);
+      const [searchQuery, setSearchQuery] = useState('');
+      const [isEditing, setIsEditing] = useState(false);
+      const [editingDoc, setEditingDoc] = useState(null);
+      const [showCategoryModal, setShowCategoryModal] = useState(false);
+      const [editingCategory, setEditingCategory] = useState(null);
+      const [isLoading, setIsLoading] = useState(true);
+      const [uploadingImage, setUploadingImage] = useState(false);
+      const [uploadProgress, setUploadProgress] = useState(0);
+      const fileInputRef = useRef(null);
+      
+      // 이미지 압축 함수
+      const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
+        return new Promise((resolve) => {
+          try {
+            // 이미 작은 파일은 압축 안 함
+            if (file.size < 100 * 1024) {
+              resolve(file);
+              return;
+            }
+            
+            const reader = new FileReader();
+            reader.onerror = () => {
+              console.warn('이미지 읽기 실패, 원본 사용');
+              resolve(file);
+            };
+            reader.onload = (e) => {
+              const img = new Image();
+              img.onerror = () => {
+                console.warn('이미지 로드 실패, 원본 사용');
+                resolve(file);
+              };
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement('canvas');
+                  let { width, height } = img;
+                  
+                  // 최대 너비 제한
+                  if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                  }
+                  
+                  canvas.width = width;
+                  canvas.height = height;
+                  
+                  const ctx = canvas.getContext('2d');
+                  // 투명 배경 처리 (흰색 배경)
+                  ctx.fillStyle = '#FFFFFF';
+                  ctx.fillRect(0, 0, width, height);
+                  ctx.drawImage(img, 0, 0, width, height);
+                  
+                  canvas.toBlob((blob) => {
+                    if (!blob) {
+                      console.warn('Blob 생성 실패, 원본 사용');
+                      resolve(file);
+                      return;
+                    }
+                    const compressedFile = new File([blob], file.name || 'image.jpg', { 
+                      type: 'image/jpeg',
+                      lastModified: Date.now()
+                    });
+                    console.log(`이미지 압축: ${(file.size/1024).toFixed(0)}KB → ${(compressedFile.size/1024).toFixed(0)}KB`);
+                    resolve(compressedFile);
+                  }, 'image/jpeg', quality);
+                } catch (err) {
+                  console.warn('압축 중 에러, 원본 사용:', err);
+                  resolve(file);
+                }
+              };
+              img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+          } catch (err) {
+            console.warn('압축 함수 에러, 원본 사용:', err);
+            resolve(file);
+          }
+        });
+      };
+      
+      // 기본 카테고리
+      const DEFAULT_CATEGORIES = [
+        { id: 'brand', name: '브랜드 가이드', icon: '🎨', description: '브랜드 소개, 서비스 소개 PPT, 로고 가이드 등', order: 0 },
+        { id: 'process', name: '업무 프로세스', icon: '📋', description: '명함 제작, 인쇄물 요청, 결재 프로세스 등', order: 1 },
+        { id: 'onboarding', name: '신입 온보딩', icon: '👋', description: '첫 출근 체크리스트, 조직도, 툴 세팅 등', order: 2 },
+        { id: 'tools', name: '툴 사용법', icon: '🔧', description: 'Cafe24, Firebase, n8n 자동화 등', order: 3 },
+      ];
+      
+      // Firebase에서 데이터 로드
+      useEffect(() => {
+        const loadData = async () => {
+          setIsLoading(true);
+          try {
+            // 카테고리 로드
+            const loadedCategories = await FirebaseService.getAll('manualCategories');
+            if (loadedCategories && loadedCategories.length > 0) {
+              setCategories(loadedCategories.sort((a, b) => a.order - b.order));
+            } else {
+              // 초기 카테고리 설정
+              setCategories(DEFAULT_CATEGORIES);
+              await FirebaseService.syncCollection('manualCategories', DEFAULT_CATEGORIES);
+            }
+            
+            // 문서 로드
+            const loadedDocs = await FirebaseService.getAll('manualDocuments');
+            if (loadedDocs) {
+              setDocuments(loadedDocs);
+            }
+          } catch (error) {
+            console.error('매뉴얼 데이터 로드 실패:', error);
+            setCategories(DEFAULT_CATEGORIES);
+          }
+          setIsLoading(false);
+        };
+        loadData();
+      }, []);
+      
+      // 실시간 동기화
+      useEffect(() => {
+        const unsubscribeCats = FirebaseService.onDataChange('manualCategories', (data) => {
+          if (data && data.length > 0) {
+            setCategories(data.sort((a, b) => a.order - b.order));
+          }
+        });
+        
+        const unsubscribeDocs = FirebaseService.onDataChange('manualDocuments', (data) => {
+          if (data) {
+            setDocuments(data);
+          }
+        });
+        
+        return () => {
+          if (unsubscribeCats) unsubscribeCats();
+          if (unsubscribeDocs) unsubscribeDocs();
+        };
+      }, []);
+      
+      // 즐겨찾기 문서
+      const favoriteDocIds = JSON.parse(localStorage.getItem(`manualFavorites_${currentUser.id}`) || '[]');
+      const favoriteDocs = documents.filter(d => favoriteDocIds.includes(d.id));
+      
+      // 즐겨찾기 토글
+      const toggleFavorite = (docId) => {
+        const current = JSON.parse(localStorage.getItem(`manualFavorites_${currentUser.id}`) || '[]');
+        const updated = current.includes(docId) 
+          ? current.filter(id => id !== docId)
+          : [...current, docId];
+        localStorage.setItem(`manualFavorites_${currentUser.id}`, JSON.stringify(updated));
+        // 리렌더링을 위해 상태 업데이트
+        setDocuments([...documents]);
+      };
+      
+      // 검색 필터
+      const filteredDocs = searchQuery 
+        ? documents.filter(d => 
+            d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            d.content?.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        : selectedCategory 
+          ? documents.filter(d => d.categoryId === selectedCategory)
+          : [];
+      
+      // 조회수 증가
+      const incrementViewCount = async (doc) => {
+        const updated = { ...doc, viewCount: (doc.viewCount || 0) + 1 };
+        await FirebaseService.save('manualDocuments', doc.id, updated);
+      };
+      
+      // 문서 저장
+      const saveDocument = async () => {
+        if (!editingDoc.title.trim()) {
+          alert('제목을 입력해주세요.');
+          return;
+        }
+        
+        const now = new Date().toISOString();
+        const docToSave = {
+          ...editingDoc,
+          updatedAt: now,
+          updatedBy: currentUser.id,
+          updatedByName: currentUser.name,
+        };
+        
+        if (!editingDoc.id) {
+          // 새 문서
+          docToSave.id = Date.now().toString();
+          docToSave.createdAt = now;
+          docToSave.createdBy = currentUser.id;
+          docToSave.createdByName = currentUser.name;
+          docToSave.viewCount = 0;
+        }
+        
+        await FirebaseService.save('manualDocuments', docToSave.id, docToSave);
+        setDocuments(prev => {
+          const existing = prev.find(d => d.id === docToSave.id);
+          if (existing) {
+            return prev.map(d => d.id === docToSave.id ? docToSave : d);
+          }
+          return [...prev, docToSave];
+        });
+        
+        setIsEditing(false);
+        setEditingDoc(null);
+        setSelectedDoc(docToSave);
+      };
+      
+      // 문서 삭제
+      const deleteDocument = async (docId) => {
+        if (!confirm('정말 삭제하시겠습니까?')) return;
+        await FirebaseService.delete('manualDocuments', docId);
+        setDocuments(prev => prev.filter(d => d.id !== docId));
+        setSelectedDoc(null);
+      };
+      
+      // 카테고리 저장
+      const saveCategory = async () => {
+        if (!editingCategory.name.trim()) {
+          alert('카테고리 이름을 입력해주세요.');
+          return;
+        }
+        
+        const catToSave = {
+          ...editingCategory,
+          id: editingCategory.id || Date.now().toString(),
+          order: editingCategory.order ?? categories.length,
+        };
+        
+        await FirebaseService.save('manualCategories', catToSave.id, catToSave);
+        setCategories(prev => {
+          const existing = prev.find(c => c.id === catToSave.id);
+          if (existing) {
+            return prev.map(c => c.id === catToSave.id ? catToSave : c);
+          }
+          return [...prev, catToSave];
+        });
+        
+        setShowCategoryModal(false);
+        setEditingCategory(null);
+      };
+      
+      // 카테고리 삭제
+      const deleteCategory = async (catId) => {
+        const docsInCategory = documents.filter(d => d.categoryId === catId);
+        if (docsInCategory.length > 0) {
+          alert(`이 카테고리에 ${docsInCategory.length}개의 문서가 있습니다. 먼저 문서를 삭제하거나 이동해주세요.`);
+          return;
+        }
+        if (!confirm('정말 삭제하시겠습니까?')) return;
+        await FirebaseService.delete('manualCategories', catId);
+        setCategories(prev => prev.filter(c => c.id !== catId));
+        if (selectedCategory === catId) setSelectedCategory(null);
+      };
+      
+      // 이미지 파일 업로드 (공통 함수)
+      const uploadImageFile = async (file) => {
+        if (!file) return null;
+        
+        console.log('업로드 시작:', file.name, file.type, (file.size/1024).toFixed(0) + 'KB');
+        
+        if (!file.type.startsWith('image/')) {
+          alert('이미지 파일만 업로드 가능합니다.');
+          return null;
+        }
+        
+        if (file.size > 10 * 1024 * 1024) {
+          alert('파일 크기는 10MB 이하만 가능합니다.');
+          return null;
+        }
+        
+        setUploadingImage(true);
+        setUploadProgress(0);
+        
+        try {
+          // 이미지 압축
+          console.log('이미지 압축 시작...');
+          const compressedFile = await compressImage(file);
+          console.log('압축 완료:', (compressedFile.size/1024).toFixed(0) + 'KB');
+          
+          const fileName = file.name || `screenshot_${Date.now()}.png`;
+          const path = `manuals/${Date.now()}_${fileName}`;
+          
+          console.log('Firebase 업로드 시작:', path);
+          // 진행률 콜백과 함께 업로드
+          const result = await FirebaseService.uploadFile(compressedFile, path, (progress) => {
+            setUploadProgress(Math.round(progress));
+          });
+          
+          console.log('업로드 결과:', result);
+          
+          if (result?.url) {
+            return { url: result.url, fileName };
+          } else {
+            console.error('업로드 결과에 URL 없음');
+            alert('이미지 업로드에 실패했습니다. (URL 없음)');
+          }
+        } catch (error) {
+          console.error('이미지 업로드 실패:', error);
+          alert(`이미지 업로드에 실패했습니다.\n${error.message || error}`);
+        } finally {
+          setUploadingImage(false);
+          setUploadProgress(0);
+        }
+        return null;
+      };
+      
+      // 파일 선택으로 이미지 업로드
+      const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        const result = await uploadImageFile(file);
+        if (result) {
+          const imageTag = `\n![${result.fileName}](${result.url})\n`;
+          setEditingDoc(prev => ({
+            ...prev,
+            content: (prev.content || '') + imageTag
+          }));
+        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      };
+      
+      // 클립보드에서 이미지 붙여넣기 (Ctrl+V)
+      const handlePaste = async (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            e.preventDefault(); // 기본 붙여넣기 동작 방지
+            
+            const file = item.getAsFile();
+            if (file) {
+              const result = await uploadImageFile(file);
+              if (result) {
+                const imageTag = `\n![${result.fileName}](${result.url})\n`;
+                // 현재 커서 위치에 이미지 삽입
+                const textarea = e.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const currentContent = editingDoc.content || '';
+                const newContent = currentContent.substring(0, start) + imageTag + currentContent.substring(end);
+                setEditingDoc(prev => ({
+                  ...prev,
+                  content: newContent
+                }));
+              }
+            }
+            break; // 첫 번째 이미지만 처리
+          }
+        }
+      };
+      
+      // 마크다운을 HTML로 변환 (간단 버전)
+      const renderMarkdown = (text) => {
+        if (!text) return '';
+        let html = text
+          // 이미지
+          .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:12px 0;" />')
+          // 링크
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#3182F6;">$1</a>')
+          // 헤더
+          .replace(/^### (.+)$/gm, '<h3 style="font-size:16px;font-weight:700;margin:20px 0 8px;color:#191F28;">$1</h3>')
+          .replace(/^## (.+)$/gm, '<h2 style="font-size:18px;font-weight:700;margin:24px 0 12px;color:#191F28;">$1</h2>')
+          .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;font-weight:700;margin:28px 0 16px;color:#191F28;">$1</h1>')
+          // 굵게
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          // 기울임
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          // 리스트
+          .replace(/^- (.+)$/gm, '<li style="margin-left:20px;margin-bottom:4px;">$1</li>')
+          .replace(/^(\d+)\. (.+)$/gm, '<li style="margin-left:20px;margin-bottom:4px;list-style-type:decimal;">$2</li>')
+          // 구분선
+          .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #E5E8EB;margin:20px 0;" />')
+          // 줄바꿈
+          .replace(/\n/g, '<br />');
+        return html;
+      };
+      
+      // 로딩 화면
+      if (isLoading) {
+        return (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F7F8FA' }}>
+            <div className="loading-spinner"></div>
+          </div>
+        );
+      }
+      
+      // 문서 편집 화면
+      if (isEditing && editingDoc) {
+        return (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA' }}>
+            {/* 헤더 */}
+            <div style={{ padding: '20px 32px', background: 'white', borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button onClick={() => { setIsEditing(false); setEditingDoc(null); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, cursor: 'pointer' }}>
+                ← 취소
+              </button>
+              <div style={{ flex: 1 }}>
+                <input
+                  type="text"
+                  value={editingDoc.title}
+                  onChange={(e) => setEditingDoc(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="문서 제목을 입력하세요"
+                  style={{ width: '100%', padding: '12px 16px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 18, fontWeight: 700 }}
+                />
+              </div>
+              <button onClick={saveDocument} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                💾 저장
+              </button>
+            </div>
+            
+            {/* 카테고리 선택 */}
+            <div style={{ padding: '12px 32px', background: 'white', borderBottom: '1px solid #E5E8EB' }}>
+              <select
+                value={editingDoc.categoryId || ''}
+                onChange={(e) => setEditingDoc(prev => ({ ...prev, categoryId: e.target.value }))}
+                style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #E5E8EB', fontSize: 14 }}
+              >
+                <option value="">카테고리 선택</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* 에디터 툴바 */}
+            <div style={{ padding: '12px 32px', background: 'white', borderBottom: '1px solid #E5E8EB', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n# ' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>H1</button>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n## ' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>H2</button>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n### ' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>H3</button>
+              <span style={{ width: 1, background: '#E5E8EB', margin: '0 4px' }}></span>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '**굵게**' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>B</button>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '*기울임*' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, fontStyle: 'italic', cursor: 'pointer' }}>I</button>
+              <span style={{ width: 1, background: '#E5E8EB', margin: '0 4px' }}></span>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n- ' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>• 리스트</button>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n1. ' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>1. 번호</button>
+              <span style={{ width: 1, background: '#E5E8EB', margin: '0 4px' }}></span>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n[링크텍스트](URL)' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>🔗 링크</button>
+              <button onClick={() => setEditingDoc(prev => ({ ...prev, content: prev.content + '\n---\n' }))} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, cursor: 'pointer' }}>― 구분선</button>
+              <span style={{ width: 1, background: '#E5E8EB', margin: '0 4px' }}></span>
+              <input type="file" ref={fileInputRef} accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+              <button onClick={() => fileInputRef.current?.click()} disabled={uploadingImage} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #E5E8EB', background: uploadingImage ? '#F7F8FA' : 'white', fontSize: 13, cursor: uploadingImage ? 'wait' : 'pointer' }}>
+                {uploadingImage ? '업로드중...' : '📷 이미지'}
+              </button>
+              <span style={{ fontSize: 12, color: '#8B95A1', marginLeft: 4 }}>또는 Ctrl+V</span>
+            </div>
+            
+            {/* 에디터 본문 */}
+            <div style={{ flex: 1, padding: 32, overflow: 'auto', position: 'relative' }}>
+              {uploadingImage && (
+                <div style={{ 
+                  position: 'absolute', 
+                  top: 32, 
+                  left: 32, 
+                  right: 32, 
+                  padding: '12px 20px', 
+                  background: '#EBF4FF', 
+                  borderRadius: 8, 
+                  zIndex: 10,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                    <div className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2 }}></div>
+                    <span style={{ fontSize: 14, color: '#3182F6', fontWeight: 500 }}>
+                      이미지 업로드 중... {uploadProgress}%
+                    </span>
+                  </div>
+                  <div style={{ height: 4, background: '#D1E3FF', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ 
+                      height: '100%', 
+                      background: '#3182F6', 
+                      borderRadius: 2,
+                      width: `${uploadProgress}%`,
+                      transition: 'width 0.2s ease'
+                    }}></div>
+                  </div>
+                </div>
+              )}
+              <textarea
+                value={editingDoc.content || ''}
+                onChange={(e) => setEditingDoc(prev => ({ ...prev, content: e.target.value }))}
+                onPaste={handlePaste}
+                placeholder="내용을 입력하세요...
+
+마크다운 문법을 사용할 수 있습니다:
+# 제목1
+## 제목2
+**굵게** *기울임*
+- 리스트
+[링크](URL)
+![이미지](URL)
+
+💡 팁: Ctrl+V로 캡처 이미지를 바로 붙여넣을 수 있어요!"
+                style={{ 
+                  width: '100%', 
+                  minHeight: 500, 
+                  padding: 24, 
+                  borderRadius: 12, 
+                  border: '1px solid #E5E8EB', 
+                  background: 'white',
+                  fontSize: 15, 
+                  lineHeight: 1.8, 
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+      
+      // 문서 상세 보기
+      if (selectedDoc) {
+        const doc = documents.find(d => d.id === selectedDoc.id) || selectedDoc;
+        const isFavorite = favoriteDocIds.includes(doc.id);
+        const category = categories.find(c => c.id === doc.categoryId);
+        
+        return (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA' }}>
+            {/* 헤더 */}
+            <div style={{ padding: '20px 32px', background: 'white', borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button onClick={() => setSelectedDoc(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, cursor: 'pointer' }}>
+                ← 목록
+              </button>
+              {category && (
+                <span style={{ padding: '6px 12px', borderRadius: 6, background: '#F7F8FA', fontSize: 13, color: '#6B7684' }}>
+                  {category.icon} {category.name}
+                </span>
+              )}
+              <div style={{ flex: 1 }}></div>
+              <button onClick={() => toggleFavorite(doc.id)} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, cursor: 'pointer' }}>
+                {isFavorite ? '⭐' : '☆'} 즐겨찾기
+              </button>
+              <button onClick={() => { setEditingDoc(doc); setIsEditing(true); }} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, cursor: 'pointer' }}>
+                ✏️ 수정
+              </button>
+              <button onClick={() => deleteDocument(doc.id)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #F04452', background: 'white', color: '#F04452', fontSize: 14, cursor: 'pointer' }}>
+                🗑️ 삭제
+              </button>
+            </div>
+            
+            {/* 본문 */}
+            <div style={{ flex: 1, overflow: 'auto', padding: 32 }}>
+              <div style={{ maxWidth: 800, margin: '0 auto', background: 'white', borderRadius: 16, padding: 40, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <h1 style={{ fontSize: 28, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>{doc.title}</h1>
+                
+                {/* 메타 정보 */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 32, paddingBottom: 24, borderBottom: '1px solid #E5E8EB' }}>
+                  <span style={{ fontSize: 13, color: '#8B95A1' }}>📝 작성: {doc.createdByName || '알 수 없음'}</span>
+                  <span style={{ fontSize: 13, color: '#8B95A1' }}>📅 수정: {doc.updatedAt ? new Date(doc.updatedAt).toLocaleDateString('ko-KR') : '-'}</span>
+                  <span style={{ fontSize: 13, color: '#8B95A1' }}>👁️ 조회: {doc.viewCount || 0}</span>
+                </div>
+                
+                {/* 컨텐츠 */}
+                <div 
+                  style={{ fontSize: 15, lineHeight: 1.9, color: '#333' }}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.content) }}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      }
+      
+      // 메인 목록 화면
+      return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA' }}>
+          {/* 헤더 */}
+          <div style={{ padding: '24px 32px', background: 'white', borderBottom: '1px solid #E5E8EB' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>📚 온보딩/매뉴얼</h1>
+                <p style={{ fontSize: 14, color: '#8B95A1' }}>업무 프로세스와 브랜드 가이드를 관리합니다</p>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => { setEditingCategory({ name: '', icon: '📁', description: '' }); setShowCategoryModal(true); }} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, cursor: 'pointer' }}>
+                  + 카테고리
+                </button>
+                <button onClick={() => { setEditingDoc({ title: '', content: '', categoryId: selectedCategory || '' }); setIsEditing(true); }} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  + 문서 추가
+                </button>
+              </div>
+            </div>
+            
+            {/* 검색 */}
+            <div style={{ position: 'relative', maxWidth: 400 }}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setSelectedCategory(null); }}
+                placeholder="문서 검색..."
+                style={{ width: '100%', padding: '12px 16px 12px 44px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }}
+              />
+              <span style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#8B95A1' }}>🔍</span>
+            </div>
+          </div>
+          
+          {/* 본문 */}
+          <div style={{ flex: 1, overflow: 'auto', padding: 32 }}>
+            {/* 즐겨찾기 */}
+            {favoriteDocs.length > 0 && !searchQuery && (
+              <div style={{ marginBottom: 32 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  ⭐ 즐겨찾기 <span style={{ fontSize: 13, color: '#8B95A1', fontWeight: 500 }}>({favoriteDocs.length})</span>
+                </h2>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {favoriteDocs.map(doc => {
+                    const cat = categories.find(c => c.id === doc.categoryId);
+                    return (
+                      <div
+                        key={doc.id}
+                        onClick={() => { incrementViewCount(doc); setSelectedDoc(doc); }}
+                        style={{ 
+                          padding: 16, 
+                          background: 'white', 
+                          borderRadius: 12, 
+                          border: '1px solid #E5E8EB',
+                          cursor: 'pointer',
+                          minWidth: 200,
+                          transition: 'all 0.15s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#3182F6'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#E5E8EB'}
+                      >
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#191F28', marginBottom: 8 }}>{doc.title}</div>
+                        <div style={{ fontSize: 12, color: '#8B95A1' }}>{cat?.icon} {cat?.name}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* 검색 결과 */}
+            {searchQuery && (
+              <div style={{ marginBottom: 32 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>
+                  🔍 검색 결과 <span style={{ fontSize: 13, color: '#8B95A1', fontWeight: 500 }}>({filteredDocs.length}건)</span>
+                </h2>
+                {filteredDocs.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#8B95A1' }}>검색 결과가 없습니다.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {filteredDocs.map(doc => {
+                      const cat = categories.find(c => c.id === doc.categoryId);
+                      const isFav = favoriteDocIds.includes(doc.id);
+                      return (
+                        <div
+                          key={doc.id}
+                          onClick={() => { incrementViewCount(doc); setSelectedDoc(doc); }}
+                          style={{ 
+                            padding: '16px 20px', 
+                            background: 'white', 
+                            borderRadius: 10, 
+                            border: '1px solid #E5E8EB',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12
+                          }}
+                        >
+                          <span style={{ fontSize: 13, color: '#6B7684' }}>{cat?.icon}</span>
+                          <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: '#191F28' }}>{doc.title}</span>
+                          {isFav && <span style={{ color: '#FBBF24' }}>⭐</span>}
+                          <span style={{ fontSize: 12, color: '#8B95A1' }}>👁️ {doc.viewCount || 0}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* 카테고리별 목록 */}
+            {!searchQuery && (
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>📁 카테고리</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {categories.map(cat => {
+                    const catDocs = documents.filter(d => d.categoryId === cat.id);
+                    const isExpanded = selectedCategory === cat.id;
+                    
+                    return (
+                      <div key={cat.id} style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                        {/* 카테고리 헤더 */}
+                        <div 
+                          onClick={() => setSelectedCategory(isExpanded ? null : cat.id)}
+                          style={{ 
+                            padding: '18px 20px', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: 12,
+                            cursor: 'pointer',
+                            background: isExpanded ? '#F7F8FA' : 'white'
+                          }}
+                        >
+                          <span style={{ fontSize: 24 }}>{cat.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 15, fontWeight: 600, color: '#191F28' }}>{cat.name}</div>
+                            <div style={{ fontSize: 13, color: '#8B95A1' }}>{cat.description}</div>
+                          </div>
+                          <span style={{ 
+                            minWidth: 24, height: 24, borderRadius: 12, 
+                            background: catDocs.length > 0 ? '#3182F6' : '#E5E8EB', 
+                            color: catDocs.length > 0 ? 'white' : '#8B95A1',
+                            fontSize: 12, fontWeight: 600,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}>
+                            {catDocs.length}
+                          </span>
+                          <span style={{ color: '#8B95A1', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingCategory(cat); setShowCategoryModal(true); }}
+                            style={{ padding: 6, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: '#8B95A1' }}
+                          >
+                            ✏️
+                          </button>
+                        </div>
+                        
+                        {/* 문서 목록 */}
+                        {isExpanded && (
+                          <div style={{ borderTop: '1px solid #E5E8EB' }}>
+                            {catDocs.length === 0 ? (
+                              <div style={{ padding: '24px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>
+                                아직 문서가 없습니다. 
+                                <button 
+                                  onClick={() => { setEditingDoc({ title: '', content: '', categoryId: cat.id }); setIsEditing(true); }}
+                                  style={{ color: '#3182F6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                                >
+                                  첫 문서 작성하기
+                                </button>
+                              </div>
+                            ) : (
+                              catDocs.map((doc, idx) => {
+                                const isFav = favoriteDocIds.includes(doc.id);
+                                return (
+                                  <div
+                                    key={doc.id}
+                                    onClick={() => { incrementViewCount(doc); setSelectedDoc(doc); }}
+                                    style={{ 
+                                      padding: '14px 20px 14px 56px', 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      gap: 12,
+                                      cursor: 'pointer',
+                                      borderTop: idx > 0 ? '1px solid #F2F4F6' : 'none',
+                                      transition: 'background 0.15s'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                  >
+                                    <span style={{ fontSize: 14, fontWeight: 500, color: '#191F28', flex: 1 }}>{doc.title}</span>
+                                    {isFav && <span style={{ color: '#FBBF24', fontSize: 12 }}>⭐</span>}
+                                    <span style={{ fontSize: 12, color: '#8B95A1' }}>👁️ {doc.viewCount || 0}</span>
+                                    <span style={{ fontSize: 12, color: '#B0B8C1' }}>{doc.updatedAt ? new Date(doc.updatedAt).toLocaleDateString('ko-KR') : ''}</span>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* 카테고리 모달 */}
+          {showCategoryModal && editingCategory && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 400, maxWidth: '90%' }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>
+                  {editingCategory.id ? '카테고리 수정' : '새 카테고리'}
+                </h3>
+                
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#6B7684' }}>아이콘</label>
+                  <input
+                    type="text"
+                    value={editingCategory.icon}
+                    onChange={(e) => setEditingCategory(prev => ({ ...prev, icon: e.target.value }))}
+                    placeholder="📁"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  />
+                </div>
+                
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#6B7684' }}>이름</label>
+                  <input
+                    type="text"
+                    value={editingCategory.name}
+                    onChange={(e) => setEditingCategory(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="카테고리 이름"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  />
+                </div>
+                
+                <div style={{ marginBottom: 24 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#6B7684' }}>설명</label>
+                  <input
+                    type="text"
+                    value={editingCategory.description}
+                    onChange={(e) => setEditingCategory(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="카테고리 설명"
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  />
+                </div>
+                
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {editingCategory.id && (
+                    <button onClick={() => deleteCategory(editingCategory.id)} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #F04452', background: 'white', color: '#F04452', fontSize: 14, cursor: 'pointer' }}>
+                      삭제
+                    </button>
+                  )}
+                  <div style={{ flex: 1 }}></div>
+                  <button onClick={() => { setShowCategoryModal(false); setEditingCategory(null); }} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, cursor: 'pointer' }}>
+                    취소
+                  </button>
+                  <button onClick={saveCategory} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                    저장
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
