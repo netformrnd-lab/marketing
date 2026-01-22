@@ -3067,9 +3067,59 @@
       const [isLoading, setIsLoading] = useState(true);
       const [uploadingImage, setUploadingImage] = useState(false);
       const [uploadProgress, setUploadProgress] = useState(0);
+      const [imageCache, setImageCache] = useState({});
       const fileInputRef = useRef(null);
       
-      // 이미지 압축 함수
+      // 이미지 로드 함수
+      const loadImage = async (imageId) => {
+        if (imageCache[imageId]) return imageCache[imageId];
+        
+        try {
+          const snapshot = await database.ref(`manualImages/${imageId}`).once('value');
+          const data = snapshot.val();
+          if (data?.data) {
+            setImageCache(prev => ({ ...prev, [imageId]: data.data }));
+            return data.data;
+          }
+        } catch (error) {
+          console.error('이미지 로드 실패:', imageId, error);
+        }
+        return null;
+      };
+      
+      // 에디터 내용에서 이미지 ID 찾아서 미리 로드
+      useEffect(() => {
+        if (!editingDoc?.content) return;
+        
+        // [📷 파일명](IMG_xxx) 패턴에서 이미지 ID 추출
+        const imageIds = [];
+        const regex = /\[📷[^\]]*\]\((IMG_\d+)\)/g;
+        let match;
+        while ((match = regex.exec(editingDoc.content)) !== null) {
+          if (!imageCache[match[1]]) {
+            imageIds.push(match[1]);
+          }
+        }
+        
+        // 이미지 로드
+        imageIds.forEach(loadImage);
+      }, [editingDoc?.content]);
+      
+      // selectedDoc에서도 이미지 로드
+      useEffect(() => {
+        if (!selectedDoc?.content) return;
+        
+        const imageIds = [];
+        const regex = /\[📷[^\]]*\]\((IMG_\d+)\)/g;
+        let match;
+        while ((match = regex.exec(selectedDoc.content)) !== null) {
+          if (!imageCache[match[1]]) {
+            imageIds.push(match[1]);
+          }
+        }
+        
+        imageIds.forEach(loadImage);
+      }, [selectedDoc?.content]);
       const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
         return new Promise((resolve) => {
           try {
@@ -3311,7 +3361,7 @@
         if (selectedCategory === catId) setSelectedCategory(null);
       };
       
-      // 이미지 파일 업로드 (공통 함수)
+      // 이미지 파일 업로드 (Base64로 Database에 저장 - CORS 문제 없음)
       const uploadImageFile = async (file) => {
         if (!file) return null;
         
@@ -3322,8 +3372,8 @@
           return null;
         }
         
-        if (file.size > 10 * 1024 * 1024) {
-          alert('파일 크기는 10MB 이하만 가능합니다.');
+        if (file.size > 5 * 1024 * 1024) {
+          alert('파일 크기는 5MB 이하만 가능합니다.');
           return null;
         }
         
@@ -3331,28 +3381,41 @@
         setUploadProgress(0);
         
         try {
-          // 이미지 압축
-          console.log('이미지 압축 시작...');
-          const compressedFile = await compressImage(file);
-          console.log('압축 완료:', (compressedFile.size/1024).toFixed(0) + 'KB');
+          // 이미지 압축 후 Base64로 변환
+          setUploadProgress(20);
+          const compressedFile = await compressImage(file, 800, 0.7);
           
-          const fileName = file.name || `screenshot_${Date.now()}.png`;
-          const path = `manuals/${Date.now()}_${fileName}`;
+          setUploadProgress(50);
           
-          console.log('Firebase 업로드 시작:', path);
-          // 진행률 콜백과 함께 업로드
-          const result = await FirebaseService.uploadFile(compressedFile, path, (progress) => {
-            setUploadProgress(Math.round(progress));
+          // File을 Base64로 변환
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(compressedFile);
           });
           
-          console.log('업로드 결과:', result);
+          setUploadProgress(80);
           
-          if (result?.url) {
-            return { url: result.url, fileName };
-          } else {
-            console.error('업로드 결과에 URL 없음');
-            alert('이미지 업로드에 실패했습니다. (URL 없음)');
-          }
+          // Database에 이미지 저장 (짧은 ID 사용)
+          const imageId = `IMG_${Date.now()}`;
+          const fileName = file.name || `screenshot.png`;
+          await database.ref(`manualImages/${imageId}`).set({
+            data: base64,
+            name: fileName,
+            size: compressedFile.size,
+            createdAt: new Date().toISOString()
+          });
+          
+          setUploadProgress(100);
+          console.log('이미지 저장 완료:', imageId, (compressedFile.size/1024).toFixed(0) + 'KB');
+          
+          // 캐시에도 저장 (미리보기 즉시 표시)
+          setImageCache(prev => ({ ...prev, [imageId]: base64 }));
+          
+          // 짧은 ID 반환 (에디터에 표시될 내용)
+          return { imageId, fileName };
+          
         } catch (error) {
           console.error('이미지 업로드 실패:', error);
           alert(`이미지 업로드에 실패했습니다.\n${error.message || error}`);
@@ -3368,7 +3431,8 @@
         const file = e.target.files?.[0];
         const result = await uploadImageFile(file);
         if (result) {
-          const imageTag = `\n![${result.fileName}](${result.url})\n`;
+          // 짧은 이미지 태그 삽입
+          const imageTag = `\n[📷 ${result.fileName}](${result.imageId})\n`;
           setEditingDoc(prev => ({
             ...prev,
             content: (prev.content || '') + imageTag
@@ -3391,7 +3455,8 @@
             if (file) {
               const result = await uploadImageFile(file);
               if (result) {
-                const imageTag = `\n![${result.fileName}](${result.url})\n`;
+                // 짧은 이미지 태그 삽입
+                const imageTag = `\n[📷 ${result.fileName}](${result.imageId})\n`;
                 // 현재 커서 위치에 이미지 삽입
                 const textarea = e.target;
                 const start = textarea.selectionStart;
@@ -3413,7 +3478,17 @@
       const renderMarkdown = (text) => {
         if (!text) return '';
         let html = text
-          // 이미지
+          // 커스텀 이미지 태그 [📷 파일명](IMG_xxx) → 실제 이미지
+          .replace(/\[📷([^\]]*)\]\((IMG_\d+)\)/g, (match, fileName, imageId) => {
+            const imageData = imageCache[imageId];
+            if (imageData) {
+              return `<div style="margin:16px 0;"><img src="${imageData}" alt="${fileName}" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);" /><div style="font-size:12px;color:#6B7684;margin-top:4px;">📷${fileName}</div></div>`;
+            }
+            return `<div style="padding:40px;background:#F7F8FA;border-radius:8px;text-align:center;margin:16px 0;"><div style="color:#8B95A1;">🖼️ 이미지 로딩중...</div><div style="font-size:12px;color:#ADB5BD;margin-top:4px;">${fileName}</div></div>`;
+          })
+          // 기존 마크다운 이미지 (Base64 직접 포함된 경우)
+          .replace(/!\[([^\]]*)\]\((data:image[^)]+)\)/g, '<div style="margin:16px 0;"><img src="$2" alt="$1" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);" /></div>')
+          // 일반 이미지 URL
           .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:12px 0;" />')
           // 링크
           .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#3182F6;">$1</a>')
@@ -3503,42 +3578,45 @@
               <span style={{ fontSize: 12, color: '#8B95A1', marginLeft: 4 }}>또는 Ctrl+V</span>
             </div>
             
-            {/* 에디터 본문 */}
-            <div style={{ flex: 1, padding: 32, overflow: 'auto', position: 'relative' }}>
-              {uploadingImage && (
-                <div style={{ 
-                  position: 'absolute', 
-                  top: 32, 
-                  left: 32, 
-                  right: 32, 
-                  padding: '12px 20px', 
-                  background: '#EBF4FF', 
-                  borderRadius: 8, 
-                  zIndex: 10,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                    <div className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2 }}></div>
-                    <span style={{ fontSize: 14, color: '#3182F6', fontWeight: 500 }}>
-                      이미지 업로드 중... {uploadProgress}%
-                    </span>
+            {/* 에디터 본문 - 좌우 분할 */}
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              {/* 왼쪽: 에디터 */}
+              <div style={{ flex: 1, padding: 24, overflow: 'auto', position: 'relative', borderRight: '1px solid #E5E8EB' }}>
+                {uploadingImage && (
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: 24, 
+                    left: 24, 
+                    right: 24, 
+                    padding: '12px 20px', 
+                    background: '#EBF4FF', 
+                    borderRadius: 8, 
+                    zIndex: 10,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                      <div className="loading-spinner" style={{ width: 20, height: 20, borderWidth: 2 }}></div>
+                      <span style={{ fontSize: 14, color: '#3182F6', fontWeight: 500 }}>
+                        이미지 업로드 중... {uploadProgress}%
+                      </span>
+                    </div>
+                    <div style={{ height: 4, background: '#D1E3FF', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ 
+                        height: '100%', 
+                        background: '#3182F6', 
+                        borderRadius: 2,
+                        width: `${uploadProgress}%`,
+                        transition: 'width 0.2s ease'
+                      }}></div>
+                    </div>
                   </div>
-                  <div style={{ height: 4, background: '#D1E3FF', borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{ 
-                      height: '100%', 
-                      background: '#3182F6', 
-                      borderRadius: 2,
-                      width: `${uploadProgress}%`,
-                      transition: 'width 0.2s ease'
-                    }}></div>
-                  </div>
-                </div>
-              )}
-              <textarea
-                value={editingDoc.content || ''}
-                onChange={(e) => setEditingDoc(prev => ({ ...prev, content: e.target.value }))}
-                onPaste={handlePaste}
-                placeholder="내용을 입력하세요...
+                )}
+                <div style={{ marginBottom: 12, fontSize: 12, color: '#8B95A1', fontWeight: 600 }}>✏️ 편집</div>
+                <textarea
+                  value={editingDoc.content || ''}
+                  onChange={(e) => setEditingDoc(prev => ({ ...prev, content: e.target.value }))}
+                  onPaste={handlePaste}
+                  placeholder="내용을 입력하세요...
 
 마크다운 문법을 사용할 수 있습니다:
 # 제목1
@@ -3546,22 +3624,43 @@
 **굵게** *기울임*
 - 리스트
 [링크](URL)
-![이미지](URL)
 
 💡 팁: Ctrl+V로 캡처 이미지를 바로 붙여넣을 수 있어요!"
-                style={{ 
-                  width: '100%', 
-                  minHeight: 500, 
-                  padding: 24, 
+                  style={{ 
+                    width: '100%', 
+                    height: 'calc(100% - 30px)', 
+                    padding: 20, 
+                    borderRadius: 12, 
+                    border: '1px solid #E5E8EB', 
+                    background: 'white',
+                    fontSize: 14, 
+                    lineHeight: 1.8, 
+                    resize: 'none',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+              
+              {/* 오른쪽: 미리보기 */}
+              <div style={{ flex: 1, padding: 24, overflow: 'auto', background: '#FAFBFC' }}>
+                <div style={{ marginBottom: 12, fontSize: 12, color: '#8B95A1', fontWeight: 600 }}>👁️ 미리보기</div>
+                <div style={{ 
+                  background: 'white', 
                   borderRadius: 12, 
-                  border: '1px solid #E5E8EB', 
-                  background: 'white',
-                  fontSize: 15, 
-                  lineHeight: 1.8, 
-                  resize: 'vertical',
-                  fontFamily: 'inherit'
-                }}
-              />
+                  padding: 24, 
+                  minHeight: 'calc(100% - 30px)',
+                  border: '1px solid #E5E8EB',
+                  fontSize: 15,
+                  lineHeight: 1.9,
+                  color: '#333'
+                }}>
+                  {editingDoc.content ? (
+                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(editingDoc.content) }} />
+                  ) : (
+                    <p style={{ color: '#8B95A1' }}>내용을 입력하면 여기에 미리보기가 표시됩니다.</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         );
