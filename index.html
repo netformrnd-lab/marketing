@@ -665,6 +665,7 @@
       const [activeTab, setActiveTab] = useState('home');
       const [authChecked, setAuthChecked] = useState(false);
       const [currentUser, setCurrentUser] = useState(null);
+      const [teamMembers, setTeamMembers] = useState(TEAM_MEMBERS);
       const [projects, setProjects] = useState([]);
       const [tasks, setTasks] = useState([]);
       const [fixedTasks, setFixedTasks] = useState([]);
@@ -765,6 +766,19 @@
         const loadData = async () => {
           setIsLoading(true);
           try {
+            // 팀원 데이터 로드 (추가된 멤버)
+            const loadedMembers = await FirebaseService.getAll('teamMembers');
+            if (loadedMembers && loadedMembers.length > 0) {
+              // 기본 멤버 + Firebase에서 불러온 추가 멤버 합치기
+              const mergedMembers = [...TEAM_MEMBERS];
+              loadedMembers.forEach(m => {
+                if (!mergedMembers.find(existing => existing.id === m.id)) {
+                  mergedMembers.push(m);
+                }
+              });
+              setTeamMembers(mergedMembers);
+            }
+
             // 프로젝트 로드
             const loadedProjects = await FirebaseService.getAll('projects');
             if (loadedProjects && loadedProjects.length > 0) {
@@ -1489,7 +1503,7 @@
             </div>
             {currentUser?.isAdmin && (
               <div style={{ flex: 1, display: activeTab === 'accounts' ? 'flex' : 'none', flexDirection: 'column' }}>
-                <AccountManageTab currentUser={currentUser} />
+                <AccountManageTab currentUser={currentUser} teamMembers={teamMembers} setTeamMembers={setTeamMembers} />
               </div>
             )}
             <div style={{ flex: 1, display: activeTab === 'trash' ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -1506,23 +1520,16 @@
     }
 
     // ============ 계정 관리 탭 (관리자 전용) ============
-    function AccountManageTab({ currentUser }) {
+    function AccountManageTab({ currentUser, teamMembers, setTeamMembers }) {
       const [accountStatus, setAccountStatus] = useState({});
       const [isLoading, setIsLoading] = useState(false);
       const [message, setMessage] = useState('');
       const [showResetModal, setShowResetModal] = useState(null);
-      const [newPassword, setNewPassword] = useState('');
+      const [showAddModal, setShowAddModal] = useState(false);
+      const [showDeleteModal, setShowDeleteModal] = useState(null);
+      const [newMember, setNewMember] = useState({ name: '', email: '', role: '매니저', color: '#3182F6', isAdmin: false });
 
-      // 계정 상태 확인
-      const checkAccountStatus = async (member) => {
-        try {
-          // Firebase에서 로그인 시도로 계정 존재 여부 확인 (실제로는 Admin SDK 필요)
-          // 여기서는 간단히 상태만 표시
-          return 'unknown';
-        } catch (error) {
-          return 'not_created';
-        }
-      };
+      const COLORS = ['#3182F6', '#00C471', '#F97316', '#8B5CF6', '#EC4899', '#06B6D4', '#F59E0B', '#EF4444'];
 
       // 단일 계정 생성
       const createAccount = async (member) => {
@@ -1551,7 +1558,7 @@
         setMessage('계정 생성 중...\n');
         const defaultPassword = 'netform2025';
 
-        for (const member of TEAM_MEMBERS) {
+        for (const member of teamMembers) {
           try {
             await auth.createUserWithEmailAndPassword(member.email, defaultPassword);
             setAccountStatus(prev => ({ ...prev, [member.id]: 'created' }));
@@ -1582,6 +1589,80 @@
         setShowResetModal(null);
       };
 
+      // 팀원 추가
+      const handleAddMember = async () => {
+        if (!newMember.name || !newMember.email) {
+          setMessage('✗ 이름과 이메일을 입력해주세요.');
+          return;
+        }
+
+        // 이메일 중복 체크
+        if (teamMembers.find(m => m.email === newMember.email)) {
+          setMessage('✗ 이미 등록된 이메일입니다.');
+          return;
+        }
+
+        setIsLoading(true);
+        const newId = Math.max(...teamMembers.map(m => m.id), 0) + 1;
+        const memberToAdd = {
+          id: newId,
+          name: newMember.name,
+          initial: newMember.name.charAt(0),
+          email: newMember.email,
+          role: newMember.role,
+          color: newMember.color,
+          isAdmin: newMember.isAdmin
+        };
+
+        try {
+          // Firebase에 저장
+          await FirebaseService.saveDoc('teamMembers', String(newId), memberToAdd);
+
+          // State 업데이트
+          setTeamMembers(prev => [...prev, memberToAdd]);
+
+          // Firebase Auth 계정도 생성
+          const defaultPassword = 'netform2025';
+          try {
+            await auth.createUserWithEmailAndPassword(memberToAdd.email, defaultPassword);
+            setMessage(`✓ ${memberToAdd.name} 팀원이 추가되고 계정이 생성되었습니다. (비밀번호: ${defaultPassword})`);
+          } catch (authError) {
+            if (authError.code === 'auth/email-already-in-use') {
+              setMessage(`✓ ${memberToAdd.name} 팀원이 추가되었습니다. (계정은 이미 존재)`);
+            } else {
+              setMessage(`✓ ${memberToAdd.name} 팀원이 추가되었습니다. (계정 생성은 별도로 해주세요)`);
+            }
+          }
+
+          setShowAddModal(false);
+          setNewMember({ name: '', email: '', role: '매니저', color: '#3182F6', isAdmin: false });
+        } catch (error) {
+          setMessage(`✗ 팀원 추가 실패: ${error.message}`);
+        }
+        setIsLoading(false);
+      };
+
+      // 팀원 삭제
+      const handleDeleteMember = async (member) => {
+        // 기본 멤버(TEAM_MEMBERS에 있는)는 삭제 불가
+        if (TEAM_MEMBERS.find(m => m.id === member.id)) {
+          setMessage('✗ 기본 팀원은 삭제할 수 없습니다.');
+          setShowDeleteModal(null);
+          return;
+        }
+
+        setIsLoading(true);
+        try {
+          await FirebaseService.delete('teamMembers', String(member.id));
+          setTeamMembers(prev => prev.filter(m => m.id !== member.id));
+          setMessage(`✓ ${member.name} 팀원이 삭제되었습니다.`);
+        } catch (error) {
+          setMessage(`✗ 삭제 실패: ${error.message}`);
+        }
+        setIsLoading(false);
+        setShowDeleteModal(null);
+      };
+
       if (!currentUser?.isAdmin) {
         return (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1599,22 +1680,39 @@
                 <h1 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>👤 계정 관리</h1>
                 <p style={{ fontSize: 13, color: '#8B95A1' }}>팀원 계정을 생성하고 관리합니다 (관리자 전용)</p>
               </div>
-              <button
-                onClick={createAllAccounts}
-                disabled={isLoading}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: isLoading ? '#E5E8EB' : '#3182F6',
-                  color: 'white',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: isLoading ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {isLoading ? '처리 중...' : `전체 계정 생성 (${TEAM_MEMBERS.length}명)`}
-              </button>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: '#00C471',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  + 팀원 추가
+                </button>
+                <button
+                  onClick={createAllAccounts}
+                  disabled={isLoading}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: isLoading ? '#E5E8EB' : '#3182F6',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: isLoading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isLoading ? '처리 중...' : `전체 계정 생성 (${teamMembers.length}명)`}
+                </button>
+              </div>
             </div>
           </header>
 
@@ -1629,7 +1727,7 @@
           <div style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
               {/* 테이블 헤더 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 150px', padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 13, fontWeight: 600, color: '#6B7684' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 180px', padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 13, fontWeight: 600, color: '#6B7684' }}>
                 <div></div>
                 <div>이름</div>
                 <div>이메일</div>
@@ -1639,8 +1737,8 @@
               </div>
 
               {/* 계정 목록 */}
-              {TEAM_MEMBERS.map((member) => (
-                <div key={member.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 150px', padding: '16px 20px', borderBottom: '1px solid #F2F3F5', alignItems: 'center' }}>
+              {teamMembers.map((member) => (
+                <div key={member.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 180px', padding: '16px 20px', borderBottom: '1px solid #F2F3F5', alignItems: 'center' }}>
                   {/* 프로필 */}
                   <div style={{ width: 36, height: 36, borderRadius: '50%', background: member.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 600 }}>
                     {member.initial}
@@ -1703,6 +1801,24 @@
                     >
                       초기화
                     </button>
+                    {!TEAM_MEMBERS.find(m => m.id === member.id) && (
+                      <button
+                        onClick={() => setShowDeleteModal(member)}
+                        disabled={isLoading}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          border: '1px solid #FEE4E2',
+                          background: '#FEF3F2',
+                          color: '#F04452',
+                          fontSize: 12,
+                          fontWeight: 500,
+                          cursor: isLoading ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        삭제
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1713,12 +1829,112 @@
               <h4 style={{ fontSize: 14, fontWeight: 600, color: '#D97706', marginBottom: 8 }}>💡 안내사항</h4>
               <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#92400E', lineHeight: 1.8 }}>
                 <li>기본 비밀번호는 <strong>netform2025</strong> 입니다.</li>
-                <li>계정이 이미 존재하면 "이미 존재" 메시지가 표시됩니다.</li>
-                <li>비밀번호 초기화 시 해당 이메일로 재설정 링크가 발송됩니다.</li>
+                <li>팀원 추가 시 Firebase 계정도 자동으로 생성됩니다.</li>
+                <li>기본 팀원(권혜영, 함지민, 김소라, 손예진)은 삭제할 수 없습니다.</li>
                 <li>내부용 이메일(@workspace.local)은 비밀번호 재설정 이메일을 받을 수 없습니다.</li>
               </ul>
             </div>
           </div>
+
+          {/* 팀원 추가 모달 */}
+          {showAddModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 440 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 600, color: '#191F28', marginBottom: 20 }}>팀원 추가</h3>
+
+                {/* 이름 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#4E5968', marginBottom: 6 }}>이름 *</label>
+                  <input
+                    type="text"
+                    value={newMember.name}
+                    onChange={(e) => setNewMember(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="예: 홍길동"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  />
+                </div>
+
+                {/* 이메일 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#4E5968', marginBottom: 6 }}>이메일 *</label>
+                  <input
+                    type="email"
+                    value={newMember.email}
+                    onChange={(e) => setNewMember(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="예: gildong@workspace.local"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  />
+                </div>
+
+                {/* 역할 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#4E5968', marginBottom: 6 }}>역할</label>
+                  <select
+                    value={newMember.role}
+                    onChange={(e) => setNewMember(prev => ({ ...prev, role: e.target.value }))}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                  >
+                    <option value="팀장">팀장</option>
+                    <option value="매니저">매니저</option>
+                    <option value="인턴">인턴</option>
+                  </select>
+                </div>
+
+                {/* 프로필 색상 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#4E5968', marginBottom: 6 }}>프로필 색상</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {COLORS.map(color => (
+                      <div
+                        key={color}
+                        onClick={() => setNewMember(prev => ({ ...prev, color }))}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          background: color,
+                          cursor: 'pointer',
+                          border: newMember.color === color ? '3px solid #191F28' : '3px solid transparent'
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* 관리자 권한 */}
+                <div style={{ marginBottom: 24 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={newMember.isAdmin}
+                      onChange={(e) => setNewMember(prev => ({ ...prev, isAdmin: e.target.checked }))}
+                      style={{ width: 18, height: 18 }}
+                    />
+                    <span style={{ fontSize: 14, color: '#4E5968' }}>관리자 권한 부여</span>
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => {
+                      setShowAddModal(false);
+                      setNewMember({ name: '', email: '', role: '매니저', color: '#3182F6', isAdmin: false });
+                    }}
+                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', color: '#6B7684', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleAddMember}
+                    disabled={isLoading}
+                    style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#00C471', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {isLoading ? '추가 중...' : '추가하기'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 비밀번호 초기화 모달 */}
           {showResetModal && (
@@ -1741,6 +1957,33 @@
                     style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
                   >
                     발송하기
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 삭제 확인 모달 */}
+          {showDeleteModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 400 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 600, color: '#F04452', marginBottom: 16 }}>팀원 삭제</h3>
+                <p style={{ fontSize: 14, color: '#4E5968', marginBottom: 20 }}>
+                  <strong>{showDeleteModal.name}</strong>을(를) 정말 삭제하시겠습니까?<br/>
+                  <span style={{ color: '#F04452' }}>이 작업은 되돌릴 수 없습니다.</span>
+                </p>
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowDeleteModal(null)}
+                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', color: '#6B7684', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={() => handleDeleteMember(showDeleteModal)}
+                    style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#F04452', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    삭제하기
                   </button>
                 </div>
               </div>
