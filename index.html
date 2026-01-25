@@ -55,6 +55,52 @@
       #root > div { display: block !important; }
       #root > div > div:first-child { display: none !important; }
     }
+    
+    /* KPI 대시보드 스타일 */
+    .kpi-btn-primary {
+      background: #3182F6;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .kpi-btn-primary:hover {
+      background: #2563EB;
+      transform: translateY(-1px);
+    }
+    .kpi-btn-secondary {
+      background: #F2F4F6;
+      color: #191F28;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .kpi-btn-secondary:hover {
+      background: #E5E8EB;
+    }
+    .kpi-input {
+      border: 1px solid #E5E8EB;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 15px;
+      transition: all 0.2s;
+      background: white;
+    }
+    .kpi-input:hover {
+      border-color: #D1D6DB;
+    }
+    .kpi-card {
+      background: white;
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      transition: all 0.2s;
+    }
+    .kpi-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
   </style>
 </head>
 <body>
@@ -1152,8 +1198,11 @@
           icon: 'layout',
           children: [
             { id: 'growthboard', label: '그로스보드', icon: 'layout' },
-            { id: 'kpi', label: '팀 KPI/목표', icon: 'target', isNew: true },
-            { id: 'brandperf', label: '브랜드별 성과', icon: 'chart', isNew: true },
+            { id: 'kpi', label: 'KPI 대시보드', icon: 'target', isNew: true },
+            { id: 'brand-pour-method', label: 'POUR공법', icon: 'chart', isNew: true },
+            { id: 'brand-pour-solution', label: 'POUR솔루션', icon: 'chart', isNew: true },
+            { id: 'brand-apartment-square', label: '아파트스퀘어', icon: 'chart', isNew: true },
+            { id: 'brand-automation-system', label: '자동화&시스템화', icon: 'chart', isNew: true },
           ]
         },
         {
@@ -1452,10 +1501,19 @@
               <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <PlaceholderTab title="팀 KPI/목표" icon="🎯" description="팀의 KPI와 목표를 설정하고 관리합니다" />
+              <KPIDashboardTab currentUser={currentUser} initialPage="main" />
             </div>
-            <div style={{ flex: 1, display: activeTab === 'brandperf' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <PlaceholderTab title="브랜드별 성과" icon="📊" description="브랜드별 성과를 분석하고 확인합니다" />
+            <div style={{ flex: 1, display: activeTab === 'brand-pour-method' ? 'flex' : 'none', flexDirection: 'column' }}>
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-method" />
+            </div>
+            <div style={{ flex: 1, display: activeTab === 'brand-pour-solution' ? 'flex' : 'none', flexDirection: 'column' }}>
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-solution" />
+            </div>
+            <div style={{ flex: 1, display: activeTab === 'brand-apartment-square' ? 'flex' : 'none', flexDirection: 'column' }}>
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="apartment-square" />
+            </div>
+            <div style={{ flex: 1, display: activeTab === 'brand-automation-system' ? 'flex' : 'none', flexDirection: 'column' }}>
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="automation-system" />
             </div>
             <div style={{ flex: 1, display: activeTab === 'onboarding' ? 'flex' : 'none', flexDirection: 'column' }}>
               <ManualTab currentUser={currentUser} />
@@ -3987,6 +4045,1024 @@
     }
 
     // ============ Placeholder 탭 (준비중) ============
+    // ============ KPI 대시보드 StorageService ============
+    const KPIStorageService = {
+      async saveCompanyGoal(goal) {
+        await database.ref('kpi/companyGoal').set(goal);
+      },
+      async getCompanyGoal() {
+        const snapshot = await database.ref('kpi/companyGoal').once('value');
+        return snapshot.val();
+      },
+      async saveTeamGoal(goal) {
+        await database.ref('kpi/teamGoal').set(goal);
+      },
+      async getTeamGoal() {
+        const snapshot = await database.ref('kpi/teamGoal').once('value');
+        return snapshot.val();
+      },
+      async saveBrand(brandId, data) {
+        await database.ref(`kpi/brands/${brandId}`).set(data);
+      },
+      async getBrands() {
+        const snapshot = await database.ref('kpi/brands').once('value');
+        return snapshot.val() || {};
+      },
+      async saveTeamMember(memberId, data) {
+        await database.ref(`kpi/teamMembers/${memberId}`).set(data);
+      },
+      async getTeamMembers() {
+        const snapshot = await database.ref('kpi/teamMembers').once('value');
+        return snapshot.val() || {};
+      },
+      async saveQuarterPlans(brandId, plans) {
+        await database.ref(`kpi/quarterPlans/${brandId}`).set(plans);
+      },
+      async getQuarterPlans(brandId) {
+        const snapshot = await database.ref(`kpi/quarterPlans/${brandId}`).once('value');
+        return snapshot.val() || { Q1: [], Q2: [], Q3: [], Q4: [] };
+      },
+      async saveQuarterGoals(brandId, goals) {
+        await database.ref(`kpi/quarterGoals/${brandId}`).set(goals);
+      },
+      async getQuarterGoals(brandId) {
+        const snapshot = await database.ref(`kpi/quarterGoals/${brandId}`).once('value');
+        return snapshot.val() || { Q1: '', Q2: '', Q3: '', Q4: '' };
+      }
+    };
+    window.KPIStorageService = KPIStorageService;
+
+    // ============ KPI 목표 카드 컴포넌트 ============
+    const KPIGoalCard = ({ title, goal, onEdit, color }) => {
+      const [isEditing, setIsEditing] = useState(false);
+      const [editValue, setEditValue] = useState(goal || '');
+
+      useEffect(() => {
+        setEditValue(goal || '');
+      }, [goal]);
+
+      const handleSave = () => {
+        onEdit(editValue);
+        setIsEditing(false);
+      };
+
+      return (
+        <div className="kpi-card">
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>{title}</h3>
+              <div style={{ 
+                display: 'inline-block',
+                padding: '4px 10px',
+                background: `${color}15`,
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                color: color
+              }}>
+                2026 목표
+              </div>
+            </div>
+            {!isEditing && (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="kpi-btn-secondary"
+                style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+              >
+                <Icon name="edit" size={18} color="#4E5968" />
+              </button>
+            )}
+          </div>
+          
+          {isEditing ? (
+            <div>
+              <textarea
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                className="kpi-input"
+                style={{ width: '100%', minHeight: 100, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, marginBottom: 12 }}
+                placeholder="목표를 입력하세요"
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleSave} className="kpi-btn-primary" style={{ flex: 1, padding: '12px', fontSize: 15 }}>저장</button>
+                <button onClick={() => { setEditValue(goal || ''); setIsEditing(false); }} className="kpi-btn-secondary" style={{ padding: '12px 20px', fontSize: 15 }}>취소</button>
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: 15, color: goal ? '#4E5968' : '#8B95A1', lineHeight: 1.7, whiteSpace: 'pre-wrap', marginTop: 16 }}>
+              {goal || '목표를 설정해주세요'}
+            </p>
+          )}
+        </div>
+      );
+    };
+
+    // ============ KPI 브랜드 카드 컴포넌트 ============
+    const KPIBrandCard = ({ brand, onViewDetail }) => {
+      const [expanded, setExpanded] = useState(true);
+      const avgProgress = brand.kpis && brand.kpis.length > 0
+        ? Math.round(brand.kpis.reduce((sum, kpi) => sum + (kpi.progress || 0), 0) / brand.kpis.length)
+        : 0;
+
+      return (
+        <div style={{ background: 'white', border: `2px solid ${brand.color}20`, borderRadius: 16, overflow: 'hidden', transition: 'all 0.2s' }}>
+          <div style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ width: 48, height: 48, background: `${brand.color}15`, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
+                {brand.icon}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'inline-block', padding: '3px 8px', background: `${brand.color}15`, borderRadius: 6, fontSize: 10, fontWeight: 700, color: brand.color, marginBottom: 4 }}>
+                  {brand.name.split(' ')[0].toUpperCase()}
+                </div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', margin: 0 }}>{brand.name}</h3>
+              </div>
+              <span style={{ fontSize: 24, fontWeight: 700, color: brand.color }}>{avgProgress}%</span>
+            </div>
+
+            <p style={{ fontSize: 13, color: '#6B7684', lineHeight: 1.5, margin: 0, marginBottom: 16 }}>{brand.mission}</p>
+
+            <div style={{ width: '100%', height: 8, background: '#F2F4F6', borderRadius: 4, overflow: 'hidden', marginBottom: 12 }}>
+              <div style={{ width: `${avgProgress}%`, height: '100%', background: brand.color, borderRadius: 4, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setExpanded(!expanded)}
+                style={{ flex: 1, padding: '10px', background: expanded ? brand.color : `${brand.color}15`, color: expanded ? 'white' : brand.color, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                {expanded ? 'KPI 닫기' : `KPI 보기 (${brand.kpis?.length || 0}개)`}
+              </button>
+              <button
+                onClick={() => onViewDetail(brand)}
+                style={{ flex: 1, padding: '10px', background: 'white', color: brand.color, border: `2px solid ${brand.color}`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                📊 상세 보기
+              </button>
+            </div>
+          </div>
+
+          {expanded && brand.kpis && brand.kpis.length > 0 && (
+            <div style={{ padding: '0 20px 20px 20px', background: '#F9FAFB', borderTop: '1px solid #E5E8EB' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16 }}>
+                {brand.kpis.map(kpi => (
+                  <div key={kpi.id} style={{ padding: 12, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#191F28', flex: 1 }}>{kpi.name}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: brand.color }}>{kpi.progress || 0}%</span>
+                    </div>
+                    <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${kpi.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 2, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ============ KPI 팀원 카드 컴포넌트 ============
+    const KPITeamMemberCard = ({ member, onUpdate }) => {
+      const [isEditing, setIsEditing] = useState(false);
+      const [editData, setEditData] = useState(member);
+
+      useEffect(() => {
+        setEditData(member);
+      }, [member]);
+
+      const handleSave = () => {
+        onUpdate(editData);
+        setIsEditing(false);
+      };
+
+      return (
+        <div className="kpi-card" style={{ minWidth: 200 }}>
+          {isEditing ? (
+            <div>
+              <input value={editData.name} onChange={(e) => setEditData({ ...editData, name: e.target.value })} placeholder="이름" className="kpi-input" style={{ width: '100%', padding: '10px 12px', fontSize: 14, marginBottom: 10 }} />
+              <input value={editData.role} onChange={(e) => setEditData({ ...editData, role: e.target.value })} placeholder="역할" className="kpi-input" style={{ width: '100%', padding: '10px 12px', fontSize: 13, marginBottom: 10 }} />
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>성과 (%)</label>
+                <input type="number" value={editData.performance} onChange={(e) => setEditData({ ...editData, performance: Math.min(100, Math.max(0, Number(e.target.value))) })} min="0" max="100" className="kpi-input" style={{ width: '100%', padding: '10px 12px', fontSize: 14 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleSave} className="kpi-btn-primary" style={{ flex: 1, padding: '10px', fontSize: 14 }}>저장</button>
+                <button onClick={() => { setEditData(member); setIsEditing(false); }} className="kpi-btn-secondary" style={{ padding: '10px 16px', fontSize: 14 }}>취소</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 14, background: `linear-gradient(135deg, ${member.color || '#3182F6'}15 0%, ${member.color || '#3182F6'}25 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, color: member.color || '#3182F6', border: `2px solid ${member.color || '#3182F6'}30` }}>
+                  {member.name?.charAt(0)}
+                </div>
+                <button onClick={() => setIsEditing(true)} className="kpi-btn-secondary" style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, borderRadius: 8 }}>
+                  <Icon name="edit" size={16} color="#4E5968" />
+                </button>
+              </div>
+              <h4 style={{ fontSize: 17, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>{member.name}</h4>
+              <p style={{ fontSize: 13, color: '#6B7684', marginBottom: 16 }}>{member.role}</p>
+              
+              {member.tasks && Object.keys(member.tasks).length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>담당 업무</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {Object.values(member.tasks).flat().slice(0, 3).map((task, idx) => (
+                      <div key={idx} style={{ padding: '6px 10px', background: '#F9FAFB', borderRadius: 6, fontSize: 12, color: '#191F28', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 4, height: 4, borderRadius: '50%', background: task.completed ? '#00C73C' : member.color || '#3182F6' }} />
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: member.color || '#3182F6' }}>{task.progress}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#4E5968' }}>성과</span>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: member.color || '#3182F6' }}>{member.performance}%</span>
+                </div>
+                <div style={{ width: '100%', height: 10, background: '#F2F4F6', borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ width: `${member.performance}%`, height: '100%', background: `linear-gradient(90deg, ${member.color || '#3182F6'} 0%, ${member.color || '#3182F6'}dd 100%)`, borderRadius: 6, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    // ============ KPI 브랜드 상세 페이지 컴포넌트 ============
+    const KPIBrandDetailPage = ({ brand, onBack, onBrandUpdate, kpiTeamMembers, hideBackButton = false }) => {
+      const [selectedQuarter, setSelectedQuarter] = useState('Q1');
+      const [quarterPlans, setQuarterPlans] = useState({ Q1: [], Q2: [], Q3: [], Q4: [] });
+      const [quarterGoals, setQuarterGoals] = useState({ Q1: '', Q2: '', Q3: '', Q4: '' });
+      const [selectedTask, setSelectedTask] = useState(null);
+      const [expandedTask, setExpandedTask] = useState(null);
+      
+      // 모든 KPI를 펼친 상태로 초기화
+      const [expandedKpis, setExpandedKpis] = useState(() => {
+        const initial = {};
+        (brand.kpis || []).forEach(kpi => {
+          initial[kpi.id] = true;
+        });
+        return initial;
+      });
+
+      // 브랜드가 변경되면 KPI 펼침 상태 다시 초기화
+      useEffect(() => {
+        const initial = {};
+        (brand.kpis || []).forEach(kpi => {
+          initial[kpi.id] = true;
+        });
+        setExpandedKpis(initial);
+      }, [brand.id]);
+
+      useEffect(() => {
+        loadQuarterData();
+      }, [brand.id]);
+
+      const loadQuarterData = async () => {
+        const plans = await KPIStorageService.getQuarterPlans(brand.id);
+        const goals = await KPIStorageService.getQuarterGoals(brand.id);
+        setQuarterPlans(plans);
+        setQuarterGoals(goals);
+      };
+
+      const saveQuarterGoal = async (quarter, goal) => {
+        const updatedGoals = { ...quarterGoals, [quarter]: goal };
+        setQuarterGoals(updatedGoals);
+        await KPIStorageService.saveQuarterGoals(brand.id, updatedGoals);
+      };
+
+      const saveQuarterPlans = async (plans) => {
+        setQuarterPlans(plans);
+        await KPIStorageService.saveQuarterPlans(brand.id, plans);
+        updateKPIItemProgress(plans);
+      };
+
+      const updateKPIItemProgress = async (plans) => {
+        const allTasks = Object.values(plans).flat();
+        const updatedKpis = brand.kpis?.map(kpi => {
+          const updatedItems = kpi.items?.map(item => {
+            const linkedTasks = allTasks.filter(task => task.linkedKpiItem && task.linkedKpiItem.kpiId === kpi.id && task.linkedKpiItem.itemId === item.id);
+            if (linkedTasks.length === 0) return { ...item, progress: 0 };
+            let totalProgress = 0;
+            linkedTasks.forEach(task => {
+              if (task.completed) totalProgress += 100;
+              else if (task.activities && task.activities.length > 0) {
+                totalProgress += (task.activities.filter(a => a.completed).length / task.activities.length) * 100;
+              }
+            });
+            return { ...item, progress: Math.round(totalProgress / linkedTasks.length) };
+          });
+          let kpiProgress = 0;
+          if (updatedItems && updatedItems.length > 0) {
+            kpiProgress = Math.round(updatedItems.reduce((sum, item) => sum + (item.progress || 0), 0) / updatedItems.length);
+          }
+          return { ...kpi, items: updatedItems, progress: kpiProgress };
+        });
+        
+        if (updatedKpis) {
+          const updatedBrand = { ...brand, kpis: updatedKpis };
+          await KPIStorageService.saveBrand(brand.id, updatedBrand);
+          if (onBrandUpdate) {
+            const brandsData = await KPIStorageService.getBrands();
+            onBrandUpdate(brandsData);
+          }
+        }
+      };
+
+      const addKpiItem = async (kpiId) => {
+        const itemName = prompt('새 세부 항목 이름:');
+        if (!itemName || !itemName.trim()) return;
+        const updatedKpis = brand.kpis?.map(kpi => {
+          if (kpi.id === kpiId) {
+            return { ...kpi, items: [...(kpi.items || []), { id: Date.now(), name: itemName.trim(), progress: 0, activities: [], results: '' }] };
+          }
+          return kpi;
+        });
+        if (updatedKpis) {
+          const updatedBrand = { ...brand, kpis: updatedKpis };
+          await KPIStorageService.saveBrand(brand.id, updatedBrand);
+          if (onBrandUpdate) {
+            const brandsData = await KPIStorageService.getBrands();
+            onBrandUpdate(brandsData);
+          }
+        }
+      };
+
+      const deleteKpiItem = async (kpiId, itemId) => {
+        if (!confirm('이 세부 항목을 삭제하시겠습니까?')) return;
+        const updatedKpis = brand.kpis?.map(kpi => {
+          if (kpi.id === kpiId) return { ...kpi, items: kpi.items?.filter(item => item.id !== itemId) };
+          return kpi;
+        });
+        if (updatedKpis) {
+          const updatedBrand = { ...brand, kpis: updatedKpis };
+          await KPIStorageService.saveBrand(brand.id, updatedBrand);
+          const updatedPlans = { ...quarterPlans };
+          Object.keys(updatedPlans).forEach(quarter => {
+            updatedPlans[quarter] = updatedPlans[quarter].map(task => {
+              if (task.linkedKpiItem?.kpiId === kpiId && task.linkedKpiItem?.itemId === itemId) return { ...task, linkedKpiItem: null };
+              return task;
+            });
+          });
+          await saveQuarterPlans(updatedPlans);
+          if (onBrandUpdate) {
+            const brandsData = await KPIStorageService.getBrands();
+            onBrandUpdate(brandsData);
+          }
+        }
+      };
+
+      const addTask = () => {
+        const title = prompt('업무 내용:');
+        if (!title || !title.trim()) return;
+        const newTask = { id: Date.now(), title: title.trim(), completed: false, linkedKpiItem: null, assignees: [], activities: [], results: '', startDate: null, endDate: null };
+        const updatedPlans = { ...quarterPlans, [selectedQuarter]: [...quarterPlans[selectedQuarter], newTask] };
+        saveQuarterPlans(updatedPlans);
+      };
+
+      const toggleTask = (taskId) => {
+        const now = new Date().toISOString();
+        const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => {
+          if (t.id === taskId) return !t.completed ? { ...t, completed: true, endDate: now } : { ...t, completed: false, endDate: null };
+          return t;
+        })};
+        saveQuarterPlans(updatedPlans);
+      };
+
+      const deleteTask = (taskId) => {
+        if (!confirm('이 업무를 삭제하시겠습니까?')) return;
+        const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].filter(t => t.id !== taskId) };
+        saveQuarterPlans(updatedPlans);
+        if (selectedTask?.id === taskId) setSelectedTask(null);
+      };
+
+      const editTask = (task) => {
+        const title = prompt('업무 내용:', task.title);
+        if (title === null || !title.trim()) return;
+        const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => t.id === task.id ? { ...t, title: title.trim() } : t) };
+        saveQuarterPlans(updatedPlans);
+      };
+
+      const calculateDuration = (startDate, endDate) => {
+        if (!startDate || !endDate) return null;
+        const diffTime = Math.abs(new Date(endDate) - new Date(startDate));
+        return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      };
+
+      const currentTasks = quarterPlans[selectedQuarter] || [];
+
+      return (
+        <div style={{ padding: '40px 60px', background: '#F2F4F6', minHeight: '100%' }}>
+          {/* 상단 헤더 */}
+          <div style={{ marginBottom: 40 }}>
+            {!hideBackButton && (
+            <button onClick={onBack} style={{ marginBottom: 16, padding: '8px 16px', background: 'white', border: '1px solid #E5E8EB', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>
+              ← 돌아가기
+            </button>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+              <div style={{ width: 60, height: 60, background: `${brand.color}15`, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>{brand.icon}</div>
+              <div>
+                <div style={{ display: 'inline-block', padding: '4px 10px', background: `${brand.color}15`, borderRadius: 6, fontSize: 11, fontWeight: 700, color: brand.color, marginBottom: 8 }}>{brand.name.split(' ')[0].toUpperCase()}</div>
+                <h1 style={{ fontSize: 32, fontWeight: 800, color: '#191F28', margin: 0 }}>{brand.name}</h1>
+              </div>
+            </div>
+            <p style={{ fontSize: 16, color: '#4E5968', lineHeight: 1.6, marginBottom: 24 }}>{brand.mission}</p>
+
+            {/* KPI 요약 카드 */}
+            {brand.kpis && brand.kpis.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+                {brand.kpis.map(kpi => (
+                  <div key={kpi.id} style={{ background: 'white', borderRadius: 12, border: `2px solid ${brand.color}20`, overflow: 'hidden' }}>
+                    <div onClick={() => setExpandedKpis(prev => ({ ...prev, [kpi.id]: !prev[kpi.id] }))} style={{ padding: 16, cursor: 'pointer', background: expandedKpis[kpi.id] ? `${brand.color}05` : 'white' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <h4 style={{ fontSize: 14, fontWeight: 700, color: brand.color, margin: 0, flex: 1, lineHeight: 1.4 }}>{kpi.name}</h4>
+                        <span style={{ fontSize: 18, fontWeight: 700, color: brand.color, marginLeft: 8 }}>{kpi.progress || 0}%</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, background: '#F2F4F6', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${kpi.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 3 }} />
+                        </div>
+                        <div style={{ fontSize: 16, color: '#8B95A1', transform: expandedKpis[kpi.id] ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</div>
+                      </div>
+                    </div>
+
+                    {expandedKpis[kpi.id] && (
+                      <div style={{ padding: '0 12px 12px 12px', background: '#F9FAFB' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {kpi.items && kpi.items.map(item => (
+                            <div key={item.id} style={{ padding: 10, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>{item.name}</div>
+                                <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                                  <div style={{ width: `${item.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 2 }} />
+                                </div>
+                              </div>
+                              <button onClick={() => deleteKpiItem(kpi.id, item.id)} style={{ width: 24, height: 24, background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 14, cursor: 'pointer' }}>×</button>
+                            </div>
+                          ))}
+                          <button onClick={() => addKpiItem(kpi.id)} style={{ padding: 10, background: `${brand.color}08`, border: `2px dashed ${brand.color}40`, borderRadius: 8, color: brand.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ 세부 항목 추가</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 분기 탭 */}
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', gap: 8, borderBottom: '2px solid #E5E8EB' }}>
+              {['Q1', 'Q2', 'Q3', 'Q4'].map(quarter => (
+                <button key={quarter} onClick={() => setSelectedQuarter(quarter)} style={{ padding: '12px 24px', background: selectedQuarter === quarter ? brand.color : 'transparent', color: selectedQuarter === quarter ? 'white' : '#6B7684', border: 'none', borderRadius: '10px 10px 0 0', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
+                  {quarter}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 분기 내용 */}
+          <div className="kpi-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', margin: 0 }}>{selectedQuarter} 업무 계획</h3>
+              <button onClick={addTask} style={{ padding: '10px 20px', background: brand.color, color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>+ 업무 추가</button>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <textarea value={quarterGoals[selectedQuarter] || ''} onChange={(e) => saveQuarterGoal(selectedQuarter, e.target.value)} placeholder={`${selectedQuarter}의 목표와 방향성을 작성하세요.`} style={{ width: '100%', minHeight: 80, padding: 16, border: '2px solid #E5E8EB', borderRadius: 12, fontSize: 14, lineHeight: 1.6, resize: 'vertical', fontFamily: 'inherit', color: '#191F28', background: '#F9FAFB' }} />
+            </div>
+
+            {currentTasks.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {currentTasks.map(task => {
+                  const duration = calculateDuration(task.startDate, task.endDate);
+                  return (
+                    <div key={task.id} style={{ background: task.completed ? '#F9FAFB' : 'white', borderRadius: 12, border: `2px solid ${task.completed ? '#E5E8EB' : brand.color + '30'}`, overflow: 'hidden' }}>
+                      <div style={{ padding: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <input type="checkbox" checked={task.completed} onChange={() => toggleTask(task.id)} style={{ width: 20, height: 20, cursor: 'pointer', accentColor: brand.color }} />
+                          <span onClick={() => setExpandedTask(expandedTask === task.id ? null : task.id)} style={{ flex: 1, fontSize: 15, fontWeight: 600, color: task.completed ? '#8B95A1' : '#191F28', textDecoration: task.completed ? 'line-through' : 'none', cursor: 'pointer' }}>{task.title}</span>
+                          
+                          {task.activities && task.activities.length > 0 && (
+                            <div style={{ padding: '4px 10px', background: `${brand.color}08`, borderRadius: 6, fontSize: 12, fontWeight: 600, color: brand.color }}>
+                              {task.activities.filter(a => a.completed).length}/{task.activities.length}
+                            </div>
+                          )}
+                          
+                          {duration !== null && (
+                            <div style={{ padding: '4px 10px', background: '#F2F4F6', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#6B7684' }}>{duration}일</div>
+                          )}
+                          
+                          {task.linkedKpiItem && (() => {
+                            const kpi = brand.kpis?.find(k => k.id === task.linkedKpiItem.kpiId);
+                            const item = kpi?.items?.find(i => i.id === task.linkedKpiItem.itemId);
+                            return item ? <div style={{ padding: '4px 10px', background: `${brand.color}15`, borderRadius: 6, fontSize: 11, fontWeight: 600, color: brand.color }}>{item.name}</div> : null;
+                          })()}
+
+                          <button onClick={() => setExpandedTask(expandedTask === task.id ? null : task.id)} style={{ width: 32, height: 32, background: '#F2F4F6', border: 'none', borderRadius: 8, color: '#6B7684', fontSize: 14, cursor: 'pointer', transform: expandedTask === task.id ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</button>
+                          <button onClick={() => setSelectedTask(task)} style={{ width: 32, height: 32, background: `${brand.color}15`, border: 'none', borderRadius: 8, color: brand.color, fontSize: 14, cursor: 'pointer' }}>📝</button>
+                          <button onClick={() => editTask(task)} style={{ width: 32, height: 32, background: '#F2F4F6', border: 'none', borderRadius: 8, color: '#6B7684', fontSize: 14, cursor: 'pointer' }}>✎</button>
+                          <button onClick={() => deleteTask(task.id)} style={{ width: 32, height: 32, background: '#FEE4E2', border: 'none', borderRadius: 8, color: '#F04452', fontSize: 16, cursor: 'pointer' }}>×</button>
+                        </div>
+                      </div>
+
+                      {expandedTask === task.id && task.activities && task.activities.length > 0 && (
+                        <div style={{ padding: '0 16px 16px 16px', background: `${brand.color}05`, borderTop: '1px solid #E5E8EB' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12 }}>
+                            {task.activities.map((activity, idx) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'white', borderRadius: 8, border: '1px solid #E5E8EB' }}>
+                                <input type="checkbox" checked={activity.completed} onChange={() => {
+                                  const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => {
+                                    if (t.id === task.id) {
+                                      const activities = t.activities.map((a, i) => i === idx ? { ...a, completed: !a.completed } : a);
+                                      return { ...t, activities };
+                                    }
+                                    return t;
+                                  })};
+                                  saveQuarterPlans(updatedPlans);
+                                }} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: brand.color }} />
+                                <span style={{ flex: 1, fontSize: 13, color: activity.completed ? '#8B95A1' : '#191F28', textDecoration: activity.completed ? 'line-through' : 'none' }}>{activity.content}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ padding: 60, textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>
+                <p style={{ marginBottom: 16 }}>등록된 업무가 없습니다.</p>
+                <button onClick={addTask} style={{ padding: '12px 24px', background: brand.color, color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>첫 업무 추가하기</button>
+              </div>
+            )}
+          </div>
+
+          {/* 업무 상세 모달 */}
+          {selectedTask && (() => {
+            const currentTask = currentTasks.find(t => t.id === selectedTask.id);
+            if (!currentTask) return null;
+            return (
+              <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={() => setSelectedTask(null)}>
+                <div style={{ background: 'white', borderRadius: 20, maxWidth: 700, width: '100%', maxHeight: '90vh', overflow: 'auto', padding: 0 }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ padding: 24, borderBottom: '1px solid #E5E8EB', position: 'sticky', top: 0, background: 'white', borderRadius: '20px 20px 0 0', zIndex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                      <div style={{ flex: 1 }}>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', margin: 0, marginBottom: 12 }}>{currentTask.title}</h3>
+                        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#6B7684' }}>
+                          {currentTask.startDate && <div><span style={{ fontWeight: 600 }}>시작:</span> {new Date(currentTask.startDate).toLocaleDateString('ko-KR')}</div>}
+                          {currentTask.endDate && <div><span style={{ fontWeight: 600 }}>완료:</span> {new Date(currentTask.endDate).toLocaleDateString('ko-KR')}</div>}
+                          {calculateDuration(currentTask.startDate, currentTask.endDate) !== null && <div><span style={{ fontWeight: 600 }}>소요:</span> {calculateDuration(currentTask.startDate, currentTask.endDate)}일</div>}
+                        </div>
+                      </div>
+                      <button onClick={() => setSelectedTask(null)} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F2F4F6', color: '#6B7684', fontSize: 20, cursor: 'pointer', marginLeft: 16 }}>×</button>
+                    </div>
+
+                    {/* KPI 연동 선택 */}
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>연동할 KPI 세부 항목</div>
+                      <select value={currentTask.linkedKpiItem ? `${currentTask.linkedKpiItem.kpiId}-${currentTask.linkedKpiItem.itemId}` : ''} onChange={(e) => {
+                        const [kpiId, itemId] = e.target.value.split('-').map(Number);
+                        const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => t.id === currentTask.id ? { ...t, linkedKpiItem: e.target.value ? { kpiId, itemId } : null } : t) };
+                        saveQuarterPlans(updatedPlans);
+                      }} style={{ width: '100%', padding: '12px 16px', background: '#F2F4F6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: '#4E5968', cursor: 'pointer' }}>
+                        <option value="">연동 안 함</option>
+                        {brand.kpis?.map(kpi => kpi.items?.map(item => <option key={item.id} value={`${kpi.id}-${item.id}`}>{kpi.name} - {item.name}</option>))}
+                      </select>
+                    </div>
+
+                    {/* 담당자 연동 */}
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>담당자</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {Object.values(kpiTeamMembers || {}).map(member => (
+                          <button key={member.id} onClick={() => {
+                            const assignees = currentTask.assignees || [];
+                            const isLinked = assignees.includes(member.id);
+                            const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => t.id === currentTask.id ? { ...t, assignees: isLinked ? assignees.filter(id => id !== member.id) : [...assignees, member.id] } : t) };
+                            saveQuarterPlans(updatedPlans);
+                          }} style={{ padding: '8px 14px', background: (currentTask.assignees || []).includes(member.id) ? brand.color : '#F2F4F6', color: (currentTask.assignees || []).includes(member.id) ? 'white' : '#4E5968', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                            {member.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 실행 내역 */}
+                  <div style={{ padding: 24 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                      <h4 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', margin: 0 }}>실행 내역</h4>
+                      <button onClick={() => {
+                        const content = prompt('실행 내역:');
+                        if (!content || !content.trim()) return;
+                        const now = new Date().toISOString();
+                        const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => {
+                          if (t.id === currentTask.id) {
+                            const activities = [...(t.activities || []), { content: content.trim(), completed: false, date: now }];
+                            return { ...t, activities, startDate: t.startDate || now };
+                          }
+                          return t;
+                        })};
+                        saveQuarterPlans(updatedPlans);
+                      }} style={{ padding: '8px 16px', background: `${brand.color}15`, color: brand.color, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ 추가</button>
+                    </div>
+                    
+                    {currentTask.activities && currentTask.activities.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {currentTask.activities.map((activity, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#F9FAFB', borderRadius: 10 }}>
+                            <input type="checkbox" checked={activity.completed} onChange={() => {
+                              const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => {
+                                if (t.id === currentTask.id) {
+                                  const activities = t.activities.map((a, i) => i === idx ? { ...a, completed: !a.completed } : a);
+                                  return { ...t, activities };
+                                }
+                                return t;
+                              })};
+                              saveQuarterPlans(updatedPlans);
+                            }} style={{ width: 18, height: 18, cursor: 'pointer', accentColor: brand.color }} />
+                            <span style={{ flex: 1, fontSize: 14, color: activity.completed ? '#8B95A1' : '#191F28', textDecoration: activity.completed ? 'line-through' : 'none' }}>{activity.content}</span>
+                            <button onClick={() => {
+                              const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => {
+                                if (t.id === currentTask.id) {
+                                  const activities = t.activities.filter((_, i) => i !== idx);
+                                  return { ...t, activities, startDate: activities.length > 0 ? t.startDate : null };
+                                }
+                                return t;
+                              })};
+                              saveQuarterPlans(updatedPlans);
+                            }} style={{ width: 24, height: 24, background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 14, cursor: 'pointer' }}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ padding: 32, textAlign: 'center', color: '#8B95A1', fontSize: 14, background: '#F9FAFB', borderRadius: 12 }}>실행 내역을 추가해주세요</div>
+                    )}
+
+                    {/* 결과/성과 */}
+                    <div style={{ marginTop: 24 }}>
+                      <h4 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', marginBottom: 12 }}>결과/성과</h4>
+                      <textarea value={currentTask.results || ''} onChange={(e) => {
+                        const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => t.id === currentTask.id ? { ...t, results: e.target.value } : t) };
+                        saveQuarterPlans(updatedPlans);
+                      }} placeholder="업무 결과와 성과를 기록하세요" style={{ width: '100%', minHeight: 100, padding: 16, border: '2px solid #E5E8EB', borderRadius: 12, fontSize: 14, lineHeight: 1.6, resize: 'vertical', fontFamily: 'inherit' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      );
+    };
+
+    // ============ KPI 대시보드 탭 컴포넌트 ============
+    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null }) {
+      const [companyGoal, setCompanyGoal] = useState('');
+      const [teamGoal, setTeamGoal] = useState('');
+      const [brands, setBrands] = useState({});
+      const [kpiTeamMembers, setKpiTeamMembers] = useState({});
+      const [loading, setLoading] = useState(true);
+      const [currentPage, setCurrentPage] = useState(initialPage);
+      const [selectedBrand, setSelectedBrand] = useState(null);
+
+      useEffect(() => {
+        loadData();
+      }, []);
+
+      // initialBrandId가 있고 brands가 로드되면 해당 브랜드 선택
+      useEffect(() => {
+        if (initialBrandId && brands[initialBrandId] && !selectedBrand) {
+          setSelectedBrand(brands[initialBrandId]);
+          setCurrentPage('brand-detail');
+        }
+      }, [brands, initialBrandId]);
+
+      useEffect(() => {
+        window.kpiTeamMembers = kpiTeamMembers;
+      }, [kpiTeamMembers]);
+
+      const loadData = async () => {
+        try {
+          const [company, team, brandsData, membersData] = await Promise.all([
+            KPIStorageService.getCompanyGoal(),
+            KPIStorageService.getTeamGoal(),
+            KPIStorageService.getBrands(),
+            KPIStorageService.getTeamMembers()
+          ]);
+
+          setCompanyGoal(company || '매출 300억 달성\n"본질을 측정·관리하여 2배 성장"');
+          setTeamGoal(team || '각 브랜드의 PMF를 찾고 아하모먼트를 발견하여\n고객 활성화와 브랜드 성장을 이끈다');
+          setBrands(brandsData || {});
+          setKpiTeamMembers(membersData || {});
+
+          if (!Object.keys(brandsData || {}).length) {
+            await initializeSampleData();
+          }
+        } catch (error) {
+          console.error('KPI 데이터 로드 실패:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const initializeSampleData = async () => {
+        const sampleBrands = {
+          'pour-method': { id: 'pour-method', name: 'Pour 공법', icon: '🏗️', color: '#3182F6', mission: 'PMF 찾기, 고객사의 등급을 높여 충성고객으로 만들고 아하모먼트를 찾기', kpis: [
+            { id: 1, name: 'B/C/N등급 고객사 활성화율 80%', items: [{ id: 101, name: '트리플미디어 운영', progress: 0 }], progress: 0, target: 80, unit: '%' },
+            { id: 2, name: '수주 전환율 80%', items: [{ id: 201, name: '무기고 웹/앱 페이지 제작', progress: 0 }, { id: 202, name: '영업가이드북 제작', progress: 0 }], progress: 0, target: 80, unit: '%' },
+            { id: 3, name: '브랜드 브랜딩 및 지원업무', items: [{ id: 301, name: '홈페이지 리뉴얼', progress: 0 }, { id: 302, name: '브랜드 아이덴티티 확립', progress: 0 }], progress: 0, target: 100, unit: '%' }
+          ]},
+          'pour-solution': { id: 'pour-solution', name: 'Pour 솔루션', icon: '🔧', color: '#00C73C', mission: 'PMF 찾은 서비스와 브랜드 확장으로 신규고객 확보', kpis: [
+            { id: 4, name: '신규 고객 확보 2배', items: [{ id: 401, name: '인테리어', progress: 0 }, { id: 402, name: '슈퍼앱', progress: 0 }], progress: 0, target: 200, unit: '%' },
+            { id: 5, name: '기존 고객 전환 2배', items: [{ id: 501, name: '사후관리 서비스', progress: 0 }], progress: 0, target: 200, unit: '%' }
+          ]},
+          'apartment-square': { id: 'apartment-square', name: '아파트스퀘어', icon: '🏢', color: '#8B5CF6', mission: '브랜드의 톤앤매너를 확립하고 유입을 활성화', kpis: [
+            { id: 7, name: '브랜드 아이덴티티 확립', items: [], progress: 0, target: 100, unit: '%' },
+            { id: 8, name: '신규고객 유입 2배', items: [], progress: 0, target: 200, unit: '%' }
+          ]},
+          'automation-system': { id: 'automation-system', name: '자동화&시스템화', icon: '⚙️', color: '#F59E0B', mission: '팀원 AI 도구 활용 역량 강화, 반복 업무 자동화', kpis: [
+            { id: 9, name: '업무 효율화 측정', items: [], progress: 0, target: 100, unit: '%' },
+            { id: 10, name: '데이터 활용 정리/통합', items: [], progress: 0, target: 100, unit: '%' }
+          ]}
+        };
+
+        const sampleMembers = {
+          'member-1': { id: 'member-1', name: '권혜영', role: '팀장', performance: 0, color: '#fc9600' },
+          'member-2': { id: 'member-2', name: '함지민', role: '브랜드 매니저', performance: 0, color: '#3182F6' },
+          'member-3': { id: 'member-3', name: '김소라', role: '콘텐츠 기획자', performance: 0, color: '#00C73C' },
+          'member-4': { id: 'member-4', name: '손예진', role: '디자이너', performance: 0, color: '#8B5CF6' },
+          'member-5': { id: 'member-5', name: '최경선', role: '마케팅 전문가', performance: 0, color: '#F59E0B' }
+        };
+
+        for (const [id, brand] of Object.entries(sampleBrands)) {
+          await KPIStorageService.saveBrand(id, brand);
+        }
+        for (const [id, member] of Object.entries(sampleMembers)) {
+          await KPIStorageService.saveTeamMember(id, member);
+        }
+
+        const brandsData = await KPIStorageService.getBrands();
+        const membersData = await KPIStorageService.getTeamMembers();
+        setBrands(brandsData);
+        setKpiTeamMembers(membersData);
+      };
+
+      const handleCompanyGoalUpdate = async (goal) => {
+        await KPIStorageService.saveCompanyGoal(goal);
+        setCompanyGoal(goal);
+      };
+
+      const handleTeamGoalUpdate = async (goal) => {
+        await KPIStorageService.saveTeamGoal(goal);
+        setTeamGoal(goal);
+      };
+
+      const handleTeamMemberUpdate = async (memberId, data) => {
+        await KPIStorageService.saveTeamMember(memberId, data);
+        const membersData = await KPIStorageService.getTeamMembers();
+        setKpiTeamMembers(membersData);
+      };
+
+      const resetAllData = async () => {
+        if (confirm('⚠️ 모든 KPI 데이터를 초기화하시겠습니까?')) {
+          setLoading(true);
+          try {
+            await database.ref('kpi').remove();
+            await KPIStorageService.saveCompanyGoal('매출 300억 달성\n"본질을 측정·관리하여 2배 성장"');
+            await KPIStorageService.saveTeamGoal('각 브랜드의 PMF를 찾고 아하모먼트를 발견하여\n고객 활성화와 브랜드 성장을 이끈다');
+            await initializeSampleData();
+            alert('✅ 데이터가 초기화되었습니다!');
+          } catch (error) {
+            console.error('초기화 실패:', error);
+            alert('❌ 초기화 중 오류가 발생했습니다.');
+          } finally {
+            setLoading(false);
+          }
+        }
+      };
+
+      // 데이터 내보내기 함수
+      const exportData = async () => {
+        try {
+          setLoading(true);
+          
+          // 모든 KPI 데이터 수집 (기존 형식과 호환)
+          const exportObj = {
+            brands: brands,
+            teamMembers: kpiTeamMembers,
+            companyGoal: companyGoal,
+            teamGoal: teamGoal,
+            quarterPlans: {},
+            quarterGoals: {}
+          };
+          
+          // 각 브랜드의 분기별 데이터 수집 (기존 형식: quarter-plans-brandId)
+          for (const brandId of Object.keys(brands)) {
+            const plans = await KPIStorageService.getQuarterPlans(brandId);
+            const goals = await KPIStorageService.getQuarterGoals(brandId);
+            exportObj.quarterPlans[`quarter-plans-${brandId}`] = plans;
+            exportObj.quarterGoals[`quarter-goals-${brandId}`] = goals;
+          }
+          
+          // JSON 파일로 다운로드
+          const dataStr = JSON.stringify(exportObj, null, 2);
+          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+          const url = URL.createObjectURL(dataBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `kpi-data-${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          
+          alert('✅ 데이터가 성공적으로 내보내기되었습니다!');
+        } catch (error) {
+          console.error('내보내기 실패:', error);
+          alert('❌ 데이터 내보내기 중 오류가 발생했습니다.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // 데이터 가져오기 함수
+      const importData = () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          
+          try {
+            setLoading(true);
+            const text = await file.text();
+            const importObj = JSON.parse(text);
+            
+            // 데이터 형식 감지 (brands 필드가 있으면 유효한 데이터로 간주)
+            if (!importObj.brands) {
+              alert('❌ 유효하지 않은 데이터 파일입니다.\nbrands 필드가 없습니다.');
+              setLoading(false);
+              return;
+            }
+            
+            // 확인 메시지
+            const brandCount = Object.keys(importObj.brands || {}).length;
+            const memberCount = Object.keys(importObj.teamMembers || {}).length;
+            const confirmMsg = `📁 데이터 가져오기\n\n` +
+              `브랜드 수: ${brandCount}개\n` +
+              `팀원 수: ${memberCount}명\n\n` +
+              `⚠️ 기존 데이터가 모두 덮어씌워집니다. 계속하시겠습니까?`;
+            
+            if (!confirm(confirmMsg)) {
+              setLoading(false);
+              return;
+            }
+            
+            // 브랜드 데이터 저장
+            if (importObj.brands) {
+              for (const [id, brand] of Object.entries(importObj.brands)) {
+                await KPIStorageService.saveBrand(id, brand);
+              }
+              setBrands(importObj.brands);
+            }
+            
+            // 팀원 데이터 저장
+            if (importObj.teamMembers) {
+              for (const [id, member] of Object.entries(importObj.teamMembers)) {
+                await KPIStorageService.saveTeamMember(id, member);
+              }
+              setKpiTeamMembers(importObj.teamMembers);
+            }
+            
+            // 회사/팀 목표 저장
+            if (importObj.companyGoal) {
+              await KPIStorageService.saveCompanyGoal(importObj.companyGoal);
+              setCompanyGoal(importObj.companyGoal);
+            }
+            
+            if (importObj.teamGoal) {
+              await KPIStorageService.saveTeamGoal(importObj.teamGoal);
+              setTeamGoal(importObj.teamGoal);
+            }
+            
+            // quarterPlans 처리 (두 가지 형식 지원)
+            if (importObj.quarterPlans) {
+              for (const [key, plans] of Object.entries(importObj.quarterPlans)) {
+                // "quarter-plans-pour-method" 형식 -> "pour-method"로 변환
+                const brandId = key.startsWith('quarter-plans-') ? key.replace('quarter-plans-', '') : key;
+                await KPIStorageService.saveQuarterPlans(brandId, plans);
+              }
+            }
+            
+            // quarterGoals 처리 (두 가지 형식 지원)
+            if (importObj.quarterGoals) {
+              for (const [key, goals] of Object.entries(importObj.quarterGoals)) {
+                // "quarter-goals-pour-method" 형식 -> "pour-method"로 변환
+                const brandId = key.startsWith('quarter-goals-') ? key.replace('quarter-goals-', '') : key;
+                await KPIStorageService.saveQuarterGoals(brandId, goals);
+              }
+            }
+            
+            alert('✅ 데이터가 성공적으로 가져오기되었습니다!\n페이지를 새로고침합니다.');
+            window.location.reload();
+            
+          } catch (error) {
+            console.error('가져오기 실패:', error);
+            alert('❌ 데이터 가져오기 중 오류가 발생했습니다.\n' + error.message);
+          } finally {
+            setLoading(false);
+          }
+        };
+        input.click();
+      };
+
+      if (loading) {
+        return (
+          <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#F2F4F6' }}>
+            <div className="loading-spinner" />
+          </div>
+        );
+      }
+
+      return (
+        <div style={{ flex: 1, display: 'flex', background: '#F2F4F6', overflow: 'hidden' }}>
+
+          {/* 메인 콘텐츠 영역 */}
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {currentPage === 'main' ? (
+              <div style={{ padding: '24px 32px' }}>
+                <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+                  <div style={{ marginBottom: 32 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <h1 style={{ fontSize: 32, fontWeight: 800, color: '#191F28', marginBottom: 8, letterSpacing: '-0.02em' }}>대시보드</h1>
+                        <p style={{ fontSize: 15, color: '#6B7684', fontWeight: 500 }}>브랜드마케팅팀 성과 관리</p>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={importData} style={{ padding: '10px 16px', background: '#EBF4FF', color: '#3182F6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          데이터 가져오기
+                        </button>
+                        <button onClick={exportData} style={{ padding: '10px 16px', background: '#F0FDF4', color: '#059669', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                          데이터 내보내기
+                        </button>
+                        <button onClick={resetAllData} style={{ padding: '10px 16px', background: '#FEE4E2', color: '#F04452', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                          데이터 초기화
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24 }}>
+                    <KPIGoalCard title="넷폼알앤디 목표" goal={companyGoal} onEdit={handleCompanyGoalUpdate} color="#191F28" />
+                    <KPIGoalCard title="브랜드마케팅팀 목표" goal={teamGoal} onEdit={handleTeamGoalUpdate} color="#3182F6" />
+                  </div>
+
+                  <div style={{ marginBottom: 24 }}>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>브랜드 KPI</h2>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                      {['pour-method', 'pour-solution', 'apartment-square', 'automation-system'].map(brandId => {
+                        const brand = brands[brandId];
+                        return brand ? (
+                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} />
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>팀원 성과</h2>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
+                      {Object.values(kpiTeamMembers).map(member => (
+                        <KPITeamMemberCard key={member.id} member={member} onUpdate={(data) => handleTeamMemberUpdate(member.id, data)} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : currentPage === 'brand-detail' && selectedBrand ? (
+              <KPIBrandDetailPage brand={brands[selectedBrand.id] || selectedBrand} onBack={() => { setCurrentPage('main'); setSelectedBrand(null); }} onBrandUpdate={setBrands} kpiTeamMembers={kpiTeamMembers} hideBackButton={!!initialBrandId} />
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+
     function PlaceholderTab({ title, icon, description }) {
       return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#F7F8FA', padding: 40 }}>
