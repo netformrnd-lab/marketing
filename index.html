@@ -1193,8 +1193,8 @@
       }, [tasks, projects, fixedTasks]);
       
       // ===== 조건부 렌더링 =====
-      // 로그인 안 되어있으면 로그인 화면 표시 (Auth 확인 중이어도 로그인 화면 보여줌)
-      if (!currentUser) {
+      // 공개 모드가 아니고, 로그인 안 되어있으면 로그인 화면 표시
+      if (!isPublicMode && !currentUser) {
         return <LoginScreen onLogin={(user) => {
           setCurrentUser(user);
           localStorage.setItem('teamwork_user', JSON.stringify(user));
