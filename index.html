@@ -4364,6 +4364,7 @@
       const [quarterGoals, setQuarterGoals] = useState({ Q1: '', Q2: '', Q3: '', Q4: '' });
       const [selectedTask, setSelectedTask] = useState(null);
       const [expandedTask, setExpandedTask] = useState(null);
+      const [selectedKpiItem, setSelectedKpiItem] = useState(null); // KPI 세부활동 모달용
       
       // 모든 KPI를 펼친 상태로 초기화
       const [expandedKpis, setExpandedKpis] = useState(() => {
@@ -4560,14 +4561,14 @@
                       <div style={{ padding: '0 12px 12px 12px', background: '#F9FAFB' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {kpi.items && kpi.items.map(item => (
-                            <div key={item.id} style={{ padding: 10, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div key={item.id} onClick={() => setSelectedKpiItem({ kpi, item })} style={{ padding: 10, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', transition: 'all 0.15s' }} onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'} onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
                               <div style={{ flex: 1 }}>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>{item.name}</div>
                                 <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
                                   <div style={{ width: `${item.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 2 }} />
                                 </div>
                               </div>
-                              <button onClick={() => deleteKpiItem(kpi.id, item.id)} style={{ width: 24, height: 24, background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 14, cursor: 'pointer' }}>×</button>
+                              <button onClick={(e) => { e.stopPropagation(); deleteKpiItem(kpi.id, item.id); }} style={{ width: 24, height: 24, background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 14, cursor: 'pointer' }}>×</button>
                             </div>
                           ))}
                           <button onClick={() => addKpiItem(kpi.id)} style={{ padding: 10, background: `${brand.color}08`, border: `2px dashed ${brand.color}40`, borderRadius: 8, color: brand.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ 세부 항목 추가</button>
@@ -4779,6 +4780,170 @@
                         saveQuarterPlans(updatedPlans);
                       }} placeholder="업무 결과와 성과를 기록하세요" style={{ width: '100%', minHeight: 100, padding: 16, border: '2px solid #E5E8EB', borderRadius: 12, fontSize: 14, lineHeight: 1.6, resize: 'vertical', fontFamily: 'inherit' }} />
                     </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* KPI 세부활동 분기별 업무 모달 */}
+          {selectedKpiItem && (() => {
+            const { kpi, item } = selectedKpiItem;
+            
+            // 모든 분기에서 이 세부항목에 연동된 업무 찾기
+            const getLinkedTasksByQuarter = () => {
+              const result = {};
+              ['Q1', 'Q2', 'Q3', 'Q4'].forEach(quarter => {
+                const tasks = (quarterPlans[quarter] || []).filter(task => 
+                  task.linkedKpiItem && 
+                  task.linkedKpiItem.kpiId === kpi.id && 
+                  task.linkedKpiItem.itemId === item.id
+                );
+                result[quarter] = tasks;
+              });
+              return result;
+            };
+            
+            const linkedTasksByQuarter = getLinkedTasksByQuarter();
+            const totalTasks = Object.values(linkedTasksByQuarter).flat().length;
+            const completedTasks = Object.values(linkedTasksByQuarter).flat().filter(t => t.completed).length;
+            const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            
+            return (
+              <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={() => setSelectedKpiItem(null)}>
+                <div style={{ background: 'white', borderRadius: 20, maxWidth: 700, width: '100%', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+                  {/* 헤더 */}
+                  <div style={{ padding: 24, borderBottom: '1px solid #E5E8EB', position: 'sticky', top: 0, background: 'white', borderRadius: '20px 20px 0 0', zIndex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                      <div>
+                        <div style={{ display: 'inline-block', padding: '4px 12px', background: `${brand.color}15`, borderRadius: 6, fontSize: 12, fontWeight: 700, color: brand.color, marginBottom: 8 }}>{kpi.name}</div>
+                        <h3 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', margin: 0 }}>{item.name}</h3>
+                      </div>
+                      <button onClick={() => setSelectedKpiItem(null)} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F2F4F6', color: '#6B7684', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                    </div>
+                    
+                    {/* 진행률 요약 */}
+                    <div style={{ display: 'flex', gap: 24, padding: 16, background: '#F9FAFB', borderRadius: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 12, color: '#8B95A1', fontWeight: 600, marginBottom: 4 }}>전체 진행률</div>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: brand.color }}>{progressPercent}%</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, color: '#8B95A1', fontWeight: 600, marginBottom: 4 }}>총 업무</div>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: '#191F28' }}>{totalTasks}개</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* 분기별 업무 목록 */}
+                  <div style={{ padding: 24 }}>
+                    {['Q1', 'Q2', 'Q3', 'Q4'].map(quarter => {
+                      const tasks = linkedTasksByQuarter[quarter];
+                      const quarterCompleted = tasks.filter(t => t.completed).length;
+                      
+                      return (
+                        <div key={quarter} style={{ marginBottom: 24 }}>
+                          {/* 분기 헤더 */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                            <div style={{ padding: '6px 14px', background: brand.color, color: 'white', borderRadius: 8, fontSize: 14, fontWeight: 700 }}>{quarter}</div>
+                            <div style={{ flex: 1, height: 1, background: '#E5E8EB' }} />
+                          </div>
+                          
+                          {/* 업무 목록 */}
+                          {tasks.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 0 0 8px', borderLeft: `2px solid ${brand.color}30` }}>
+                              {tasks.map(task => {
+                                const activityProgress = task.activities && task.activities.length > 0 
+                                  ? `${task.activities.filter(a => a.completed).length}/${task.activities.length}`
+                                  : null;
+                                
+                                return (
+                                  <div key={task.id} style={{ 
+                                    padding: 14, 
+                                    background: task.completed ? '#F9FAFB' : 'white', 
+                                    borderRadius: 10, 
+                                    border: `1px solid ${task.completed ? '#E5E8EB' : brand.color + '30'}`,
+                                    marginLeft: 8
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                      <div style={{ 
+                                        width: 20, height: 20, borderRadius: '50%', 
+                                        background: task.completed ? '#00C471' : 'white',
+                                        border: task.completed ? 'none' : '2px solid #E5E8EB',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        flexShrink: 0
+                                      }}>
+                                        {task.completed && <span style={{ color: 'white', fontSize: 12 }}>✓</span>}
+                                      </div>
+                                      <span style={{ 
+                                        flex: 1, 
+                                        fontSize: 14, 
+                                        fontWeight: 500, 
+                                        color: task.completed ? '#8B95A1' : '#191F28',
+                                        textDecoration: task.completed ? 'line-through' : 'none'
+                                      }}>{task.title}</span>
+                                      
+                                      {activityProgress && (
+                                        <div style={{ 
+                                          padding: '3px 8px', 
+                                          background: `${brand.color}10`, 
+                                          borderRadius: 4, 
+                                          fontSize: 11, 
+                                          fontWeight: 600, 
+                                          color: brand.color 
+                                        }}>
+                                          {activityProgress}
+                                        </div>
+                                      )}
+                                      
+                                      {task.assignees && task.assignees.length > 0 && (
+                                        <div style={{ display: 'flex', marginLeft: 4 }}>
+                                          {task.assignees.slice(0, 3).map((assigneeId, idx) => {
+                                            const member = kpiTeamMembers[assigneeId];
+                                            return member ? (
+                                              <div key={assigneeId} style={{ 
+                                                width: 22, height: 22, borderRadius: '50%', 
+                                                background: member.color || '#8B95A1', 
+                                                color: 'white', 
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: 10, fontWeight: 600,
+                                                marginLeft: idx > 0 ? -6 : 0,
+                                                border: '2px solid white'
+                                              }}>{member.name?.charAt(0)}</div>
+                                            ) : null;
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                    
+                                    {/* 실행 내역 미리보기 */}
+                                    {task.activities && task.activities.length > 0 && (
+                                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #E5E8EB' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                          {task.activities.slice(0, 3).map((activity, idx) => (
+                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: activity.completed ? '#8B95A1' : '#4E5968' }}>
+                                              <span style={{ color: activity.completed ? '#00C471' : '#D1D6DB' }}>{activity.completed ? '✓' : '○'}</span>
+                                              <span style={{ textDecoration: activity.completed ? 'line-through' : 'none' }}>{activity.content}</span>
+                                            </div>
+                                          ))}
+                                          {task.activities.length > 3 && (
+                                            <div style={{ fontSize: 11, color: '#8B95A1', paddingLeft: 14 }}>+{task.activities.length - 3}개 더보기</div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div style={{ padding: '20px 16px', background: '#F9FAFB', borderRadius: 10, textAlign: 'center', color: '#8B95A1', fontSize: 13 }}>
+                              {quarter}에 계획된 업무가 없습니다
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
