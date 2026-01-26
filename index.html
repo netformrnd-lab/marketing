@@ -627,7 +627,7 @@
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="권혜영"
+                    placeholder="이름을 입력하세요"
                     style={{
                       width: '100%',
                       padding: '14px 16px',
@@ -692,6 +692,27 @@
                   }}
                 >
                   {isLoading ? '로그인 중...' : '로그인'}
+                </button>
+                
+                {/* 로그인 없이 둘러보기 버튼 */}
+                <button
+                  type="button"
+                  onClick={() => window.location.href = window.location.pathname + '?view=kpi'}
+                  style={{
+                    width: '100%',
+                    padding: '14px 24px',
+                    borderRadius: 12,
+                    border: '2px solid #E5E8EB',
+                    background: 'white',
+                    color: '#6B7684',
+                    fontSize: 15,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginTop: 12,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  🔍 로그인 없이 KPI 보기
                 </button>
               </form>
             )}
