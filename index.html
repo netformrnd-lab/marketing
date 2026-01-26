@@ -1268,20 +1268,7 @@
       // 모든 하위 메뉴 플랫하게
       const allChildMenus = MENU_GROUPS.flatMap(g => g.children || []);
 
-      // 로딩 화면
-      if (isLoading) {
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#F7F8FA', gap: 20 }}>
-            <div className="loading-spinner"></div>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 16, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>데이터를 불러오는 중...</p>
-              <p style={{ fontSize: 13, color: '#8B95A1' }}>잠시만 기다려주세요</p>
-            </div>
-          </div>
-        );
-      }
-
-      // ===== 공개 모드: KPI 대시보드만 표시 =====
+      // ===== 공개 모드: KPI 대시보드만 표시 (로딩 무시) =====
       if (isPublicMode) {
         return (
           <div style={{ minHeight: '100vh', background: '#F7F8FA' }}>
@@ -1312,6 +1299,19 @@
             <main style={{ padding: 0 }}>
               <KPIDashboardTab initialPage="main" />
             </main>
+          </div>
+        );
+      }
+
+      // 로딩 화면 (공개 모드가 아닐 때만)
+      if (isLoading) {
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#F7F8FA', gap: 20 }}>
+            <div className="loading-spinner"></div>
+            <div style={{ textAlign: 'center' }}>
+              <p style={{ fontSize: 16, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>데이터를 불러오는 중...</p>
+              <p style={{ fontSize: 13, color: '#8B95A1' }}>잠시만 기다려주세요</p>
+            </div>
           </div>
         );
       }
