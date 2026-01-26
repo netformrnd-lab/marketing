@@ -707,16 +707,21 @@
     // ============ 메인 앱 ============
     // ============ 메인 앱 ============
     function TeamWorkApp() {
+      // ===== URL 파라미터 체크 (공개 뷰 모드) =====
+      const urlParams = new URLSearchParams(window.location.search);
+      const publicView = urlParams.get('view'); // 'kpi' 등
+      const isPublicMode = publicView === 'kpi';
+      
       // ===== 모든 State 선언 (조건문 전에) =====
-      const [activeTab, setActiveTab] = useState('home');
-      const [authChecked, setAuthChecked] = useState(false);
-      const [currentUser, setCurrentUser] = useState(null);
+      const [activeTab, setActiveTab] = useState(isPublicMode ? 'kpi' : 'home');
+      const [authChecked, setAuthChecked] = useState(isPublicMode ? true : false);
+      const [currentUser, setCurrentUser] = useState(isPublicMode ? { name: '게스트', role: 'viewer' } : null);
       const [projects, setProjects] = useState([]);
       const [tasks, setTasks] = useState([]);
       const [fixedTasks, setFixedTasks] = useState([]);
       const [teamRequests, setTeamRequests] = useState([]);
       const [meetings, setMeetings] = useState([]);
-      const [isLoading, setIsLoading] = useState(true);
+      const [isLoading, setIsLoading] = useState(isPublicMode ? false : true);
       const [dataLoaded, setDataLoaded] = useState(false);
       const [isSaving, setIsSaving] = useState(false);
       const [readComments, setReadComments] = useState(() => {
@@ -1251,6 +1256,41 @@
               <p style={{ fontSize: 16, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>데이터를 불러오는 중...</p>
               <p style={{ fontSize: 13, color: '#8B95A1' }}>잠시만 기다려주세요</p>
             </div>
+          </div>
+        );
+      }
+
+      // ===== 공개 모드: KPI 대시보드만 표시 =====
+      if (isPublicMode) {
+        return (
+          <div style={{ minHeight: '100vh', background: '#F7F8FA' }}>
+            {/* 상단 헤더 */}
+            <header style={{ 
+              background: 'linear-gradient(135deg, #1B1D21 0%, #2C2F36 100%)', 
+              padding: '16px 32px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #3182F6, #006FEE)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="chart" size={20} color="white" />
+                </div>
+                <div>
+                  <h1 style={{ fontSize: 18, fontWeight: 700, color: 'white', margin: 0 }}>브랜드마케팅팀 KPI 대시보드</h1>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', margin: 0 }}>넷폼알앤디 성과관리</p>
+                </div>
+              </div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>
+                {new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
+            </header>
+            
+            {/* KPI 대시보드 콘텐츠 */}
+            <main style={{ padding: 0 }}>
+              <KPIDashboardTab initialPage="main" />
+            </main>
           </div>
         );
       }
