@@ -5910,7 +5910,7 @@
                       {currentUser.role === '팀장' && (
                         <select
                           value={request.assigneeId || ''}
-                          onChange={(e) => { assignRequest(request.id, e.target.value || null); }}
+                          onChange={(e) => { assignRequest(request.id, e.target.value ? Number(e.target.value) : null); }}
                           style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13, background: 'white', cursor: 'pointer' }}
                         >
                           <option value="">담당자 지정</option>
