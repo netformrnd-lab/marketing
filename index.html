@@ -10776,10 +10776,10 @@
 
     function SubTaskModal({ task, parentTaskId, currentUser, onSave, onClose }) {
       // ESC 키는 부모 컴포넌트(ProjectDetailSlide)에서 처리
-      const isTeamLeader = currentUser?.role === '팀장';
-      const [form, setForm] = useState({ 
-        title: task?.title || '', 
-        memberId: task?.memberId || (isTeamLeader ? null : currentUser?.id), 
+      // 모든 팀원이 담당자를 지정할 수 있음
+      const [form, setForm] = useState({
+        title: task?.title || '',
+        memberId: task?.memberId || null, 
         date: task?.date || today,
         note: task?.note || '',
         attachments: task?.attachments || []
@@ -10869,9 +10869,7 @@
             )}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}><h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>{isEdit ? '하위업무 수정' : isSubtask ? '서브태스크 추가' : '하위업무 추가'}</h3><button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="x" size={18} color="#8B95A1" /></button></div>
             <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>업무명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 디자인 시안 제작" style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} /></div>
-            {isTeamLeader && (
-              <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>담당자 *</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => setForm({ ...form, memberId: m.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: form.memberId === m.id ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: form.memberId === m.id ? `${m.color}15` : 'white', cursor: 'pointer' }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: form.memberId === m.id ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
-            )}
+            <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>담당자 *</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => setForm({ ...form, memberId: m.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: form.memberId === m.id ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: form.memberId === m.id ? `${m.color}15` : 'white', cursor: 'pointer' }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: form.memberId === m.id ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
             <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>기한</label><input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} onClick={(e) => e.target.showPicker()} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, cursor: 'pointer' }} /></div>
             <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>메모 (선택)</label><textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="메모를 입력하세요" rows={3} style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, resize: 'none' }} /></div>
             
