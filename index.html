@@ -210,6 +210,9 @@
       { id: 'hold', label: '보류', color: '#F59E0B', bg: '#FFFBEB', icon: 'pause' },
     ];
     
+    // KPI 브랜드 표시 순서
+    const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'automation'];
+    
     // 우선순위 옵션
     const PRIORITY_OPTIONS = [
       { id: 'urgent', label: '긴급', color: '#F04452', bg: '#FEE4E2', icon: '🔴', order: 0 },
@@ -796,6 +799,13 @@
       
       // KPI 브랜드 데이터 (프로젝트 연동용)
       const [kpiBrands, setKpiBrands] = useState({});
+      
+      // 프로젝트 상세 슬라이드용 (KPI에서 열기)
+      const [globalSelectedProject, setGlobalSelectedProject] = useState(null);
+      const openProjectFromKpi = (project) => {
+        setGlobalSelectedProject(project);
+        setReadComments(prev => ({ ...prev, [project.id]: (project.comments || []).length }));
+      };
       
       // readComments 변경 시 localStorage에 저장
       useEffect(() => {
@@ -1586,19 +1596,19 @@
               <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="main" />
+              <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'brand-pour-method' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-method" />
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-method" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'brand-pour-solution' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-solution" />
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-solution" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'brand-apartment-square' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="apartment-square" />
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="apartment-square" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'brand-automation-system' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="automation-system" />
+              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="automation-system" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'onboarding' ? 'flex' : 'none', flexDirection: 'column' }}>
               <ManualTab currentUser={currentUser} />
@@ -1644,6 +1654,48 @@
               />
             </div>
           </main>
+          
+          {/* KPI에서 열린 프로젝트 상세 슬라이드 */}
+          {globalSelectedProject && (
+            <ProjectDetailSlide 
+              project={globalSelectedProject} 
+              tasks={tasks.filter(t => t.projectId === globalSelectedProject.id)} 
+              meetings={(meetings || []).filter(m => (m.linkedProjects || []).includes(globalSelectedProject.id))} 
+              currentUser={currentUser} 
+              onClose={() => setGlobalSelectedProject(null)} 
+              onAddComment={(t, f) => {
+                const newComment = { id: Date.now(), text: t, memberId: currentUser.id, createdAt: new Date().toISOString(), file: f };
+                setProjects(prev => prev.map(p => p.id === globalSelectedProject.id ? { ...p, comments: [...(p.comments || []), newComment] } : p));
+              }} 
+              onUpdateComment={(cid, t) => {
+                setProjects(prev => prev.map(p => p.id === globalSelectedProject.id ? { ...p, comments: (p.comments || []).map(c => c.id === cid ? { ...c, text: t } : c) } : p));
+              }} 
+              onDeleteComment={(cid) => {
+                setProjects(prev => prev.map(p => p.id === globalSelectedProject.id ? { ...p, comments: (p.comments || []).filter(c => c.id !== cid) } : p));
+              }} 
+              onAddTask={(t) => setTasks(prev => [...prev, t])} 
+              onToggleTask={(taskId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))} 
+              onDeleteTask={(taskId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, deletedAt: new Date().toISOString() } : t))} 
+              onUpdateTask={(taskId, updates) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))} 
+              onUpdateProject={(updated) => {
+                setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
+                setGlobalSelectedProject(updated);
+              }} 
+              onDeleteProject={(p) => {
+                if (confirm(`"${p.title}" 프로젝트를 삭제하시겠습니까?`)) {
+                  setProjects(prev => prev.map(proj => proj.id === p.id ? { ...proj, deletedAt: new Date().toISOString() } : proj));
+                  setGlobalSelectedProject(null);
+                }
+              }} 
+              onReorderTasks={(reordered) => setTasks(prev => prev.map(t => { const found = reordered.find(r => r.id === t.id); return found ? { ...t, order: found.order } : t; }))} 
+              projectTemplates={projectTemplates} 
+              onUpdateMeeting={(updatedMeeting) => setMeetings(prev => prev.map(m => m.id === updatedMeeting.id ? updatedMeeting : m))} 
+              onAddMeeting={(newMeeting) => setMeetings(prev => [...prev, newMeeting])} 
+              onDeleteMeeting={(meetingId) => setMeetings(prev => prev.filter(m => m.id !== meetingId))} 
+              projects={projects} 
+              kpiBrands={kpiBrands} 
+            />
+          )}
         </div>
       );
     }
@@ -4285,13 +4337,37 @@
     };
 
     // ============ KPI 브랜드 카드 컴포넌트 ============
-    const KPIBrandCard = ({ brand, onViewDetail, onKpiNameUpdate }) => {
+    const KPIBrandCard = ({ brand, onViewDetail, onKpiNameUpdate, linkedProjects = [] }) => {
       const [expanded, setExpanded] = useState(true);
       const [editingKpiId, setEditingKpiId] = useState(null);
       const [editKpiName, setEditKpiName] = useState('');
       
+      // 후행지표별 progress 계산 (연동된 프로젝트 기반)
+      const getItemProgress = (kpiId, itemId) => {
+        const linkedProject = linkedProjects.find(p => 
+          p.linkedKpi?.kpiId === kpiId && p.linkedKpi?.itemId === itemId
+        );
+        
+        if (linkedProject && linkedProject.tasks && linkedProject.tasks.length > 0) {
+          const completedTasks = linkedProject.tasks.filter(t => t.completed).length;
+          const totalTasks = linkedProject.tasks.length;
+          return Math.round((completedTasks / totalTasks) * 100);
+        }
+        
+        const kpi = brand.kpis?.find(k => k.id === kpiId);
+        const item = kpi?.items?.find(i => i.id === itemId);
+        return item?.progress || 0;
+      };
+      
+      // KPI 전체 progress 계산 (연동된 프로젝트 포함)
+      const getKpiProgress = (kpi) => {
+        if (!kpi.items || kpi.items.length === 0) return kpi.progress || 0;
+        const totalProgress = kpi.items.reduce((sum, item) => sum + getItemProgress(kpi.id, item.id), 0);
+        return Math.round(totalProgress / kpi.items.length);
+      };
+      
       const avgProgress = brand.kpis && brand.kpis.length > 0
-        ? Math.round(brand.kpis.reduce((sum, kpi) => sum + (kpi.progress || 0), 0) / brand.kpis.length)
+        ? Math.round(brand.kpis.reduce((sum, kpi) => sum + getKpiProgress(kpi), 0) / brand.kpis.length)
         : 0;
 
       const startEditKpi = (kpi) => {
@@ -4325,13 +4401,13 @@
                 </div>
                 <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', margin: 0 }}>{brand.name}</h3>
               </div>
-              <span style={{ fontSize: 24, fontWeight: 700, color: brand.color }}>{avgProgress}%</span>
+              <span style={{ fontSize: 24, fontWeight: 700, color: avgProgress === 100 ? '#00C471' : brand.color }}>{avgProgress}%</span>
             </div>
 
             <p style={{ fontSize: 13, color: '#6B7684', lineHeight: 1.5, margin: 0, marginBottom: 16 }}>{brand.mission}</p>
 
             <div style={{ width: '100%', height: 8, background: '#F2F4F6', borderRadius: 4, overflow: 'hidden', marginBottom: 12 }}>
-              <div style={{ width: `${avgProgress}%`, height: '100%', background: brand.color, borderRadius: 4, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+              <div style={{ width: `${avgProgress}%`, height: '100%', background: avgProgress === 100 ? '#00C471' : brand.color, borderRadius: 4, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
@@ -4353,7 +4429,9 @@
           {expanded && brand.kpis && brand.kpis.length > 0 && (
             <div style={{ padding: '0 20px 20px 20px', background: '#F9FAFB', borderTop: '1px solid #E5E8EB' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16 }}>
-                {brand.kpis.map(kpi => (
+                {brand.kpis.map(kpi => {
+                  const kpiProgress = getKpiProgress(kpi);
+                  return (
                   <div key={kpi.id} style={{ padding: 12, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
                       {editingKpiId === kpi.id ? (
@@ -4382,13 +4460,14 @@
                           {kpi.name}
                         </span>
                       )}
-                      <span style={{ fontSize: 15, fontWeight: 700, color: brand.color }}>{kpi.progress || 0}%</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: kpiProgress === 100 ? '#00C471' : brand.color }}>{kpiProgress}%</span>
                     </div>
                     <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ width: `${kpi.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 2, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                      <div style={{ width: `${kpiProgress}%`, height: '100%', background: kpiProgress === 100 ? '#00C471' : brand.color, borderRadius: 2, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -4397,12 +4476,15 @@
     };
 
     // ============ KPI 팀원 카드 컴포넌트 ============
-    const KPITeamMemberCard = ({ member, onUpdate, assignedTasks }) => {
+    const KPITeamMemberCard = ({ member, onUpdate, assignedTasks, assignedProjects = [] }) => {
       const [isEditing, setIsEditing] = useState(false);
       const [editData, setEditData] = useState(member);
       
       // 실제 업무 리스트 (props로 받은 assignedTasks 우선 사용)
       const taskList = assignedTasks || [];
+      
+      // 담당 프로젝트 (프로젝트 담당자로 지정된 것)
+      const myProjects = assignedProjects.filter(p => p.memberIds?.includes(member.id) || p.creatorId === member.id);
 
       useEffect(() => {
         setEditData(member);
@@ -4423,14 +4505,36 @@
         return 0;
       };
       
-      // 전체 성과 계산 (업무가 있으면 업무 기반, 없으면 member.performance)
-      const calculatePerformance = () => {
-        if (taskList.length === 0) return member.performance || 0;
-        const totalProgress = taskList.reduce((sum, task) => sum + calculateTaskProgress(task), 0);
-        return Math.round(totalProgress / taskList.length);
+      // 프로젝트 진행률 계산
+      const calculateProjectProgress = (project) => {
+        if (!project.tasks || project.tasks.length === 0) return 0;
+        const completed = project.tasks.filter(t => t.completed).length;
+        return Math.round((completed / project.tasks.length) * 100);
       };
       
-      const displayPerformance = calculatePerformance();
+      // 담당 프로젝트 평균 진행률
+      const projectPerformance = myProjects.length > 0
+        ? Math.round(myProjects.reduce((sum, p) => sum + calculateProjectProgress(p), 0) / myProjects.length)
+        : 0;
+      
+      // 담당 업무 완료율
+      const taskPerformance = taskList.length > 0
+        ? Math.round(taskList.reduce((sum, task) => sum + calculateTaskProgress(task), 0) / taskList.length)
+        : 0;
+      
+      // 종합 성과 계산 (프로젝트 50% + 업무 50%, 둘 다 있을 때)
+      const calculateOverallPerformance = () => {
+        if (myProjects.length > 0 && taskList.length > 0) {
+          return Math.round((projectPerformance * 0.5) + (taskPerformance * 0.5));
+        } else if (myProjects.length > 0) {
+          return projectPerformance;
+        } else if (taskList.length > 0) {
+          return taskPerformance;
+        }
+        return member.performance || 0;
+      };
+      
+      const displayPerformance = calculateOverallPerformance();
 
       return (
         <div className="kpi-card" style={{ minWidth: 200 }}>
@@ -4456,32 +4560,66 @@
               <h4 style={{ fontSize: 17, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>{member.name}</h4>
               <p style={{ fontSize: 13, color: '#6B7684', marginBottom: 16 }}>{member.role}</p>
               
-              {/* 분기별 업무에서 할당된 업무 표시 */}
-              {taskList.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>담당 업무</div>
+              {/* 담당 프로젝트 섹션 */}
+              {myProjects.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1' }}>📁 담당 프로젝트</span>
+                    <span style={{ fontSize: 11, color: member.color || '#3182F6', fontWeight: 600 }}>{myProjects.length}개</span>
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {taskList.slice(0, 3).map((task, idx) => {
-                      const progress = calculateTaskProgress(task);
+                    {myProjects.slice(0, 2).map((project, idx) => {
+                      const progress = calculateProjectProgress(project);
                       return (
-                        <div key={task.id || idx} style={{ padding: '6px 10px', background: '#F9FAFB', borderRadius: 6, fontSize: 12, color: '#191F28', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: progress === 100 ? '#00C73C' : (task.brandColor || member.color || '#3182F6'), flexShrink: 0 }} />
-                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: progress === 100 ? '#00C73C' : (task.brandColor || member.color || '#3182F6') }}>{progress}%</span>
+                        <div key={project.id || idx} style={{ padding: '8px 10px', background: progress === 100 ? '#ECFDF5' : '#F9FAFB', borderRadius: 8, border: `1px solid ${progress === 100 ? '#00C47130' : '#E5E8EB'}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{project.title}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: progress === 100 ? '#00C471' : (member.color || '#3182F6'), marginLeft: 8 }}>{progress}%</span>
+                          </div>
+                          <div style={{ height: 3, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                            <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? '#00C471' : (member.color || '#3182F6'), borderRadius: 2 }} />
+                          </div>
                         </div>
                       );
                     })}
-                    {taskList.length > 3 && (
-                      <div style={{ fontSize: 11, color: '#8B95A1', textAlign: 'center', padding: '4px 0' }}>
-                        +{taskList.length - 3}개 더보기
+                    {myProjects.length > 2 && (
+                      <div style={{ fontSize: 11, color: '#8B95A1', textAlign: 'center', padding: '2px 0' }}>
+                        +{myProjects.length - 2}개 더
                       </div>
                     )}
                   </div>
                 </div>
               )}
               
-              {/* 기존 member.tasks 표시 (분기 업무가 없을 때만) */}
-              {taskList.length === 0 && member.tasks && Object.keys(member.tasks).length > 0 && (
+              {/* 담당 업무 섹션 */}
+              {taskList.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1' }}>✅ 담당 업무</span>
+                    <span style={{ fontSize: 11, color: member.color || '#3182F6', fontWeight: 600 }}>{taskList.filter(t => t.completed || calculateTaskProgress(t) === 100).length}/{taskList.length}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {taskList.slice(0, 3).map((task, idx) => {
+                      const progress = calculateTaskProgress(task);
+                      const isComplete = progress === 100;
+                      return (
+                        <div key={task.id || idx} style={{ padding: '5px 8px', background: isComplete ? '#ECFDF5' : '#F9FAFB', borderRadius: 6, fontSize: 11, color: isComplete ? '#00C471' : '#191F28', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 5, height: 5, borderRadius: '50%', background: isComplete ? '#00C471' : (task.brandColor || member.color || '#3182F6'), flexShrink: 0 }} />
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isComplete ? 'line-through' : 'none' }}>{task.title}</span>
+                        </div>
+                      );
+                    })}
+                    {taskList.length > 3 && (
+                      <div style={{ fontSize: 10, color: '#8B95A1', textAlign: 'center', padding: '2px 0' }}>
+                        +{taskList.length - 3}개 더
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* 기존 member.tasks 표시 (분기 업무와 프로젝트가 없을 때만) */}
+              {taskList.length === 0 && myProjects.length === 0 && member.tasks && Object.keys(member.tasks).length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>담당 업무</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -4498,11 +4636,11 @@
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#4E5968' }}>성과</span>
-                  <span style={{ fontSize: 20, fontWeight: 700, color: member.color || '#3182F6' }}>{displayPerformance}%</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#4E5968' }}>종합 성과</span>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: displayPerformance === 100 ? '#00C471' : (member.color || '#3182F6') }}>{displayPerformance}%</span>
                 </div>
                 <div style={{ width: '100%', height: 10, background: '#F2F4F6', borderRadius: 6, overflow: 'hidden' }}>
-                  <div style={{ width: `${displayPerformance}%`, height: '100%', background: `linear-gradient(90deg, ${member.color || '#3182F6'} 0%, ${member.color || '#3182F6'}dd 100%)`, borderRadius: 6, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                  <div style={{ width: `${displayPerformance}%`, height: '100%', background: displayPerformance === 100 ? '#00C471' : `linear-gradient(90deg, ${member.color || '#3182F6'} 0%, ${member.color || '#3182F6'}dd 100%)`, borderRadius: 6, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
                 </div>
               </div>
             </>
@@ -4512,13 +4650,39 @@
     };
 
     // ============ KPI 브랜드 상세 페이지 컴포넌트 ============
-    const KPIBrandDetailPage = ({ brand, onBack, onBrandUpdate, kpiTeamMembers, hideBackButton = false, onQuarterPlansUpdate }) => {
+    const KPIBrandDetailPage = ({ brand, onBack, onBrandUpdate, kpiTeamMembers, hideBackButton = false, onQuarterPlansUpdate, linkedProjects = [], onOpenProject }) => {
       const [selectedQuarter, setSelectedQuarter] = useState('Q1');
       const [quarterPlans, setQuarterPlans] = useState({ Q1: [], Q2: [], Q3: [], Q4: [] });
       const [quarterGoals, setQuarterGoals] = useState({ Q1: '', Q2: '', Q3: '', Q4: '' });
       const [selectedTask, setSelectedTask] = useState(null);
       const [expandedTask, setExpandedTask] = useState(null);
       const [selectedKpiItem, setSelectedKpiItem] = useState(null); // KPI 세부활동 모달용
+      
+      // 후행지표별 progress 계산 (연동된 프로젝트 기반)
+      const getItemProgress = (kpiId, itemId) => {
+        // 해당 후행지표에 연동된 프로젝트 찾기
+        const linkedProject = linkedProjects.find(p => 
+          p.linkedKpi?.kpiId === kpiId && p.linkedKpi?.itemId === itemId
+        );
+        
+        if (linkedProject && linkedProject.tasks && linkedProject.tasks.length > 0) {
+          const completedTasks = linkedProject.tasks.filter(t => t.completed).length;
+          const totalTasks = linkedProject.tasks.length;
+          return Math.round((completedTasks / totalTasks) * 100);
+        }
+        
+        // 연동된 프로젝트가 없으면 기존 item.progress 사용
+        const kpi = brand.kpis?.find(k => k.id === kpiId);
+        const item = kpi?.items?.find(i => i.id === itemId);
+        return item?.progress || 0;
+      };
+      
+      // KPI 전체 progress 계산 (연동된 프로젝트 포함)
+      const getKpiProgress = (kpi) => {
+        if (!kpi.items || kpi.items.length === 0) return 0;
+        const totalProgress = kpi.items.reduce((sum, item) => sum + getItemProgress(kpi.id, item.id), 0);
+        return Math.round(totalProgress / kpi.items.length);
+      };
       
       // 모든 KPI를 펼친 상태로 초기화
       const [expandedKpis, setExpandedKpis] = useState(() => {
@@ -4724,16 +4888,18 @@
             {/* KPI 요약 카드 */}
             {brand.kpis && brand.kpis.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-                {brand.kpis.map(kpi => (
+                {brand.kpis.map(kpi => {
+                  const kpiProgress = getKpiProgress(kpi);
+                  return (
                   <div key={kpi.id} style={{ background: 'white', borderRadius: 12, border: `2px solid ${brand.color}20`, overflow: 'hidden' }}>
                     <div onClick={() => setExpandedKpis(prev => ({ ...prev, [kpi.id]: !prev[kpi.id] }))} style={{ padding: 16, cursor: 'pointer', background: expandedKpis[kpi.id] ? `${brand.color}05` : 'white' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                         <h4 style={{ fontSize: 14, fontWeight: 700, color: brand.color, margin: 0, flex: 1, lineHeight: 1.4 }}>{kpi.name}</h4>
-                        <span style={{ fontSize: 18, fontWeight: 700, color: brand.color, marginLeft: 8 }}>{kpi.progress || 0}%</span>
+                        <span style={{ fontSize: 18, fontWeight: 700, color: kpiProgress === 100 ? '#00C471' : brand.color, marginLeft: 8 }}>{kpiProgress}%</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ flex: 1, height: 6, background: '#F2F4F6', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${kpi.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 3 }} />
+                          <div style={{ width: `${kpiProgress}%`, height: '100%', background: kpiProgress === 100 ? '#00C471' : brand.color, borderRadius: 3 }} />
                         </div>
                         <div style={{ fontSize: 16, color: '#8B95A1', transform: expandedKpis[kpi.id] ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</div>
                       </div>
@@ -4742,23 +4908,56 @@
                     {expandedKpis[kpi.id] && (
                       <div style={{ padding: '0 12px 12px 12px', background: '#F9FAFB' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {kpi.items && kpi.items.map(item => (
+                          {kpi.items && kpi.items.map(item => {
+                            const itemProgress = getItemProgress(kpi.id, item.id);
+                            const linkedProject = linkedProjects.find(p => p.linkedKpi?.kpiId === kpi.id && p.linkedKpi?.itemId === item.id);
+                            return (
                             <div key={item.id} onClick={() => setSelectedKpiItem({ kpi, item })} style={{ padding: 10, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', transition: 'all 0.15s' }} onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'} onMouseLeave={(e) => e.currentTarget.style.background = 'white'}>
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>{item.name}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{item.name}</span>
+                                  {linkedProject && (
+                                    <span style={{ fontSize: 10, padding: '2px 6px', background: `${brand.color}15`, color: brand.color, borderRadius: 4, fontWeight: 600 }}>📁 연동</span>
+                                  )}
+                                </div>
                                 <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
-                                  <div style={{ width: `${item.progress || 0}%`, height: '100%', background: brand.color, borderRadius: 2 }} />
+                                  <div style={{ width: `${itemProgress}%`, height: '100%', background: itemProgress === 100 ? '#00C471' : brand.color, borderRadius: 2 }} />
                                 </div>
                               </div>
-                              <button onClick={(e) => { e.stopPropagation(); deleteKpiItem(kpi.id, item.id); }} style={{ width: 24, height: 24, background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 14, cursor: 'pointer' }}>×</button>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: itemProgress === 100 ? '#00C471' : brand.color, minWidth: 35, textAlign: 'right' }}>{itemProgress}%</span>
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  e.preventDefault();
+                                  deleteKpiItem(kpi.id, item.id); 
+                                }} 
+                                style={{ 
+                                  width: 28, 
+                                  height: 28, 
+                                  minWidth: 28,
+                                  background: '#FEE4E2', 
+                                  border: 'none', 
+                                  borderRadius: 6, 
+                                  color: '#F04452', 
+                                  fontSize: 16, 
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0
+                                }}
+                              >×</button>
                             </div>
-                          ))}
+                          );
+                          })}
                           <button onClick={() => addKpiItem(kpi.id)} style={{ padding: 10, background: `${brand.color}08`, border: `2px dashed ${brand.color}40`, borderRadius: 8, color: brand.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ 후행지표 추가</button>
                         </div>
                       </div>
                     )}
                   </div>
-                ))}
+                );
+                })}
               </div>
             )}
           </div>
@@ -4784,6 +4983,129 @@
             <div style={{ marginBottom: 20 }}>
               <textarea value={quarterGoals[selectedQuarter] || ''} onChange={(e) => saveQuarterGoal(selectedQuarter, e.target.value)} placeholder={`${selectedQuarter}의 목표와 방향성을 작성하세요.`} style={{ width: '100%', minHeight: 80, padding: 16, border: '2px solid #E5E8EB', borderRadius: 12, fontSize: 14, lineHeight: 1.6, resize: 'vertical', fontFamily: 'inherit', color: '#191F28', background: '#F9FAFB' }} />
             </div>
+
+            {/* KPI 연동 프로젝트 섹션 - KPI별 그룹핑 */}
+            {(() => {
+              // 분기별 필터링: 해당 분기에 완료된 업무가 있는 프로젝트
+              const getQuarterRange = (quarter) => {
+                const year = new Date().getFullYear();
+                const quarters = {
+                  Q1: { start: new Date(year, 0, 1), end: new Date(year, 2, 31) },
+                  Q2: { start: new Date(year, 3, 1), end: new Date(year, 5, 30) },
+                  Q3: { start: new Date(year, 6, 1), end: new Date(year, 8, 30) },
+                  Q4: { start: new Date(year, 9, 1), end: new Date(year, 11, 31) }
+                };
+                return quarters[quarter];
+              };
+              
+              const quarterRange = getQuarterRange(selectedQuarter);
+              
+              // 해당 분기에 완료된 업무가 있거나, 진행 중인 프로젝트 필터링
+              const quarterProjects = linkedProjects.filter(project => {
+                const tasks = project.tasks || [];
+                // 분기 내 완료된 업무가 있는지 확인
+                const hasCompletedInQuarter = tasks.some(task => {
+                  if (!task.completed) return false;
+                  // completedAt이 있으면 해당 날짜로, 없으면 포함
+                  const completedDate = task.completedAt ? new Date(task.completedAt) : new Date();
+                  return completedDate >= quarterRange.start && completedDate <= quarterRange.end;
+                });
+                // 또는 등록일이 해당 분기인 프로젝트
+                const createdInQuarter = project.createdDate && 
+                  new Date(project.createdDate) >= quarterRange.start && 
+                  new Date(project.createdDate) <= quarterRange.end;
+                // 또는 진행 중인 프로젝트 (아직 완료되지 않은 업무가 있음)
+                const isInProgress = tasks.some(t => !t.completed);
+                
+                return hasCompletedInQuarter || createdInQuarter || isInProgress;
+              });
+              
+              // KPI별로 그룹핑
+              const groupedByKpi = {};
+              quarterProjects.forEach(project => {
+                const kpiId = project.linkedKpi?.kpiId;
+                const itemId = project.linkedKpi?.itemId;
+                if (!kpiId) return;
+                
+                const key = `${kpiId}-${itemId}`;
+                if (!groupedByKpi[key]) {
+                  const kpi = brand.kpis?.find(k => k.id === kpiId);
+                  const item = kpi?.items?.find(i => i.id === itemId);
+                  groupedByKpi[key] = {
+                    kpi,
+                    item,
+                    projects: []
+                  };
+                }
+                groupedByKpi[key].projects.push(project);
+              });
+              
+              const groupedEntries = Object.entries(groupedByKpi);
+              
+              if (groupedEntries.length === 0) return null;
+              
+              return (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#191F28' }}>📊 KPI 연동 프로젝트</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 10, background: `${brand.color}15`, color: brand.color, fontSize: 12, fontWeight: 600 }}>{quarterProjects.length}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {groupedEntries.map(([key, group]) => (
+                    <div key={key} style={{ background: '#F9FAFB', borderRadius: 12, padding: 12, border: '1px solid #E5E8EB' }}>
+                      {/* KPI > 후행지표 헤더 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: brand.color }}>{group.kpi?.name || 'KPI'}</span>
+                        <span style={{ color: '#8B95A1' }}>›</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{group.item?.name || '후행지표'}</span>
+                        <span style={{ fontSize: 11, color: '#8B95A1' }}>({group.projects.length})</span>
+                      </div>
+                      {/* 프로젝트들 */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {group.projects.map(project => {
+                          const projectTasks = project.tasks || [];
+                          const completedTasks = projectTasks.filter(t => t.completed).length;
+                          const totalTasks = projectTasks.length;
+                          const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                          
+                          return (
+                            <div 
+                              key={project.id}
+                              onClick={() => onOpenProject && onOpenProject(project)}
+                              style={{ 
+                                padding: 12, 
+                                background: 'white', 
+                                borderRadius: 10, 
+                                border: `1px solid ${progress === 100 ? '#00C47130' : '#E5E8EB'}`,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.borderColor = brand.color; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.borderColor = progress === 100 ? '#00C47130' : '#E5E8EB'; }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: progress === 100 ? '#00C471' : progress > 0 ? '#F59E0B' : '#E5E8EB' }} />
+                                  <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{project.title}</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: progress === 100 ? '#00C471' : brand.color }}>{completedTasks}/{totalTasks}</span>
+                                  <span style={{ fontSize: 11, color: '#8B95A1' }}>→</span>
+                                </div>
+                              </div>
+                              <div style={{ height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? '#00C471' : brand.color, borderRadius: 2 }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              );
+            })()}
 
             {currentTasks.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -5144,7 +5466,7 @@
     };
 
     // ============ KPI 대시보드 탭 컴포넌트 ============
-    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null }) {
+    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null, projects = [], tasks = [], onOpenProject }) {
       const [companyGoal, setCompanyGoal] = useState('');
       const [teamGoal, setTeamGoal] = useState('');
       const [brands, setBrands] = useState({});
@@ -5512,8 +5834,14 @@
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
                       {['pour-method', 'pour-solution', 'apartment-square', 'automation-system'].map(brandId => {
                         const brand = brands[brandId];
+                        const brandLinkedProjects = projects.filter(p => 
+                          p.linkedKpi?.brandId === brandId && !p.deletedAt
+                        ).map(p => ({
+                          ...p,
+                          tasks: tasks.filter(t => t.projectId === p.id)
+                        }));
                         return brand ? (
-                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} onKpiNameUpdate={handleKpiNameUpdate} />
+                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} onKpiNameUpdate={handleKpiNameUpdate} linkedProjects={brandLinkedProjects} />
                         ) : null;
                       })}
                     </div>
@@ -5522,14 +5850,22 @@
                   <div>
                     <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>팀원 성과</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-                      {Object.values(kpiTeamMembers).map(member => (
+                      {Object.values(kpiTeamMembers).map(member => {
+                        // 모든 KPI 연동 프로젝트 (tasks 포함)
+                        const allLinkedProjects = projects.filter(p => p.linkedKpi && !p.deletedAt).map(p => ({
+                          ...p,
+                          tasks: tasks.filter(t => t.projectId === p.id && !t.deletedAt)
+                        }));
+                        return (
                         <KPITeamMemberCard 
                           key={member.id} 
                           member={member} 
                           onUpdate={(data) => handleTeamMemberUpdate(member.id, data)}
                           assignedTasks={getAssignedTasksByMember(member.id)}
+                          assignedProjects={allLinkedProjects}
                         />
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -5542,6 +5878,14 @@
                 kpiTeamMembers={kpiTeamMembers} 
                 hideBackButton={!!initialBrandId}
                 onQuarterPlansUpdate={handleQuarterPlansUpdate}
+                linkedProjects={projects.filter(p => 
+                  p.linkedKpi?.brandId === (selectedBrand.id || selectedBrand) && 
+                  !p.deletedAt
+                ).map(p => ({
+                  ...p,
+                  tasks: tasks.filter(t => t.projectId === p.id)
+                }))}
+                onOpenProject={onOpenProject}
               />
             ) : null}
           </div>
@@ -9877,20 +10221,122 @@
               
               return (
                 <>
+                  {/* KPI 업무 섹션 */}
+                  {(() => {
+                    // KPI 연동된 프로젝트만 필터링
+                    const kpiProjects = filteredProjects.filter(p => p.linkedKpi && !p.deletedAt);
+                    
+                    // 브랜드별로 그룹핑
+                    const groupedByBrand = {};
+                    kpiProjects.forEach(project => {
+                      const brandId = project.linkedKpi?.brandId;
+                      if (!groupedByBrand[brandId]) {
+                        groupedByBrand[brandId] = [];
+                      }
+                      groupedByBrand[brandId].push(project);
+                    });
+                    
+                    return (
+                      <div style={{ marginBottom: 24, position: 'relative', zIndex: 40 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span style={{ fontSize: 14 }}>📊</span>
+                          </div>
+                          <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>KPI 업무</h2>
+                          <span style={{ padding: '3px 10px', borderRadius: 12, background: '#F0FDF4', color: '#00C471', fontSize: 12, fontWeight: 600 }}>{kpiProjects.length}</span>
+                          <span style={{ fontSize: 13, color: '#8B95A1' }}>KPI에 연동된 프로젝트</span>
+                          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                            <button onClick={() => setShowKpiLinkModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #00C471', color: '#00C471', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                              <span>📊</span> KPI 연동
+                            </button>
+                            <button onClick={() => setShowAddProject(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                              <Icon name="plus" size={16} color="white" /> 새 프로젝트
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {kpiProjects.length === 0 ? (
+                          <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', padding: '32px 20px', textAlign: 'center' }}>
+                            <p style={{ color: '#8B95A1', fontSize: 14, marginBottom: 12 }}>KPI에 연동된 프로젝트가 없습니다</p>
+                            <button 
+                              onClick={() => setShowKpiLinkModal(true)}
+                              style={{ padding: '8px 16px', background: '#00C471', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              📊 KPI 연동하기
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {Object.entries(groupedByBrand)
+                              .sort((a, b) => {
+                                const orderA = KPI_BRAND_ORDER.indexOf(a[0]);
+                                const orderB = KPI_BRAND_ORDER.indexOf(b[0]);
+                                return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
+                              })
+                              .map(([brandId, brandProjects]) => {
+                              const kpiBrand = kpiBrands[brandId];
+                              if (!kpiBrand) return null;
+                              
+                              return (
+                                <div key={brandId} style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                                  {/* 브랜드 헤더 */}
+                                  <div style={{ padding: '12px 16px', background: `${kpiBrand.color}08`, borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: kpiBrand.color }} />
+                                    <span style={{ fontSize: 14, fontWeight: 700, color: kpiBrand.color }}>{kpiBrand.name}</span>
+                                    <span style={{ fontSize: 12, color: '#8B95A1' }}>({brandProjects.length})</span>
+                                  </div>
+                                  
+                                  {/* 프로젝트 목록 */}
+                                  {brandProjects.map((project, idx) => {
+                                    const st = getProjectStats(project.id);
+                                    const status = STATUS_OPTIONS.find(s => s.id === project.status);
+                                    const kpi = kpiBrand.kpis?.find(k => k.id === project.linkedKpi?.kpiId);
+                                    const item = kpi?.items?.find(i => i.id === project.linkedKpi?.itemId);
+                                    
+                                    return (
+                                      <div 
+                                        key={project.id}
+                                        onClick={() => openProject(project)}
+                                        style={{ 
+                                          padding: '14px 16px', 
+                                          borderBottom: idx === brandProjects.length - 1 ? 'none' : '1px solid #F2F3F5',
+                                          cursor: 'pointer',
+                                          transition: 'background 0.15s'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#F7F8FA'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                          <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{project.title}</span>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ padding: '3px 8px', borderRadius: 6, background: `${status?.color}15`, color: status?.color, fontSize: 11, fontWeight: 600 }}>{status?.label}</span>
+                                            <span style={{ fontSize: 12, color: '#8B95A1' }}>{st.done}/{st.total}</span>
+                                          </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                          <span style={{ fontSize: 11, color: '#8B95A1' }}>📊</span>
+                                          <span style={{ fontSize: 12, color: '#6B7684' }}>{kpi?.name}</span>
+                                          <span style={{ fontSize: 11, color: '#B0B8C1' }}>›</span>
+                                          <span style={{ fontSize: 12, color: kpiBrand.color, fontWeight: 500 }}>{item?.name}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  
                   {/* 내 프로젝트 섹션 */}
                   <div style={{ marginBottom: 24, position: 'relative', zIndex: 30 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{currentUser.initial}</div>
                       <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>내 프로젝트</h2>
                       <span style={{ padding: '3px 10px', borderRadius: 12, background: '#EBF4FF', color: '#3182F6', fontSize: 12, fontWeight: 600 }}>{myProjects.length}</span>
-                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                        <button onClick={() => setShowKpiLinkModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #00C471', color: '#00C471', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                          <span>📊</span> KPI 연동
-                        </button>
-                        <button onClick={() => setShowAddProject(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                          <Icon name="plus" size={16} color="white" /> 새 프로젝트
-                        </button>
-                      </div>
                     </div>
                     
                     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'visible' }}>
@@ -10425,6 +10871,42 @@
                 ))}
               </div>
               
+              {/* KPI 연동 정보 */}
+              {project.linkedKpi && (() => {
+                const kpiBrand = kpiBrands[project.linkedKpi.brandId];
+                const kpi = kpiBrand?.kpis?.find(k => k.id === project.linkedKpi.kpiId);
+                const item = kpi?.items?.find(i => i.id === project.linkedKpi.itemId);
+                
+                if (!kpiBrand || !kpi || !item) return null;
+                
+                return (
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 10, 
+                    padding: '10px 14px', 
+                    background: `${kpiBrand.color}08`, 
+                    borderRadius: 10, 
+                    marginBottom: 12,
+                    borderLeft: `3px solid ${kpiBrand.color}`
+                  }}>
+                    <span style={{ fontSize: 16 }}>📊</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: kpiBrand.color }}>{kpiBrand.name}</span>
+                        <span style={{ fontSize: 11, color: '#B0B8C1' }}>›</span>
+                        <span style={{ fontSize: 12, color: '#6B7684' }}>{kpi.name}</span>
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{item.name}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, color: '#8B95A1' }}>후행지표 진행률</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: kpiBrand.color }}>{item.progress || 0}%</div>
+                    </div>
+                  </div>
+                );
+              })()}
+              
               {/* 프로젝트 설명 */}
               {project.description && (
                 <div style={{ background: '#F7F8FA', borderRadius: 10, padding: 14, marginBottom: 12 }}>
@@ -10838,7 +11320,7 @@
             {editingTaskId && <SubTaskModal task={sorted.find(t => t.id === editingTaskId)} currentUser={currentUser} onSave={(t) => { onUpdateTask(t); setEditingTaskId(null); }} onClose={() => setEditingTaskId(null)} />}
             
             {/* 프로젝트 수정 모달 */}
-            {showEditProject && <ProjectModal project={project} currentUser={currentUser} onSave={(p) => { onUpdateProject(p); setShowEditProject(false); }} onClose={() => setShowEditProject(false)} projectTemplates={projectTemplates} />}
+            {showEditProject && <ProjectModal project={project} currentUser={currentUser} onSave={(p) => { onUpdateProject(p); setShowEditProject(false); }} onClose={() => setShowEditProject(false)} projectTemplates={projectTemplates} kpiBrands={kpiBrands} />}
             
             {/* 회의록 추가 모달 */}
             {showMeetingModal && (
@@ -11225,7 +11707,7 @@
       );
     }
 
-    function ProjectModal({ project, currentUser, onSave, onClose, projectTemplates }) {
+    function ProjectModal({ project, currentUser, onSave, onClose, projectTemplates, kpiBrands = {} }) {
       // ESC 키는 부모 컴포넌트에서 처리
       const descriptionTemplate = `타겟 : 
 목표 : 
@@ -11237,7 +11719,8 @@
         description: project?.description || (project ? '' : descriptionTemplate), 
         status: project?.status || 'progress', 
         createdDate: project?.createdDate || today,
-        templateId: null  // 템플릿 선택
+        templateId: null,  // 템플릿 선택
+        linkedKpi: project?.linkedKpi || null  // KPI 연동 정보
       });
       const isEdit = !!project;
       const isTeamLeader = currentUser?.role === '팀장';
@@ -11251,6 +11734,66 @@
         }));
       };
       
+      // KPI 관련 선택 상태
+      const [selectedKpiBrandId, setSelectedKpiBrandId] = useState(form.linkedKpi?.brandId || null);
+      const [selectedKpiId, setSelectedKpiId] = useState(form.linkedKpi?.kpiId || null);
+      const [selectedItemId, setSelectedItemId] = useState(form.linkedKpi?.itemId || null);
+      
+      const availableKpiBrand = selectedKpiBrandId ? kpiBrands[selectedKpiBrandId] : null;
+      const selectedKpi = availableKpiBrand?.kpis?.find(k => k.id === selectedKpiId);
+      const selectedItem = selectedKpi?.items?.find(i => i.id === selectedItemId);
+      
+      // KPI 브랜드 변경 시 하위 초기화
+      const handleKpiBrandChange = (brandId) => {
+        setSelectedKpiBrandId(brandId);
+        setSelectedKpiId(null);
+        setSelectedItemId(null);
+        if (!brandId) {
+          setForm(prev => ({ ...prev, linkedKpi: null }));
+        }
+      };
+      
+      // KPI 변경 시 하위 초기화
+      const handleKpiChange = (kpiId) => {
+        setSelectedKpiId(kpiId ? Number(kpiId) : null);
+        setSelectedItemId(null);
+      };
+      
+      // 후행지표 변경 시 linkedKpi 업데이트
+      const handleItemChange = (itemId) => {
+        const numItemId = itemId ? Number(itemId) : null;
+        setSelectedItemId(numItemId);
+        if (selectedKpiBrandId && selectedKpiId && numItemId) {
+          setForm(prev => ({ 
+            ...prev, 
+            linkedKpi: { 
+              brandId: selectedKpiBrandId, 
+              kpiId: selectedKpiId, 
+              itemId: numItemId 
+            } 
+          }));
+        } else {
+          setForm(prev => ({ ...prev, linkedKpi: null }));
+        }
+      };
+      
+      // KPI 연동 해제
+      const handleUnlinkKpi = () => {
+        setSelectedKpiBrandId(null);
+        setSelectedKpiId(null);
+        setSelectedItemId(null);
+        setForm(prev => ({ ...prev, linkedKpi: null }));
+      };
+      
+      // KPI가 있는 브랜드 목록 (순서대로 정렬)
+      const kpiBrandList = Object.entries(kpiBrands)
+        .filter(([id, brand]) => brand.kpis && brand.kpis.length > 0)
+        .sort((a, b) => {
+          const orderA = KPI_BRAND_ORDER.indexOf(a[0]);
+          const orderB = KPI_BRAND_ORDER.indexOf(b[0]);
+          return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
+        });
+      
       return (
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
@@ -11259,6 +11802,80 @@
             
             {/* 프로젝트명 */}
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 2025 신년 캠페인" style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15 }} /></div>
+            
+            {/* KPI 연동 (수정 시에만 표시) */}
+            {isEdit && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                  <span>📊</span> KPI 연동 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택)</span>
+                </label>
+                
+                {form.linkedKpi && availableKpiBrand && selectedKpi && selectedItem ? (
+                  <div style={{ 
+                    padding: '12px 14px', 
+                    background: `${availableKpiBrand.color}08`, 
+                    borderRadius: 10, 
+                    borderLeft: `3px solid ${availableKpiBrand.color}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 12, color: availableKpiBrand.color, fontWeight: 600, marginBottom: 2 }}>{availableKpiBrand.name}</div>
+                      <div style={{ fontSize: 13, color: '#6B7684' }}>{selectedKpi.name} › <span style={{ fontWeight: 600, color: '#191F28' }}>{selectedItem.name}</span></div>
+                    </div>
+                    <button 
+                      onClick={handleUnlinkKpi}
+                      style={{ padding: '6px 12px', background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      연동 해제
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {/* KPI 브랜드 선택 */}
+                    <select
+                      value={selectedKpiBrandId || ''}
+                      onChange={(e) => handleKpiBrandChange(e.target.value || null)}
+                      style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }}
+                    >
+                      <option value="">KPI 브랜드 선택...</option>
+                      {kpiBrandList.map(([brandId, brand]) => (
+                        <option key={brandId} value={brandId}>{brand.name}</option>
+                      ))}
+                    </select>
+                    
+                    {/* KPI 선택 */}
+                    {selectedKpiBrandId && (
+                      <select
+                        value={selectedKpiId || ''}
+                        onChange={(e) => handleKpiChange(e.target.value)}
+                        style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }}
+                      >
+                        <option value="">KPI 선택...</option>
+                        {availableKpiBrand?.kpis?.map(kpi => (
+                          <option key={kpi.id} value={kpi.id}>{kpi.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    
+                    {/* 후행지표 선택 */}
+                    {selectedKpiId && (
+                      <select
+                        value={selectedItemId || ''}
+                        onChange={(e) => handleItemChange(e.target.value)}
+                        style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }}
+                      >
+                        <option value="">후행지표 선택...</option>
+                        {selectedKpi?.items?.map(item => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             
             {/* 템플릿 선택 (새 프로젝트일 때만) */}
             {!isEdit && (
@@ -11425,10 +12042,14 @@
         onClose();
       };
       
-      // KPI가 있는 브랜드만 표시
-      const kpiBrandList = Object.entries(kpiBrands).filter(([id, brand]) => 
-        brand.kpis && brand.kpis.length > 0
-      );
+      // KPI가 있는 브랜드만 표시 (순서대로 정렬)
+      const kpiBrandList = Object.entries(kpiBrands)
+        .filter(([id, brand]) => brand.kpis && brand.kpis.length > 0)
+        .sort((a, b) => {
+          const orderA = KPI_BRAND_ORDER.indexOf(a[0]);
+          const orderB = KPI_BRAND_ORDER.indexOf(b[0]);
+          return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
+        });
       
       const canSave = selectedBrandId && selectedKpiId && selectedItemId && projectTitle.trim();
       
