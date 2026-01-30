@@ -101,6 +101,9 @@
     .kpi-card:hover {
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
+    .kpi-name-editable:hover {
+      background: #F7F8FA;
+    }
   </style>
 </head>
 <body>
@@ -190,12 +193,16 @@
     ];
 
     const BRANDS = [
-      { id: 1, name: '넷폼알앤디', color: '#6366F1' },
-      { id: 2, name: 'POUR공법', color: '#3182F6' },
-      { id: 3, name: 'POUR솔루션', color: '#00C471' },
-      { id: 4, name: '아파트스퀘어', color: '#F97316' },
-      { id: 5, name: '그외브랜드', color: '#8B95A1' },
+      { id: 1, name: '넷폼알앤디', color: '#6366F1', kpiBrandId: null },
+      { id: 2, name: 'POUR공법', color: '#3182F6', kpiBrandId: 'pour-method' },
+      { id: 3, name: 'POUR솔루션', color: '#00C471', kpiBrandId: 'pour-solution' },
+      { id: 4, name: '아파트스퀘어', color: '#F97316', kpiBrandId: 'apartment-square' },
+      { id: 5, name: '자동화&시스템화', color: '#F59E0B', kpiBrandId: 'automation-system' },
     ];
+    
+    // KPI 브랜드 ID로 BRAND 찾기
+    const getBrandByKpiId = (kpiBrandId) => BRANDS.find(b => b.kpiBrandId === kpiBrandId);
+    const getKpiBrandIdByBrand = (brandId) => BRANDS.find(b => b.id === brandId)?.kpiBrandId;
 
     const STATUS_OPTIONS = [
       { id: 'progress', label: '진행중', color: '#3182F6', bg: '#EBF4FF', icon: 'circle' },
@@ -787,6 +794,9 @@
       const [projectTemplates, setProjectTemplates] = useState(DEFAULT_TEMPLATES);
       const [templateLastModified, setTemplateLastModified] = useState({ by: null, at: null });
       
+      // KPI 브랜드 데이터 (프로젝트 연동용)
+      const [kpiBrands, setKpiBrands] = useState({});
+      
       // readComments 변경 시 localStorage에 저장
       useEffect(() => {
         if (Object.keys(readComments).length > 0) {
@@ -929,6 +939,20 @@
         // 컴포넌트 언마운트 시 리스너 해제
         return () => {
           if (unsubscribeMeetings) unsubscribeMeetings();
+        };
+      }, [currentUser]);
+      
+      // ===== KPI 브랜드 실시간 동기화 (프로젝트 연동용) =====
+      useEffect(() => {
+        if (!currentUser) return;
+        
+        const unsubscribeKpiBrands = KPIStorageService.subscribeToBrands((brands) => {
+          setKpiBrands(brands || {});
+          console.log('[Firebase] KPI 브랜드 실시간 업데이트');
+        });
+        
+        return () => {
+          if (unsubscribeKpiBrands) unsubscribeKpiBrands();
         };
       }, [currentUser]);
       
@@ -1550,7 +1574,7 @@
               <WorkLogTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} fixedTasks={fixedTasks.filter(t => !t.deletedAt && t.memberId === currentUser.id)} setFixedTasks={setFixedTasks} projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} teamRequests={teamRequests.filter(r => !r.deletedAt)} setTeamRequests={setTeamRequests} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'project' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <ProjectTab projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} projectTemplates={projectTemplates} meetings={meetings} setMeetings={setMeetings} />
+              <ProjectTab projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} projectTemplates={projectTemplates} meetings={meetings} setMeetings={setMeetings} kpiBrands={kpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'teamrequest' ? 'flex' : 'none', flexDirection: 'column' }}>
               <TeamRequestTab teamRequests={teamRequests} setTeamRequests={setTeamRequests} currentUser={currentUser} />
@@ -1559,7 +1583,7 @@
               <CalendarTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'growthboard' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} />
+              <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
               <KPIDashboardTab currentUser={currentUser} initialPage="main" />
@@ -4149,6 +4173,47 @@
       async getQuarterGoals(brandId) {
         const snapshot = await database.ref(`kpi/quarterGoals/${brandId}`).once('value');
         return snapshot.val() || { Q1: '', Q2: '', Q3: '', Q4: '' };
+      },
+      // 실시간 리스너 함수들
+      subscribeToCompanyGoal(callback) {
+        const ref = database.ref('kpi/companyGoal');
+        ref.on('value', snapshot => callback(snapshot.val()));
+        return () => ref.off('value');
+      },
+      subscribeToTeamGoal(callback) {
+        const ref = database.ref('kpi/teamGoal');
+        ref.on('value', snapshot => callback(snapshot.val()));
+        return () => ref.off('value');
+      },
+      subscribeToBrands(callback) {
+        const ref = database.ref('kpi/brands');
+        ref.on('value', snapshot => callback(snapshot.val() || {}));
+        return () => ref.off('value');
+      },
+      subscribeToTeamMembers(callback) {
+        const ref = database.ref('kpi/teamMembers');
+        ref.on('value', snapshot => callback(snapshot.val() || {}));
+        return () => ref.off('value');
+      },
+      subscribeToQuarterPlans(brandId, callback) {
+        const ref = database.ref(`kpi/quarterPlans/${brandId}`);
+        ref.on('value', snapshot => callback(snapshot.val() || { Q1: [], Q2: [], Q3: [], Q4: [] }));
+        return () => ref.off('value');
+      },
+      subscribeToAllQuarterPlans(brandIds, callback) {
+        const refs = {};
+        const data = {};
+        brandIds.forEach(brandId => {
+          const ref = database.ref(`kpi/quarterPlans/${brandId}`);
+          refs[brandId] = ref;
+          ref.on('value', snapshot => {
+            data[brandId] = snapshot.val() || { Q1: [], Q2: [], Q3: [], Q4: [] };
+            callback({ ...data });
+          });
+        });
+        return () => {
+          Object.values(refs).forEach(ref => ref.off('value'));
+        };
       }
     };
     window.KPIStorageService = KPIStorageService;
@@ -4220,11 +4285,32 @@
     };
 
     // ============ KPI 브랜드 카드 컴포넌트 ============
-    const KPIBrandCard = ({ brand, onViewDetail }) => {
+    const KPIBrandCard = ({ brand, onViewDetail, onKpiNameUpdate }) => {
       const [expanded, setExpanded] = useState(true);
+      const [editingKpiId, setEditingKpiId] = useState(null);
+      const [editKpiName, setEditKpiName] = useState('');
+      
       const avgProgress = brand.kpis && brand.kpis.length > 0
         ? Math.round(brand.kpis.reduce((sum, kpi) => sum + (kpi.progress || 0), 0) / brand.kpis.length)
         : 0;
+
+      const startEditKpi = (kpi) => {
+        setEditingKpiId(kpi.id);
+        setEditKpiName(kpi.name);
+      };
+
+      const saveKpiName = async (kpiId) => {
+        if (editKpiName.trim() && onKpiNameUpdate) {
+          await onKpiNameUpdate(brand.id, kpiId, editKpiName.trim());
+        }
+        setEditingKpiId(null);
+        setEditKpiName('');
+      };
+
+      const cancelEdit = () => {
+        setEditingKpiId(null);
+        setEditKpiName('');
+      };
 
       return (
         <div style={{ background: 'white', border: `2px solid ${brand.color}20`, borderRadius: 16, overflow: 'hidden', transition: 'all 0.2s' }}>
@@ -4269,8 +4355,33 @@
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16 }}>
                 {brand.kpis.map(kpi => (
                   <div key={kpi.id} style={{ padding: 12, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#191F28', flex: 1 }}>{kpi.name}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                      {editingKpiId === kpi.id ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                          <input
+                            type="text"
+                            value={editKpiName}
+                            onChange={(e) => setEditKpiName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') saveKpiName(kpi.id);
+                              if (e.key === 'Escape') cancelEdit();
+                            }}
+                            autoFocus
+                            style={{ flex: 1, padding: '6px 10px', fontSize: 13, fontWeight: 600, border: '2px solid #3182F6', borderRadius: 6, outline: 'none' }}
+                          />
+                          <button onClick={() => saveKpiName(kpi.id)} style={{ padding: '6px 10px', background: '#3182F6', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>저장</button>
+                          <button onClick={cancelEdit} style={{ padding: '6px 10px', background: '#F2F4F6', color: '#6B7684', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>취소</button>
+                        </div>
+                      ) : (
+                        <span 
+                          onClick={() => startEditKpi(kpi)} 
+                          style={{ fontSize: 13, fontWeight: 600, color: '#191F28', flex: 1, cursor: 'pointer', padding: '4px 6px', borderRadius: 4, marginLeft: -6 }}
+                          className="kpi-name-editable"
+                          title="클릭하여 수정"
+                        >
+                          {kpi.name}
+                        </span>
+                      )}
                       <span style={{ fontSize: 15, fontWeight: 700, color: brand.color }}>{kpi.progress || 0}%</span>
                     </div>
                     <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
@@ -4286,9 +4397,12 @@
     };
 
     // ============ KPI 팀원 카드 컴포넌트 ============
-    const KPITeamMemberCard = ({ member, onUpdate }) => {
+    const KPITeamMemberCard = ({ member, onUpdate, assignedTasks }) => {
       const [isEditing, setIsEditing] = useState(false);
       const [editData, setEditData] = useState(member);
+      
+      // 실제 업무 리스트 (props로 받은 assignedTasks 우선 사용)
+      const taskList = assignedTasks || [];
 
       useEffect(() => {
         setEditData(member);
@@ -4298,6 +4412,25 @@
         onUpdate(editData);
         setIsEditing(false);
       };
+      
+      // 업무 진행률 계산
+      const calculateTaskProgress = (task) => {
+        if (task.completed) return 100;
+        if (task.activities && task.activities.length > 0) {
+          const completedCount = task.activities.filter(a => a.completed).length;
+          return Math.round((completedCount / task.activities.length) * 100);
+        }
+        return 0;
+      };
+      
+      // 전체 성과 계산 (업무가 있으면 업무 기반, 없으면 member.performance)
+      const calculatePerformance = () => {
+        if (taskList.length === 0) return member.performance || 0;
+        const totalProgress = taskList.reduce((sum, task) => sum + calculateTaskProgress(task), 0);
+        return Math.round(totalProgress / taskList.length);
+      };
+      
+      const displayPerformance = calculatePerformance();
 
       return (
         <div className="kpi-card" style={{ minWidth: 200 }}>
@@ -4305,10 +4438,6 @@
             <div>
               <input value={editData.name} onChange={(e) => setEditData({ ...editData, name: e.target.value })} placeholder="이름" className="kpi-input" style={{ width: '100%', padding: '10px 12px', fontSize: 14, marginBottom: 10 }} />
               <input value={editData.role} onChange={(e) => setEditData({ ...editData, role: e.target.value })} placeholder="역할" className="kpi-input" style={{ width: '100%', padding: '10px 12px', fontSize: 13, marginBottom: 10 }} />
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>성과 (%)</label>
-                <input type="number" value={editData.performance} onChange={(e) => setEditData({ ...editData, performance: Math.min(100, Math.max(0, Number(e.target.value))) })} min="0" max="100" className="kpi-input" style={{ width: '100%', padding: '10px 12px', fontSize: 14 }} />
-              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={handleSave} className="kpi-btn-primary" style={{ flex: 1, padding: '10px', fontSize: 14 }}>저장</button>
                 <button onClick={() => { setEditData(member); setIsEditing(false); }} className="kpi-btn-secondary" style={{ padding: '10px 16px', fontSize: 14 }}>취소</button>
@@ -4327,7 +4456,32 @@
               <h4 style={{ fontSize: 17, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>{member.name}</h4>
               <p style={{ fontSize: 13, color: '#6B7684', marginBottom: 16 }}>{member.role}</p>
               
-              {member.tasks && Object.keys(member.tasks).length > 0 && (
+              {/* 분기별 업무에서 할당된 업무 표시 */}
+              {taskList.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>담당 업무</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {taskList.slice(0, 3).map((task, idx) => {
+                      const progress = calculateTaskProgress(task);
+                      return (
+                        <div key={task.id || idx} style={{ padding: '6px 10px', background: '#F9FAFB', borderRadius: 6, fontSize: 12, color: '#191F28', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: progress === 100 ? '#00C73C' : (task.brandColor || member.color || '#3182F6'), flexShrink: 0 }} />
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: progress === 100 ? '#00C73C' : (task.brandColor || member.color || '#3182F6') }}>{progress}%</span>
+                        </div>
+                      );
+                    })}
+                    {taskList.length > 3 && (
+                      <div style={{ fontSize: 11, color: '#8B95A1', textAlign: 'center', padding: '4px 0' }}>
+                        +{taskList.length - 3}개 더보기
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* 기존 member.tasks 표시 (분기 업무가 없을 때만) */}
+              {taskList.length === 0 && member.tasks && Object.keys(member.tasks).length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>담당 업무</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -4345,10 +4499,10 @@
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: '#4E5968' }}>성과</span>
-                  <span style={{ fontSize: 20, fontWeight: 700, color: member.color || '#3182F6' }}>{member.performance}%</span>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: member.color || '#3182F6' }}>{displayPerformance}%</span>
                 </div>
                 <div style={{ width: '100%', height: 10, background: '#F2F4F6', borderRadius: 6, overflow: 'hidden' }}>
-                  <div style={{ width: `${member.performance}%`, height: '100%', background: `linear-gradient(90deg, ${member.color || '#3182F6'} 0%, ${member.color || '#3182F6'}dd 100%)`, borderRadius: 6, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                  <div style={{ width: `${displayPerformance}%`, height: '100%', background: `linear-gradient(90deg, ${member.color || '#3182F6'} 0%, ${member.color || '#3182F6'}dd 100%)`, borderRadius: 6, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
                 </div>
               </div>
             </>
@@ -4358,7 +4512,7 @@
     };
 
     // ============ KPI 브랜드 상세 페이지 컴포넌트 ============
-    const KPIBrandDetailPage = ({ brand, onBack, onBrandUpdate, kpiTeamMembers, hideBackButton = false }) => {
+    const KPIBrandDetailPage = ({ brand, onBack, onBrandUpdate, kpiTeamMembers, hideBackButton = false, onQuarterPlansUpdate }) => {
       const [selectedQuarter, setSelectedQuarter] = useState('Q1');
       const [quarterPlans, setQuarterPlans] = useState({ Q1: [], Q2: [], Q3: [], Q4: [] });
       const [quarterGoals, setQuarterGoals] = useState({ Q1: '', Q2: '', Q3: '', Q4: '' });
@@ -4384,16 +4538,19 @@
         setExpandedKpis(initial);
       }, [brand.id]);
 
+      // 분기별 업무 실시간 구독
       useEffect(() => {
-        loadQuarterData();
+        const unsubscribePlans = KPIStorageService.subscribeToQuarterPlans(brand.id, (plans) => {
+          setQuarterPlans(plans);
+        });
+        
+        // 분기별 목표는 일회성 로드 (자주 변경 안됨)
+        KPIStorageService.getQuarterGoals(brand.id).then(goals => {
+          setQuarterGoals(goals);
+        });
+        
+        return () => unsubscribePlans();
       }, [brand.id]);
-
-      const loadQuarterData = async () => {
-        const plans = await KPIStorageService.getQuarterPlans(brand.id);
-        const goals = await KPIStorageService.getQuarterGoals(brand.id);
-        setQuarterPlans(plans);
-        setQuarterGoals(goals);
-      };
 
       const saveQuarterGoal = async (quarter, goal) => {
         const updatedGoals = { ...quarterGoals, [quarter]: goal };
@@ -4405,6 +4562,10 @@
         setQuarterPlans(plans);
         await KPIStorageService.saveQuarterPlans(brand.id, plans);
         updateKPIItemProgress(plans);
+        // 팀원 성과 연동을 위해 부모에게 알림
+        if (onQuarterPlansUpdate) {
+          onQuarterPlansUpdate(brand.id, plans);
+        }
       };
 
       const updateKPIItemProgress = async (plans) => {
@@ -4440,7 +4601,7 @@
       };
 
       const addKpiItem = async (kpiId) => {
-        const itemName = prompt('새 세부 항목 이름:');
+        const itemName = prompt('새 후행지표 이름:');
         if (!itemName || !itemName.trim()) return;
         const updatedKpis = brand.kpis?.map(kpi => {
           if (kpi.id === kpiId) {
@@ -4459,7 +4620,7 @@
       };
 
       const deleteKpiItem = async (kpiId, itemId) => {
-        if (!confirm('이 세부 항목을 삭제하시겠습니까?')) return;
+        if (!confirm('이 후행지표를 삭제하시겠습니까?')) return;
         const updatedKpis = brand.kpis?.map(kpi => {
           if (kpi.id === kpiId) return { ...kpi, items: kpi.items?.filter(item => item.id !== itemId) };
           return kpi;
@@ -4475,6 +4636,27 @@
             });
           });
           await saveQuarterPlans(updatedPlans);
+          if (onBrandUpdate) {
+            const brandsData = await KPIStorageService.getBrands();
+            onBrandUpdate(brandsData);
+          }
+        }
+      };
+
+      const editKpiItem = async (kpiId, itemId, currentName) => {
+        const newName = prompt('후행지표 이름 수정:', currentName);
+        if (!newName || !newName.trim() || newName.trim() === currentName) return;
+        const updatedKpis = brand.kpis?.map(kpi => {
+          if (kpi.id === kpiId) {
+            return { ...kpi, items: kpi.items?.map(item => 
+              item.id === itemId ? { ...item, name: newName.trim() } : item
+            )};
+          }
+          return kpi;
+        });
+        if (updatedKpis) {
+          const updatedBrand = { ...brand, kpis: updatedKpis };
+          await KPIStorageService.saveBrand(brand.id, updatedBrand);
           if (onBrandUpdate) {
             const brandsData = await KPIStorageService.getBrands();
             onBrandUpdate(brandsData);
@@ -4571,7 +4753,7 @@
                               <button onClick={(e) => { e.stopPropagation(); deleteKpiItem(kpi.id, item.id); }} style={{ width: 24, height: 24, background: '#FEE4E2', border: 'none', borderRadius: 6, color: '#F04452', fontSize: 14, cursor: 'pointer' }}>×</button>
                             </div>
                           ))}
-                          <button onClick={() => addKpiItem(kpi.id)} style={{ padding: 10, background: `${brand.color}08`, border: `2px dashed ${brand.color}40`, borderRadius: 8, color: brand.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ 세부 항목 추가</button>
+                          <button onClick={() => addKpiItem(kpi.id)} style={{ padding: 10, background: `${brand.color}08`, border: `2px dashed ${brand.color}40`, borderRadius: 8, color: brand.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ 후행지표 추가</button>
                         </div>
                       </div>
                     )}
@@ -4692,7 +4874,7 @@
 
                     {/* KPI 연동 선택 */}
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>연동할 KPI 세부 항목</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#8B95A1', marginBottom: 8 }}>연동할 KPI 후행지표</div>
                       <select value={currentTask.linkedKpiItem ? `${currentTask.linkedKpiItem.kpiId}-${currentTask.linkedKpiItem.itemId}` : ''} onChange={(e) => {
                         const [kpiId, itemId] = e.target.value.split('-').map(Number);
                         const updatedPlans = { ...quarterPlans, [selectedQuarter]: quarterPlans[selectedQuarter].map(t => t.id === currentTask.id ? { ...t, linkedKpiItem: e.target.value ? { kpiId, itemId } : null } : t) };
@@ -4790,7 +4972,7 @@
           {selectedKpiItem && (() => {
             const { kpi, item } = selectedKpiItem;
             
-            // 모든 분기에서 이 세부항목에 연동된 업무 찾기
+            // 모든 분기에서 이 후행지표에 연동된 업무 찾기
             const getLinkedTasksByQuarter = () => {
               const result = {};
               ['Q1', 'Q2', 'Q3', 'Q4'].forEach(quarter => {
@@ -4817,7 +4999,15 @@
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                       <div>
                         <div style={{ display: 'inline-block', padding: '4px 12px', background: `${brand.color}15`, borderRadius: 6, fontSize: 12, fontWeight: 700, color: brand.color, marginBottom: 8 }}>{kpi.name}</div>
-                        <h3 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', margin: 0 }}>{item.name}</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <h3 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', margin: 0 }}>{item.name}</h3>
+                          <button 
+                            onClick={() => editKpiItem(kpi.id, item.id, item.name)}
+                            style={{ padding: '4px 8px', background: '#F7F8FA', border: '1px solid #E5E8EB', borderRadius: 6, color: '#6B7684', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            ✏️ 수정
+                          </button>
+                        </div>
                       </div>
                       <button onClick={() => setSelectedKpiItem(null)} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F2F4F6', color: '#6B7684', fontSize: 22, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
                     </div>
@@ -4962,9 +5152,63 @@
       const [loading, setLoading] = useState(true);
       const [currentPage, setCurrentPage] = useState(initialPage);
       const [selectedBrand, setSelectedBrand] = useState(null);
+      const [allQuarterPlans, setAllQuarterPlans] = useState({}); // 모든 브랜드의 분기별 업무
 
+      // 실시간 리스너 설정
       useEffect(() => {
-        loadData();
+        let unsubscribes = [];
+        let quarterPlansUnsubscribe = null;
+        
+        // 회사 목표 실시간 구독
+        unsubscribes.push(
+          KPIStorageService.subscribeToCompanyGoal((data) => {
+            setCompanyGoal(data || '매출 300억 달성\n"본질을 측정·관리하여 2배 성장"');
+          })
+        );
+        
+        // 팀 목표 실시간 구독
+        unsubscribes.push(
+          KPIStorageService.subscribeToTeamGoal((data) => {
+            setTeamGoal(data || '각 브랜드의 PMF를 찾고 아하모먼트를 발견하여\n고객 활성화와 브랜드 성장을 이끈다');
+          })
+        );
+        
+        // 브랜드 실시간 구독
+        unsubscribes.push(
+          KPIStorageService.subscribeToBrands((data) => {
+            const brandsData = data || {};
+            setBrands(brandsData);
+            
+            // 브랜드 데이터가 있으면 분기별 업무도 실시간 구독
+            if (Object.keys(brandsData).length > 0) {
+              if (quarterPlansUnsubscribe) quarterPlansUnsubscribe();
+              quarterPlansUnsubscribe = KPIStorageService.subscribeToAllQuarterPlans(
+                Object.keys(brandsData),
+                (plansData) => setAllQuarterPlans(plansData)
+              );
+            }
+            
+            // 초기 데이터가 없으면 샘플 데이터 생성
+            if (!Object.keys(brandsData).length) {
+              initializeSampleData();
+            }
+            
+            setLoading(false);
+          })
+        );
+        
+        // 팀원 실시간 구독
+        unsubscribes.push(
+          KPIStorageService.subscribeToTeamMembers((data) => {
+            setKpiTeamMembers(data || {});
+          })
+        );
+        
+        // 컴포넌트 언마운트 시 구독 해제
+        return () => {
+          unsubscribes.forEach(unsub => unsub && unsub());
+          if (quarterPlansUnsubscribe) quarterPlansUnsubscribe();
+        };
       }, []);
 
       // initialBrandId가 있고 brands가 로드되면 해당 브랜드 선택
@@ -4978,29 +5222,28 @@
       useEffect(() => {
         window.kpiTeamMembers = kpiTeamMembers;
       }, [kpiTeamMembers]);
-
-      const loadData = async () => {
-        try {
-          const [company, team, brandsData, membersData] = await Promise.all([
-            KPIStorageService.getCompanyGoal(),
-            KPIStorageService.getTeamGoal(),
-            KPIStorageService.getBrands(),
-            KPIStorageService.getTeamMembers()
-          ]);
-
-          setCompanyGoal(company || '매출 300억 달성\n"본질을 측정·관리하여 2배 성장"');
-          setTeamGoal(team || '각 브랜드의 PMF를 찾고 아하모먼트를 발견하여\n고객 활성화와 브랜드 성장을 이끈다');
-          setBrands(brandsData || {});
-          setKpiTeamMembers(membersData || {});
-
-          if (!Object.keys(brandsData || {}).length) {
-            await initializeSampleData();
+      
+      // 담당자별 업무 그룹화
+      const getAssignedTasksByMember = (memberId) => {
+        const assignedTasks = [];
+        for (const [brandId, quarterPlans] of Object.entries(allQuarterPlans)) {
+          const brand = brands[brandId];
+          for (const [quarter, tasks] of Object.entries(quarterPlans)) {
+            if (!Array.isArray(tasks)) continue;
+            for (const task of tasks) {
+              if (task.assignees && task.assignees.includes(memberId)) {
+                assignedTasks.push({
+                  ...task,
+                  brandId,
+                  brandName: brand?.name,
+                  brandColor: brand?.color,
+                  quarter
+                });
+              }
+            }
           }
-        } catch (error) {
-          console.error('KPI 데이터 로드 실패:', error);
-        } finally {
-          setLoading(false);
         }
+        return assignedTasks;
       };
 
       const initializeSampleData = async () => {
@@ -5059,6 +5302,25 @@
         await KPIStorageService.saveTeamMember(memberId, data);
         const membersData = await KPIStorageService.getTeamMembers();
         setKpiTeamMembers(membersData);
+      };
+      
+      // KPI 이름 업데이트
+      const handleKpiNameUpdate = async (brandId, kpiId, newName) => {
+        const brand = brands[brandId];
+        if (!brand || !brand.kpis) return;
+        
+        const updatedKpis = brand.kpis.map(kpi => 
+          kpi.id === kpiId ? { ...kpi, name: newName } : kpi
+        );
+        const updatedBrand = { ...brand, kpis: updatedKpis };
+        
+        await KPIStorageService.saveBrand(brandId, updatedBrand);
+        setBrands(prev => ({ ...prev, [brandId]: updatedBrand }));
+      };
+      
+      // 분기별 업무 업데이트 콜백 (팀원 성과 연동용)
+      const handleQuarterPlansUpdate = (brandId, plans) => {
+        setAllQuarterPlans(prev => ({ ...prev, [brandId]: plans }));
       };
 
       const resetAllData = async () => {
@@ -5237,20 +5499,6 @@
                         <h1 style={{ fontSize: 32, fontWeight: 800, color: '#191F28', marginBottom: 8, letterSpacing: '-0.02em' }}>대시보드</h1>
                         <p style={{ fontSize: 15, color: '#6B7684', fontWeight: 500 }}>브랜드마케팅팀 성과 관리</p>
                       </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={importData} style={{ padding: '10px 16px', background: '#EBF4FF', color: '#3182F6', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          데이터 가져오기
-                        </button>
-                        <button onClick={exportData} style={{ padding: '10px 16px', background: '#F0FDF4', color: '#059669', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                          데이터 내보내기
-                        </button>
-                        <button onClick={resetAllData} style={{ padding: '10px 16px', background: '#FEE4E2', color: '#F04452', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                          데이터 초기화
-                        </button>
-                      </div>
                     </div>
                   </div>
 
@@ -5265,7 +5513,7 @@
                       {['pour-method', 'pour-solution', 'apartment-square', 'automation-system'].map(brandId => {
                         const brand = brands[brandId];
                         return brand ? (
-                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} />
+                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} onKpiNameUpdate={handleKpiNameUpdate} />
                         ) : null;
                       })}
                     </div>
@@ -5275,14 +5523,26 @@
                     <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>팀원 성과</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
                       {Object.values(kpiTeamMembers).map(member => (
-                        <KPITeamMemberCard key={member.id} member={member} onUpdate={(data) => handleTeamMemberUpdate(member.id, data)} />
+                        <KPITeamMemberCard 
+                          key={member.id} 
+                          member={member} 
+                          onUpdate={(data) => handleTeamMemberUpdate(member.id, data)}
+                          assignedTasks={getAssignedTasksByMember(member.id)}
+                        />
                       ))}
                     </div>
                   </div>
                 </div>
               </div>
             ) : currentPage === 'brand-detail' && selectedBrand ? (
-              <KPIBrandDetailPage brand={brands[selectedBrand.id] || selectedBrand} onBack={() => { setCurrentPage('main'); setSelectedBrand(null); }} onBrandUpdate={setBrands} kpiTeamMembers={kpiTeamMembers} hideBackButton={!!initialBrandId} />
+              <KPIBrandDetailPage 
+                brand={brands[selectedBrand.id] || selectedBrand} 
+                onBack={() => { setCurrentPage('main'); setSelectedBrand(null); }} 
+                onBrandUpdate={setBrands} 
+                kpiTeamMembers={kpiTeamMembers} 
+                hideBackButton={!!initialBrandId}
+                onQuarterPlansUpdate={handleQuarterPlansUpdate}
+              />
             ) : null}
           </div>
         </div>
@@ -8900,11 +9160,12 @@
     }
 
     // ============ 프로젝트 탭 ============
-    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments, projectTemplates, meetings = [], setMeetings }) {
+    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments, projectTemplates, meetings = [], setMeetings, kpiBrands = {} }) {
       const [viewMode, setViewMode] = useState('projects'); // 'projects' | 'tasks'
       const [selectedBrand, setSelectedBrand] = useState(null);
       const [selectedProject, setSelectedProject] = useState(null);
       const [showAddProject, setShowAddProject] = useState(false);
+      const [showKpiLinkModal, setShowKpiLinkModal] = useState(false); // KPI 연동 모달
       const [filterStatus, setFilterStatus] = useState('progress');
       const [searchQuery, setSearchQuery] = useState('');
       const [searchDate, setSearchDate] = useState('');
@@ -8920,12 +9181,13 @@
             if (confirmDelete) { setConfirmDelete(null); return; }
             // selectedProject가 열려있으면 ProjectDetailSlide에서 처리
             if (selectedProject) return;
+            if (showKpiLinkModal) { setShowKpiLinkModal(false); return; }
             if (showAddProject) setShowAddProject(false);
           }
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-      }, [confirmDelete, showAddProject, selectedProject]);
+      }, [confirmDelete, showAddProject, showKpiLinkModal, selectedProject]);
       
       // 업무 검색 뷰 필터
       const [taskSearchQuery, setTaskSearchQuery] = useState('');
@@ -9038,7 +9300,52 @@
           }
         }
       };
-      const updateProject = (p) => { setProjects(prev => prev.map(x => x.id === p.id ? { ...x, ...p } : x)); if (selectedProject?.id === p.id) setSelectedProject(prev => ({ ...prev, ...p })); };
+      const updateProject = async (p) => { 
+        setProjects(prev => prev.map(x => x.id === p.id ? { ...x, ...p } : x)); 
+        if (selectedProject?.id === p.id) setSelectedProject(prev => ({ ...prev, ...p })); 
+        
+        // KPI 연동: 프로젝트 완료 시 KPI 진행률 업데이트
+        if (p.linkedKpi && p.status === 'complete') {
+          try {
+            await updateKpiProgress(p.linkedKpi, p.id);
+          } catch (error) {
+            console.error('KPI 진행률 업데이트 실패:', error);
+          }
+        }
+      };
+      
+      // KPI 진행률 업데이트 함수
+      const updateKpiProgress = async (linkedKpi, projectId) => {
+        const { brandId, kpiId, itemId } = linkedKpi;
+        const kpiBrand = kpiBrands[brandId];
+        if (!kpiBrand) return;
+        
+        // 해당 KPI 항목에 연동된 완료된 프로젝트 수 계산
+        const linkedProjects = projects.filter(p => 
+          p.linkedKpi?.brandId === brandId && 
+          p.linkedKpi?.kpiId === kpiId && 
+          p.linkedKpi?.itemId === itemId
+        );
+        const completedCount = linkedProjects.filter(p => p.status === 'complete' || p.id === projectId).length;
+        const totalCount = Math.max(linkedProjects.length, 1);
+        const progress = Math.round((completedCount / totalCount) * 100);
+        
+        // KPI 브랜드 데이터 업데이트
+        const updatedKpis = kpiBrand.kpis.map(kpi => {
+          if (kpi.id !== kpiId) return kpi;
+          const updatedItems = kpi.items?.map(item => 
+            item.id === itemId ? { ...item, progress } : item
+          );
+          // KPI 전체 진행률 계산
+          const kpiProgress = updatedItems && updatedItems.length > 0
+            ? Math.round(updatedItems.reduce((sum, item) => sum + (item.progress || 0), 0) / updatedItems.length)
+            : 0;
+          return { ...kpi, items: updatedItems, progress: kpiProgress };
+        });
+        
+        const updatedBrand = { ...kpiBrand, kpis: updatedKpis };
+        await KPIStorageService.saveBrand(brandId, updatedBrand);
+      };
       // 휴지통으로 이동 (deletedAt 추가)
       const deleteProject = (pid) => { 
         const now = Date.now();
@@ -9576,9 +9883,14 @@
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>{currentUser.initial}</div>
                       <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>내 프로젝트</h2>
                       <span style={{ padding: '3px 10px', borderRadius: 12, background: '#EBF4FF', color: '#3182F6', fontSize: 12, fontWeight: 600 }}>{myProjects.length}</span>
-                      <button onClick={() => setShowAddProject(true)} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                        <Icon name="plus" size={16} color="white" /> 새 프로젝트
-                      </button>
+                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                        <button onClick={() => setShowKpiLinkModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #00C471', color: '#00C471', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                          <span>📊</span> KPI 연동
+                        </button>
+                        <button onClick={() => setShowAddProject(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#3182F6', border: 'none', color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                          <Icon name="plus" size={16} color="white" /> 새 프로젝트
+                        </button>
+                      </div>
                     </div>
                     
                     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'visible' }}>
@@ -9886,8 +10198,9 @@
           </div>
           )}
 
-          {selectedProject && <ProjectDetailSlide project={selectedProject} tasks={tasks.filter(t => t.projectId === selectedProject.id)} meetings={(meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProject.id))} currentUser={currentUser} onClose={() => setSelectedProject(null)} onAddComment={(t, f) => addComment(selectedProject.id, t, f)} onUpdateComment={(cid, t) => updateComment(selectedProject.id, cid, t)} onDeleteComment={(cid) => deleteComment(selectedProject.id, cid)} onAddTask={(t) => addTask({ ...t, projectId: selectedProject.id })} onToggleTask={toggleTaskComplete} onDeleteTask={requestDeleteTask} onUpdateTask={updateTask} onUpdateProject={updateProject} onDeleteProject={requestDeleteProject} onReorderTasks={reorderTasks} projectTemplates={projectTemplates} onUpdateMeeting={(updatedMeeting) => setMeetings(prev => prev.map(m => m.id === updatedMeeting.id ? updatedMeeting : m))} onAddMeeting={(newMeeting) => setMeetings(prev => [...prev, newMeeting])} onDeleteMeeting={(meetingId) => setMeetings(prev => prev.filter(m => m.id !== meetingId))} projects={projects} />}
+          {selectedProject && <ProjectDetailSlide project={selectedProject} tasks={tasks.filter(t => t.projectId === selectedProject.id)} meetings={(meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProject.id))} currentUser={currentUser} onClose={() => setSelectedProject(null)} onAddComment={(t, f) => addComment(selectedProject.id, t, f)} onUpdateComment={(cid, t) => updateComment(selectedProject.id, cid, t)} onDeleteComment={(cid) => deleteComment(selectedProject.id, cid)} onAddTask={(t) => addTask({ ...t, projectId: selectedProject.id })} onToggleTask={toggleTaskComplete} onDeleteTask={requestDeleteTask} onUpdateTask={updateTask} onUpdateProject={updateProject} onDeleteProject={requestDeleteProject} onReorderTasks={reorderTasks} projectTemplates={projectTemplates} onUpdateMeeting={(updatedMeeting) => setMeetings(prev => prev.map(m => m.id === updatedMeeting.id ? updatedMeeting : m))} onAddMeeting={(newMeeting) => setMeetings(prev => [...prev, newMeeting])} onDeleteMeeting={(meetingId) => setMeetings(prev => prev.filter(m => m.id !== meetingId))} projects={projects} kpiBrands={kpiBrands} />}
           {showAddProject && <ProjectModal project={null} currentUser={currentUser} onSave={(p) => { addProject(p); setShowAddProject(false); }} onClose={() => setShowAddProject(false)} projectTemplates={projectTemplates} />}
+          {showKpiLinkModal && <KpiLinkModal projects={projects} kpiBrands={kpiBrands} onSave={updateProject} onClose={() => setShowKpiLinkModal(false)} onCreateProject={(p) => { addProject(p); setShowKpiLinkModal(false); }} currentUser={currentUser} />}
           
           {/* 삭제 확인 모달 */}
           {confirmDelete && (
@@ -9905,7 +10218,7 @@
       );
     }
 
-    function ProjectDetailSlide({ project, tasks, meetings = [], currentUser, onClose, onAddComment, onUpdateComment, onDeleteComment, onAddTask, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, onDeleteProject, onReorderTasks, projectTemplates, onUpdateMeeting, onAddMeeting, onDeleteMeeting, projects = [] }) {
+    function ProjectDetailSlide({ project, tasks, meetings = [], currentUser, onClose, onAddComment, onUpdateComment, onDeleteComment, onAddTask, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, onDeleteProject, onReorderTasks, projectTemplates, onUpdateMeeting, onAddMeeting, onDeleteMeeting, projects = [], kpiBrands = {} }) {
       const [activeTab, setActiveTab] = useState('tasks');
       const [comment, setComment] = useState('');
       const [showAddTask, setShowAddTask] = useState(false);
@@ -10924,7 +11237,7 @@
         description: project?.description || (project ? '' : descriptionTemplate), 
         status: project?.status || 'progress', 
         createdDate: project?.createdDate || today,
-        templateId: null  // 템플릿 선택 
+        templateId: null  // 템플릿 선택
       });
       const isEdit = !!project;
       const isTeamLeader = currentUser?.role === '팀장';
@@ -10940,10 +11253,14 @@
       
       return (
         <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}><h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28' }}>{isEdit ? '프로젝트 수정' : '새 프로젝트'}</h2><button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="x" size={20} color="#8B95A1" /></button></div>
-            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>브랜드 *</label><div style={{ display: 'flex', gap: 8 }}>{BRANDS.map(b => <button key={b.id} onClick={() => setForm({ ...form, brandId: b.id, templateId: null })} style={{ padding: '10px 16px', borderRadius: 10, border: form.brandId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: form.brandId === b.id ? `${b.color}15` : 'white', color: form.brandId === b.id ? b.color : '#6B7684', fontSize: 14, fontWeight: 500 }}>{b.name}</button>)}</div></div>
-            {/* 템플릿 선택 (새 프로젝트일 때만) - 프로젝트명 위에 배치 */}
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>브랜드 *</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{BRANDS.map(b => <button key={b.id} onClick={() => setForm({ ...form, brandId: b.id, templateId: null })} style={{ padding: '10px 16px', borderRadius: 10, border: form.brandId === b.id ? `2px solid ${b.color}` : '1px solid #E5E8EB', background: form.brandId === b.id ? `${b.color}15` : 'white', color: form.brandId === b.id ? b.color : '#6B7684', fontSize: 14, fontWeight: 500 }}>{b.name}</button>)}</div></div>
+            
+            {/* 프로젝트명 */}
+            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 2025 신년 캠페인" style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15 }} /></div>
+            
+            {/* 템플릿 선택 (새 프로젝트일 때만) */}
             {!isEdit && (
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
@@ -10990,12 +11307,295 @@
                 )}
               </div>
             )}
-            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트명 *</label><input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="예: 2025 신년 캠페인" style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15 }} /></div>
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>담당자 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택)</span></label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => toggleMember(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: (form.memberIds || []).includes(m.id) ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: (form.memberIds || []).includes(m.id) ? `${m.color}15` : 'white' }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: (form.memberIds || []).includes(m.id) ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>설명</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="프로젝트에 대한 설명" rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, resize: 'none', lineHeight: 1.6 }} /></div>
             {isEdit && <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>상태</label><div style={{ display: 'flex', gap: 8 }}>{STATUS_OPTIONS.map(s => <button key={s.id} onClick={() => setForm({ ...form, status: s.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: form.status === s.id ? `2px solid ${s.color}` : '1px solid #E5E8EB', background: form.status === s.id ? s.bg : 'white', color: form.status === s.id ? s.color : '#6B7684', fontSize: 14, fontWeight: 500 }}><Icon name={s.icon} size={16} color={form.status === s.id ? s.color : '#6B7684'} /> {s.label}</button>)}</div></div>}
-            <div style={{ marginBottom: 24 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>프로젝트 등록일</label><input type="date" value={form.createdDate} onChange={(e) => setForm({ ...form, createdDate: e.target.value })} onClick={(e) => e.target.showPicker()} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, cursor: 'pointer' }} /></div>
             <div style={{ display: 'flex', gap: 12 }}><button onClick={onClose} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', fontSize: 15, fontWeight: 600, color: '#6B7684' }}>취소</button><button onClick={() => form.title.trim() && onSave({ ...project, ...form })} disabled={!form.title.trim()} style={{ flex: 1, padding: 16, borderRadius: 12, border: 'none', background: form.title.trim() ? '#3182F6' : '#E5E8EB', fontSize: 15, fontWeight: 600, color: form.title.trim() ? 'white' : '#8B95A1' }}>{isEdit ? '수정' : '만들기'}</button></div>
+          </div>
+        </div>
+      );
+    }
+
+    // ============ KPI 연동 모달 ============
+    function KpiLinkModal({ projects, kpiBrands, onSave, onClose, onCreateProject, currentUser }) {
+      // 순서: 브랜드 → KPI → 후행지표 → 프로젝트명 입력
+      const [selectedBrandId, setSelectedBrandId] = useState(null);
+      const [selectedKpiId, setSelectedKpiId] = useState(null);
+      const [selectedItemId, setSelectedItemId] = useState(null);
+      const [projectTitle, setProjectTitle] = useState('');
+      
+      // 오늘 날짜
+      const todayDate = new Date().toISOString().split('T')[0];
+      
+      // 선택된 KPI 브랜드
+      const availableKpiBrand = selectedBrandId ? kpiBrands[selectedBrandId] : null;
+      
+      // 선택된 KPI
+      const selectedKpi = availableKpiBrand?.kpis?.find(k => k.id === selectedKpiId);
+      
+      // 선택된 후행지표
+      const selectedItem = selectedKpi?.items?.find(i => i.id === selectedItemId);
+      
+      // 브랜드 변경 시 하위 선택 초기화
+      const handleBrandChange = (brandId) => {
+        setSelectedBrandId(brandId);
+        setSelectedKpiId(null);
+        setSelectedItemId(null);
+        setProjectTitle('');
+      };
+      
+      // KPI 변경 시 하위 선택 초기화
+      const handleKpiChange = (kpiId) => {
+        setSelectedKpiId(kpiId ? Number(kpiId) : null);
+        setSelectedItemId(null);
+        setProjectTitle('');
+      };
+      
+      // 후행지표 선택 시 프로젝트명 자동 설정
+      const handleItemChange = (itemId) => {
+        setSelectedItemId(itemId ? Number(itemId) : null);
+        if (itemId) {
+          const item = selectedKpi?.items?.find(i => i.id === Number(itemId));
+          if (item) {
+            setProjectTitle(item.name);
+          }
+        } else {
+          setProjectTitle('');
+        }
+      };
+      
+      // 연동 및 프로젝트 생성
+      const handleSave = async () => {
+        if (!selectedBrandId || !selectedKpiId || !selectedItemId || !projectTitle.trim()) return;
+        
+        // BRANDS에서 해당하는 brandId 찾기
+        const matchingBrand = BRANDS.find(b => b.kpiBrandId === selectedBrandId);
+        if (!matchingBrand) return;
+        
+        const linkedKpi = { 
+          brandId: selectedBrandId, 
+          kpiId: selectedKpiId, 
+          itemId: selectedItemId 
+        };
+        
+        // 새 프로젝트 생성
+        const newProject = {
+          id: Date.now(),
+          brandId: matchingBrand.id,
+          title: projectTitle.trim(),
+          description: `KPI 연동: ${availableKpiBrand?.name} > ${selectedKpi?.name} > ${selectedItem?.name}`,
+          status: 'progress',
+          createdDate: todayDate,
+          createdAt: Date.now(),
+          creatorId: currentUser?.id || 1,
+          memberIds: currentUser ? [currentUser.id] : [],
+          linkedKpi
+        };
+        
+        // 프로젝트 생성 콜백 호출
+        onCreateProject(newProject);
+        
+        // 분기별 업무에도 자동 추가
+        try {
+          const currentQuarter = `Q${Math.ceil((new Date().getMonth() + 1) / 3)}`;
+          const quarterPlans = await KPIStorageService.getQuarterPlans(selectedBrandId);
+          const currentPlan = quarterPlans?.[currentQuarter] || [];
+          
+          // 새 분기별 업무 추가
+          const newTask = {
+            id: Date.now() + 1,
+            title: projectTitle.trim(),
+            kpiId: selectedKpiId,
+            itemId: selectedItemId,
+            linkedProjectId: newProject.id,
+            completed: false,
+            assignees: [],
+            createdAt: new Date().toISOString()
+          };
+          
+          const updatedPlan = [...currentPlan, newTask];
+          await KPIStorageService.saveQuarterPlans(selectedBrandId, {
+            ...quarterPlans,
+            [currentQuarter]: updatedPlan
+          });
+        } catch (error) {
+          console.error('분기별 업무 추가 실패:', error);
+        }
+        
+        onClose();
+      };
+      
+      // KPI가 있는 브랜드만 표시
+      const kpiBrandList = Object.entries(kpiBrands).filter(([id, brand]) => 
+        brand.kpis && brand.kpis.length > 0
+      );
+      
+      const canSave = selectedBrandId && selectedKpiId && selectedItemId && projectTitle.trim();
+      
+      return (
+        <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 20, padding: 28, width: '100%', maxWidth: 480, maxHeight: '85vh', overflow: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28' }}>📊 KPI 연동 프로젝트</h2>
+              <button onClick={onClose} style={{ width: 36, height: 36, borderRadius: 10, border: 'none', background: '#F7F8FA', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <Icon name="x" size={20} color="#8B95A1" />
+              </button>
+            </div>
+            
+            <p style={{ fontSize: 13, color: '#6B7684', marginBottom: 24, lineHeight: 1.5 }}>
+              KPI 후행지표를 선택하면 연동된 프로젝트가 생성됩니다.<br/>
+              프로젝트 업무가 KPI 분기별 업무에 자동 반영됩니다.
+            </p>
+            
+            {/* Step 1: 브랜드 선택 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                <span style={{ width: 20, height: 20, borderRadius: '50%', background: selectedBrandId ? '#00C471' : '#E5E8EB', color: 'white', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>1</span>
+                브랜드 선택
+              </label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {kpiBrandList.map(([brandId, brand]) => (
+                  <button
+                    key={brandId}
+                    onClick={() => handleBrandChange(brandId)}
+                    style={{
+                      padding: '10px 16px',
+                      borderRadius: 10,
+                      border: selectedBrandId === brandId ? `2px solid ${brand.color}` : '1px solid #E5E8EB',
+                      background: selectedBrandId === brandId ? `${brand.color}15` : 'white',
+                      color: selectedBrandId === brandId ? brand.color : '#6B7684',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {brand.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Step 2: KPI 선택 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                <span style={{ width: 20, height: 20, borderRadius: '50%', background: selectedKpiId ? '#00C471' : '#E5E8EB', color: 'white', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>2</span>
+                KPI 선택
+              </label>
+              <select
+                value={selectedKpiId || ''}
+                onChange={(e) => handleKpiChange(e.target.value)}
+                disabled={!selectedBrandId}
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 14px', 
+                  borderRadius: 10, 
+                  border: '1px solid #E5E8EB', 
+                  fontSize: 14, 
+                  color: selectedKpiId ? '#191F28' : '#8B95A1',
+                  background: selectedBrandId ? 'white' : '#F7F8FA',
+                  cursor: selectedBrandId ? 'pointer' : 'not-allowed'
+                }}
+              >
+                <option value="">{selectedBrandId ? 'KPI를 선택하세요...' : '브랜드를 먼저 선택하세요'}</option>
+                {availableKpiBrand?.kpis?.map(kpi => (
+                  <option key={kpi.id} value={kpi.id}>{kpi.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Step 3: 후행지표 선택 */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                <span style={{ width: 20, height: 20, borderRadius: '50%', background: selectedItemId ? '#00C471' : '#E5E8EB', color: 'white', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>3</span>
+                후행지표 선택
+              </label>
+              <select
+                value={selectedItemId || ''}
+                onChange={(e) => handleItemChange(e.target.value)}
+                disabled={!selectedKpiId}
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 14px', 
+                  borderRadius: 10, 
+                  border: '1px solid #E5E8EB', 
+                  fontSize: 14, 
+                  color: selectedItemId ? '#191F28' : '#8B95A1',
+                  background: selectedKpiId ? 'white' : '#F7F8FA',
+                  cursor: selectedKpiId ? 'pointer' : 'not-allowed'
+                }}
+              >
+                <option value="">{selectedKpiId ? '후행지표를 선택하세요...' : 'KPI를 먼저 선택하세요'}</option>
+                {selectedKpi?.items?.map(item => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* 프로젝트명 입력 (후행지표 선택 후 표시) */}
+            {selectedItemId && (
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+                  프로젝트명
+                </label>
+                <input
+                  type="text"
+                  value={projectTitle}
+                  onChange={(e) => setProjectTitle(e.target.value)}
+                  placeholder="프로젝트명을 입력하세요"
+                  style={{ 
+                    width: '100%', 
+                    padding: '12px 14px', 
+                    borderRadius: 10, 
+                    border: '1px solid #E5E8EB', 
+                    fontSize: 14
+                  }}
+                />
+              </div>
+            )}
+            
+            {/* 선택 요약 */}
+            {selectedItemId && projectTitle.trim() && (
+              <div style={{ 
+                marginBottom: 20, 
+                padding: '14px 16px', 
+                background: `${availableKpiBrand?.color || '#3182F6'}08`, 
+                borderRadius: 12,
+                borderLeft: `3px solid ${availableKpiBrand?.color || '#3182F6'}`
+              }}>
+                <div style={{ fontSize: 12, color: '#6B7684', marginBottom: 6 }}>생성될 프로젝트</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#191F28', marginBottom: 4 }}>{projectTitle}</div>
+                <div style={{ fontSize: 12, color: '#6B7684' }}>
+                  {availableKpiBrand?.name} › {selectedKpi?.name} › {selectedItem?.name}
+                </div>
+              </div>
+            )}
+            
+            {/* 버튼 */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button 
+                onClick={onClose} 
+                style={{ flex: 1, padding: 14, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}
+              >
+                취소
+              </button>
+              <button 
+                onClick={handleSave}
+                disabled={!canSave}
+                style={{ 
+                  flex: 1, 
+                  padding: 14, 
+                  borderRadius: 10, 
+                  border: 'none', 
+                  background: canSave ? '#00C471' : '#E5E8EB', 
+                  fontSize: 14, 
+                  fontWeight: 600, 
+                  color: canSave ? 'white' : '#8B95A1',
+                  cursor: canSave ? 'pointer' : 'not-allowed'
+                }}
+              >
+                프로젝트 생성
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -11902,7 +12502,7 @@
     }
 
     // ============ 그로스보드 탭 ============
-    function GrowthBoardTab({ tasks, projects, currentUser }) {
+    function GrowthBoardTab({ tasks, projects, currentUser, kpiBrands = {} }) {
       // 주차 계산 헬퍼
       const getWeekNumber = (date) => {
         const d = new Date(date);
@@ -13078,6 +13678,55 @@
         <div style={{ display: 'flex', height: '100vh', background: '#F7F8FA' }}>
           {/* 왼쪽: 프로젝트 목록 (브랜드별 그룹화) */}
           <div style={{ width: 320, background: 'white', borderRight: '1px solid #E5E8EB', display: 'flex', flexDirection: 'column' }}>
+            
+            {/* KPI 현황 섹션 */}
+            {Object.keys(kpiBrands).length > 0 && (
+              <div style={{ padding: 16, borderBottom: '1px solid #E5E8EB' }}>
+                <h2 style={{ fontSize: 14, fontWeight: 700, color: '#191F28', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  📊 KPI 현황
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {Object.values(kpiBrands).map(brand => {
+                    const avgProgress = brand.kpis && brand.kpis.length > 0
+                      ? Math.round(brand.kpis.reduce((sum, kpi) => sum + (kpi.progress || 0), 0) / brand.kpis.length)
+                      : 0;
+                    return (
+                      <div key={brand.id} style={{ 
+                        padding: '10px 12px', 
+                        background: `${brand.color}08`, 
+                        borderRadius: 10,
+                        borderLeft: `3px solid ${brand.color}`
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{brand.name}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: brand.color }}>{avgProgress}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                          <div style={{ 
+                            width: `${avgProgress}%`, 
+                            height: '100%', 
+                            background: brand.color, 
+                            borderRadius: 2,
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                        {/* KPI 연동된 프로젝트 수 */}
+                        {(() => {
+                          const linkedCount = projects.filter(p => p.linkedKpi?.brandId === brand.id).length;
+                          const completedCount = projects.filter(p => p.linkedKpi?.brandId === brand.id && p.status === 'complete').length;
+                          return linkedCount > 0 ? (
+                            <div style={{ marginTop: 6, fontSize: 10, color: '#6B7684' }}>
+                              연동 프로젝트: {completedCount}/{linkedCount} 완료
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
             <div style={{ padding: 20, borderBottom: '1px solid #E5E8EB' }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>📁 프로젝트</h2>
               
@@ -13160,7 +13809,7 @@
                               }}>{project.title}</span>
                               {isAdded && <span style={{ fontSize: 10, color: '#00C471', fontWeight: 600 }}>✓ 추가됨</span>}
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span style={{ 
                                 fontSize: 10, padding: '2px 6px', borderRadius: 4, 
                                 background: `${statusColors[project.status]}15`, 
@@ -13175,6 +13824,20 @@
                                   +{subtaskCount} 하위
                                 </span>
                               )}
+                              {/* KPI 연동 표시 */}
+                              {project.linkedKpi && (() => {
+                                const linkedBrand = kpiBrands[project.linkedKpi.brandId];
+                                return linkedBrand ? (
+                                  <span style={{ 
+                                    fontSize: 9, padding: '2px 6px', borderRadius: 4,
+                                    background: `${linkedBrand.color}15`,
+                                    color: linkedBrand.color,
+                                    fontWeight: 600
+                                  }}>
+                                    📊 KPI
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           </div>
                         );
