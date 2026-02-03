@@ -1030,11 +1030,21 @@
           }
         });
         
-        // 팀원 목록 실시간 업데이트
+        // 팀원 목록 실시간 업데이트 (기본 멤버 + Firebase 추가 멤버 병합)
         const unsubscribeTeamMembers = FirebaseService.onDataChange('teamMembers', (updatedTeamMembers) => {
           if (updatedTeamMembers && updatedTeamMembers.length > 0) {
-            setTeamMembers(updatedTeamMembers.map(m => ({ ...m, id: Number(m.id) || m.id })));
-            console.log('[Firebase] 팀원 목록 실시간 업데이트:', updatedTeamMembers.length, '명');
+            // Firebase에서 가져온 멤버 (id를 숫자로 변환)
+            const firebaseMembers = updatedTeamMembers.map(m => ({ ...m, id: Number(m.id) || m.id }));
+            
+            // 기본 TEAM_MEMBERS의 id 목록
+            const defaultIds = TEAM_MEMBERS.map(m => m.id);
+            
+            // Firebase에만 있는 추가 멤버 (기본 멤버와 중복되지 않는 것만)
+            const additionalMembers = firebaseMembers.filter(m => !defaultIds.includes(m.id));
+            
+            // 기본 멤버 + 추가 멤버 병합
+            setTeamMembers([...TEAM_MEMBERS, ...additionalMembers]);
+            console.log('[Firebase] 팀원 목록 실시간 업데이트:', TEAM_MEMBERS.length, '명(기본) +', additionalMembers.length, '명(추가)');
           }
         });
         
@@ -1802,6 +1812,12 @@
           return;
         }
 
+        // 중복 이메일 체크
+        if (teamMembers.some(m => m.email === newMember.email)) {
+          setMessage('✗ 이미 등록된 이메일입니다.');
+          return;
+        }
+
         setIsLoading(true);
         setMessage('');
 
@@ -1809,13 +1825,14 @@
           // 1. Firebase Auth에 계정 생성
           await auth.createUserWithEmailAndPassword(newMember.email, newMember.password);
           
-          // 2. 팀원 목록에 추가
-          const newId = Math.max(...teamMembers.map(m => m.id), 0) + 1;
+          // 2. 팀원 목록에 추가 (ID는 100부터 시작하여 기본 멤버와 겹치지 않게)
+          const existingIds = teamMembers.map(m => m.id);
+          const newId = Math.max(...existingIds, 99) + 1; // 최소 100부터 시작
           const memberData = {
             id: newId,
             name: newMember.name,
             initial: newMember.name.charAt(1) || newMember.name.charAt(0),
-            color: colorPalette[newId % colorPalette.length],
+            color: colorPalette[(newId - 100) % colorPalette.length],
             role: newMember.role,
             email: newMember.email,
             isAdmin: newMember.isAdmin
