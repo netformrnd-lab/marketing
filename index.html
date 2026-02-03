@@ -752,6 +752,7 @@
       const [fixedTasks, setFixedTasks] = useState([]);
       const [teamRequests, setTeamRequests] = useState([]);
       const [meetings, setMeetings] = useState([]);
+      const [teamMembers, setTeamMembers] = useState(TEAM_MEMBERS); // 동적 팀원 관리
       const [isLoading, setIsLoading] = useState(isPublicMode ? false : true);
       const [dataLoaded, setDataLoaded] = useState(false);
       const [isSaving, setIsSaving] = useState(false);
@@ -1029,8 +1030,17 @@
           }
         });
         
+        // 팀원 목록 실시간 업데이트
+        const unsubscribeTeamMembers = FirebaseService.onDataChange('teamMembers', (updatedTeamMembers) => {
+          if (updatedTeamMembers && updatedTeamMembers.length > 0) {
+            setTeamMembers(updatedTeamMembers.map(m => ({ ...m, id: Number(m.id) || m.id })));
+            console.log('[Firebase] 팀원 목록 실시간 업데이트:', updatedTeamMembers.length, '명');
+          }
+        });
+        
         return () => {
           if (unsubscribeTeamRequests) unsubscribeTeamRequests();
+          if (unsubscribeTeamMembers) unsubscribeTeamMembers();
         };
       }, [currentUser]);
       
@@ -1642,7 +1652,7 @@
             </div>
             {currentUser?.isAdmin && (
               <div style={{ flex: 1, display: activeTab === 'accounts' ? 'flex' : 'none', flexDirection: 'column' }}>
-                <AccountManageTab currentUser={currentUser} />
+                <AccountManageTab currentUser={currentUser} teamMembers={teamMembers} setTeamMembers={setTeamMembers} />
               </div>
             )}
             <div style={{ flex: 1, display: activeTab === 'trash' ? 'flex' : 'none', flexDirection: 'column' }}>
@@ -1701,18 +1711,26 @@
     }
 
     // ============ 계정 관리 탭 (관리자 전용) ============
-    function AccountManageTab({ currentUser }) {
+    function AccountManageTab({ currentUser, teamMembers, setTeamMembers }) {
       const [accountStatus, setAccountStatus] = useState({});
       const [isLoading, setIsLoading] = useState(false);
       const [message, setMessage] = useState('');
       const [showResetModal, setShowResetModal] = useState(null);
-      const [newPassword, setNewPassword] = useState('');
+      const [showAddModal, setShowAddModal] = useState(false);
+      const [newMember, setNewMember] = useState({
+        name: '',
+        email: '',
+        role: '매니저',
+        isAdmin: false,
+        password: 'netform2025'
+      });
+
+      // 색상 팔레트
+      const colorPalette = ['#3182F6', '#00C471', '#F97316', '#8B5CF6', '#F04452', '#06B6D4', '#EC4899', '#14B8A6'];
 
       // 계정 상태 확인
       const checkAccountStatus = async (member) => {
         try {
-          // Firebase에서 로그인 시도로 계정 존재 여부 확인 (실제로는 Admin SDK 필요)
-          // 여기서는 간단히 상태만 표시
           return 'unknown';
         } catch (error) {
           return 'not_created';
@@ -1746,7 +1764,7 @@
         setMessage('계정 생성 중...\n');
         const defaultPassword = 'netform2025';
 
-        for (const member of TEAM_MEMBERS) {
+        for (const member of teamMembers) {
           try {
             await auth.createUserWithEmailAndPassword(member.email, defaultPassword);
             setAccountStatus(prev => ({ ...prev, [member.id]: 'created' }));
@@ -1777,6 +1795,66 @@
         setShowResetModal(null);
       };
 
+      // 새 팀원 추가
+      const addNewMember = async () => {
+        if (!newMember.name || !newMember.email) {
+          setMessage('✗ 이름과 이메일은 필수입니다.');
+          return;
+        }
+
+        setIsLoading(true);
+        setMessage('');
+
+        try {
+          // 1. Firebase Auth에 계정 생성
+          await auth.createUserWithEmailAndPassword(newMember.email, newMember.password);
+          
+          // 2. 팀원 목록에 추가
+          const newId = Math.max(...teamMembers.map(m => m.id), 0) + 1;
+          const memberData = {
+            id: newId,
+            name: newMember.name,
+            initial: newMember.name.charAt(1) || newMember.name.charAt(0),
+            color: colorPalette[newId % colorPalette.length],
+            role: newMember.role,
+            email: newMember.email,
+            isAdmin: newMember.isAdmin
+          };
+
+          // Firebase에 팀원 정보 저장
+          const ref = firebase.database().ref('teamMembers/' + newId);
+          await ref.set(memberData);
+
+          setTeamMembers(prev => [...prev, memberData]);
+          setMessage(`✓ ${newMember.name} 팀원이 추가되었습니다! (비밀번호: ${newMember.password})`);
+          setShowAddModal(false);
+          setNewMember({ name: '', email: '', role: '매니저', isAdmin: false, password: 'netform2025' });
+        } catch (error) {
+          if (error.code === 'auth/email-already-in-use') {
+            setMessage(`✗ 이미 사용 중인 이메일입니다.`);
+          } else {
+            setMessage(`✗ 추가 실패: ${error.message}`);
+          }
+        }
+        setIsLoading(false);
+      };
+
+      // 팀원 삭제
+      const deleteMember = async (member) => {
+        if (!confirm(`정말 ${member.name} 팀원을 삭제하시겠습니까?`)) return;
+        
+        try {
+          // Firebase에서 팀원 정보 삭제
+          const ref = firebase.database().ref('teamMembers/' + member.id);
+          await ref.remove();
+          
+          setTeamMembers(prev => prev.filter(m => m.id !== member.id));
+          setMessage(`✓ ${member.name} 팀원이 삭제되었습니다.`);
+        } catch (error) {
+          setMessage(`✗ 삭제 실패: ${error.message}`);
+        }
+      };
+
       if (!currentUser?.isAdmin) {
         return (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1794,29 +1872,49 @@
                 <h1 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>👤 계정 관리</h1>
                 <p style={{ fontSize: 13, color: '#8B95A1' }}>팀원 계정을 생성하고 관리합니다 (관리자 전용)</p>
               </div>
-              <button
-                onClick={createAllAccounts}
-                disabled={isLoading}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: isLoading ? '#E5E8EB' : '#3182F6',
-                  color: 'white',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: isLoading ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {isLoading ? '처리 중...' : `전체 계정 생성 (${TEAM_MEMBERS.length}명)`}
-              </button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    border: '1px solid #00C471',
+                    background: '#ECFDF5',
+                    color: '#00C471',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <Icon name="plus" size={16} color="#00C471" /> 팀원 추가
+                </button>
+                <button
+                  onClick={createAllAccounts}
+                  disabled={isLoading}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: isLoading ? '#E5E8EB' : '#3182F6',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: isLoading ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isLoading ? '처리 중...' : `전체 계정 생성 (${teamMembers.length}명)`}
+                </button>
+              </div>
             </div>
           </header>
 
           {/* 메시지 영역 */}
           {message && (
-            <div style={{ margin: '16px 32px 0', padding: 16, background: '#F0F9FF', borderRadius: 8, border: '1px solid #BAE6FD' }}>
-              <pre style={{ margin: 0, fontSize: 13, color: '#0369A1', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{message}</pre>
+            <div style={{ margin: '16px 32px 0', padding: 16, background: message.includes('✗') ? '#FEF2F2' : '#F0F9FF', borderRadius: 8, border: `1px solid ${message.includes('✗') ? '#FECACA' : '#BAE6FD'}` }}>
+              <pre style={{ margin: 0, fontSize: 13, color: message.includes('✗') ? '#DC2626' : '#0369A1', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{message}</pre>
             </div>
           )}
 
@@ -1824,7 +1922,7 @@
           <div style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
               {/* 테이블 헤더 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 150px', padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 13, fontWeight: 600, color: '#6B7684' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 180px', padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 13, fontWeight: 600, color: '#6B7684' }}>
                 <div></div>
                 <div>이름</div>
                 <div>이메일</div>
@@ -1834,8 +1932,8 @@
               </div>
 
               {/* 계정 목록 */}
-              {TEAM_MEMBERS.map((member) => (
-                <div key={member.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 150px', padding: '16px 20px', borderBottom: '1px solid #F2F3F5', alignItems: 'center' }}>
+              {teamMembers.map((member) => (
+                <div key={member.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 180px', padding: '16px 20px', borderBottom: '1px solid #F2F3F5', alignItems: 'center' }}>
                   {/* 프로필 */}
                   <div style={{ width: 36, height: 36, borderRadius: '50%', background: member.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 600 }}>
                     {member.initial}
@@ -1865,12 +1963,12 @@
                   </div>
 
                   {/* 계정 관리 버튼 */}
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                     <button
                       onClick={() => createAccount(member)}
                       disabled={isLoading}
                       style={{
-                        padding: '6px 12px',
+                        padding: '6px 10px',
                         borderRadius: 6,
                         border: '1px solid #E5E8EB',
                         background: 'white',
@@ -1886,7 +1984,7 @@
                       onClick={() => setShowResetModal(member)}
                       disabled={isLoading}
                       style={{
-                        padding: '6px 12px',
+                        padding: '6px 10px',
                         borderRadius: 6,
                         border: '1px solid #E5E8EB',
                         background: 'white',
@@ -1898,6 +1996,24 @@
                     >
                       초기화
                     </button>
+                    {!member.isAdmin && (
+                      <button
+                        onClick={() => deleteMember(member)}
+                        disabled={isLoading}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          border: '1px solid #FECACA',
+                          background: '#FEF2F2',
+                          color: '#DC2626',
+                          fontSize: 12,
+                          fontWeight: 500,
+                          cursor: isLoading ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        삭제
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1914,6 +2030,98 @@
               </ul>
             </div>
           </div>
+
+          {/* 팀원 추가 모달 */}
+          {showAddModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 450 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 20 }}>👤 새 팀원 추가</h3>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* 이름 */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>이름 *</label>
+                    <input
+                      type="text"
+                      value={newMember.name}
+                      onChange={(e) => setNewMember(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="예: 홍길동"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                    />
+                  </div>
+
+                  {/* 이메일 */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>이메일 *</label>
+                    <input
+                      type="email"
+                      value={newMember.email}
+                      onChange={(e) => setNewMember(prev => ({ ...prev, email: e.target.value }))}
+                      placeholder="예: gildong@workspace.local"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                    />
+                  </div>
+
+                  {/* 역할 & 권한 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>역할</label>
+                      <select
+                        value={newMember.role}
+                        onChange={(e) => setNewMember(prev => ({ ...prev, role: e.target.value }))}
+                        style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, background: 'white' }}
+                      >
+                        <option value="팀장">팀장</option>
+                        <option value="매니저">매니저</option>
+                        <option value="인턴">인턴</option>
+                        <option value="외부">외부</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>권한</label>
+                      <select
+                        value={newMember.isAdmin ? 'admin' : 'normal'}
+                        onChange={(e) => setNewMember(prev => ({ ...prev, isAdmin: e.target.value === 'admin' }))}
+                        style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, background: 'white' }}
+                      >
+                        <option value="normal">일반</option>
+                        <option value="admin">관리자</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 비밀번호 */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>초기 비밀번호</label>
+                    <input
+                      type="text"
+                      value={newMember.password}
+                      onChange={(e) => setNewMember(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="최소 6자 이상"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
+                    />
+                    <p style={{ fontSize: 11, color: '#8B95A1', marginTop: 4 }}>기본값: netform2025</p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
+                  <button
+                    onClick={() => { setShowAddModal(false); setNewMember({ name: '', email: '', role: '매니저', isAdmin: false, password: 'netform2025' }); }}
+                    style={{ padding: '12px 24px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', color: '#6B7684', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={addNewMember}
+                    disabled={isLoading || !newMember.name || !newMember.email}
+                    style={{ padding: '12px 24px', borderRadius: 8, border: 'none', background: (!newMember.name || !newMember.email) ? '#E5E8EB' : '#00C471', color: 'white', fontSize: 14, fontWeight: 600, cursor: (!newMember.name || !newMember.email) ? 'not-allowed' : 'pointer' }}
+                  >
+                    {isLoading ? '추가 중...' : '팀원 추가'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 비밀번호 초기화 모달 */}
           {showResetModal && (
@@ -9514,6 +9722,9 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [searchDate, setSearchDate] = useState('');
       
+      // KPI 전체 화면 뷰 상태
+      const [selectedKpiItem, setSelectedKpiItem] = useState(null); // { brandId, kpiId, itemId, itemName, kpiName, brandName, brandColor }
+      
       // 삭제 확인 모달 상태
       const [confirmDelete, setConfirmDelete] = useState(null); // { type: 'project' | 'task', id, title }
       
@@ -9523,6 +9734,8 @@
           if (e.key === 'Escape') {
             // confirmDelete는 항상 최우선 (zIndex가 가장 높음)
             if (confirmDelete) { setConfirmDelete(null); return; }
+            // KPI 전체 화면 뷰가 열려있으면 닫기
+            if (selectedKpiItem) { setSelectedKpiItem(null); return; }
             // selectedProject가 열려있으면 ProjectDetailSlide에서 처리
             if (selectedProject) return;
             if (showKpiLinkModal) { setShowKpiLinkModal(false); return; }
@@ -9531,7 +9744,7 @@
         };
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-      }, [confirmDelete, showAddProject, showKpiLinkModal, selectedProject]);
+      }, [confirmDelete, showAddProject, showKpiLinkModal, selectedProject, selectedKpiItem]);
       
       // 업무 검색 뷰 필터
       const [taskSearchQuery, setTaskSearchQuery] = useState('');
@@ -9894,6 +10107,9 @@
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setViewMode('projects')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, border: viewMode === 'projects' ? '2px solid #3182F6' : '1px solid #E5E8EB', background: viewMode === 'projects' ? '#EBF4FF' : 'white', fontSize: 14, fontWeight: 600, color: viewMode === 'projects' ? '#3182F6' : '#6B7684', cursor: 'pointer' }}>
                   <Icon name="folder" size={18} color={viewMode === 'projects' ? '#3182F6' : '#8B95A1'} /> 프로젝트
+                </button>
+                <button onClick={() => setViewMode('teamKpi')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, border: viewMode === 'teamKpi' ? '2px solid #00C471' : '1px solid #E5E8EB', background: viewMode === 'teamKpi' ? '#ECFDF5' : 'white', fontSize: 14, fontWeight: 600, color: viewMode === 'teamKpi' ? '#00C471' : '#6B7684', cursor: 'pointer' }}>
+                  <span style={{ fontSize: 16 }}>📊</span> 팀 KPI
                 </button>
                 <button onClick={() => setViewMode('teamProjects')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px', borderRadius: 10, border: viewMode === 'teamProjects' ? '2px solid #8B5CF6' : '1px solid #E5E8EB', background: viewMode === 'teamProjects' ? '#F3E8FF' : 'white', fontSize: 14, fontWeight: 600, color: viewMode === 'teamProjects' ? '#8B5CF6' : '#6B7684', cursor: 'pointer' }}>
                   <Icon name="users" size={18} color={viewMode === 'teamProjects' ? '#8B5CF6' : '#8B95A1'} /> 팀 프로젝트
@@ -10296,7 +10512,18 @@
                                     return (
                                       <div 
                                         key={project.id}
-                                        onClick={() => openProject(project)}
+                                        onClick={() => {
+                                          // KPI 전체 화면 뷰 열기
+                                          setSelectedKpiItem({
+                                            brandId: brandId,
+                                            kpiId: project.linkedKpi?.kpiId,
+                                            itemId: project.linkedKpi?.itemId,
+                                            itemName: item?.name || '후행지표',
+                                            kpiName: kpi?.name || 'KPI',
+                                            brandName: kpiBrand.name,
+                                            brandColor: kpiBrand.color
+                                          });
+                                        }}
                                         style={{ 
                                           padding: '14px 16px', 
                                           borderBottom: idx === brandProjects.length - 1 ? 'none' : '1px solid #F2F3F5',
@@ -10402,6 +10629,155 @@
               );
             })()}
           </div>
+          )}
+          
+          {/* 팀 KPI 뷰 */}
+          {viewMode === 'teamKpi' && (
+            <div style={{ padding: 32 }}>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>팀 KPI 현황</h2>
+                    <p style={{ fontSize: 14, color: '#8B95A1' }}>브랜드별 KPI와 연동된 프로젝트를 한눈에 확인하세요</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setShowKpiLinkModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #00C471', color: '#00C471', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      📊 KPI 연동
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 브랜드별 KPI - 브랜드는 세로, KPI는 가로 3열 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                {KPI_BRAND_ORDER.map(brandId => {
+                  const brand = kpiBrands[brandId];
+                  if (!brand) return null;
+                  
+                  // 해당 브랜드의 KPI 연동 프로젝트
+                  const brandProjects = projects.filter(p => p.linkedKpi?.brandId === brandId && !p.deletedAt);
+                  
+                  // 전체 진행률 계산
+                  const allItems = brand.kpis?.flatMap(kpi => kpi.items || []) || [];
+                  const totalProgress = allItems.length > 0 ? Math.round(
+                    allItems.reduce((sum, item) => {
+                      const kpi = brand.kpis?.find(k => k.items?.some(i => i.id === item.id));
+                      const itemProjects = brandProjects.filter(p => p.linkedKpi?.kpiId === kpi?.id && p.linkedKpi?.itemId === item.id);
+                      const totalTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
+                      const completedTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
+                      return sum + (totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0);
+                    }, 0) / allItems.length
+                  ) : 0;
+                  
+                  return (
+                    <div key={brandId} style={{ background: 'white', borderRadius: 16, border: `2px solid ${brand.color}30`, overflow: 'hidden' }}>
+                      {/* 브랜드 헤더 */}
+                      <div style={{ padding: '16px 20px', background: `${brand.color}10`, borderBottom: `1px solid ${brand.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 10, background: `${brand.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{brand.icon}</div>
+                          <div>
+                            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>{brand.name}</h3>
+                            <p style={{ fontSize: 12, color: '#8B95A1' }}>{brandProjects.length}개 프로젝트 연동</p>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 100, height: 8, background: '#E5E8EB', borderRadius: 4, overflow: 'hidden' }}>
+                              <div style={{ width: `${totalProgress}%`, height: '100%', background: totalProgress === 100 ? '#00C471' : brand.color, borderRadius: 4 }} />
+                            </div>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: totalProgress === 100 ? '#00C471' : brand.color }}>{totalProgress}%</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* KPI 가로 3열 그리드 */}
+                      <div style={{ padding: 16 }}>
+                        {brand.kpis && brand.kpis.length > 0 ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, alignItems: 'start' }}>
+                            {brand.kpis.map(kpi => {
+                              const kpiProjects = brandProjects.filter(p => p.linkedKpi?.kpiId === kpi.id);
+                              
+                              return (
+                                <div key={kpi.id} style={{ background: '#F9FAFB', borderRadius: 12, padding: 14, border: '1px solid #E5E8EB' }}>
+                                  {/* KPI 헤더 */}
+                                  <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: `2px solid ${brand.color}30` }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: brand.color, marginBottom: 4 }}>{kpi.name}</div>
+                                    <span style={{ fontSize: 11, color: '#8B95A1' }}>{kpi.items?.length || 0}개 후행지표</span>
+                                  </div>
+                                  
+                                  {/* 후행지표 목록 - 세로로 나열 */}
+                                  {kpi.items && kpi.items.length > 0 && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      {kpi.items.map(item => {
+                                        const itemProjects = brandProjects.filter(p => p.linkedKpi?.kpiId === kpi.id && p.linkedKpi?.itemId === item.id);
+                                        const totalTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
+                                        const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
+                                        const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                                        
+                                        return (
+                                          <div 
+                                            key={item.id}
+                                            onClick={() => {
+                                              if (itemProjects.length > 0) {
+                                                setSelectedKpiItem({
+                                                  brandId: brandId,
+                                                  kpiId: kpi.id,
+                                                  itemId: item.id,
+                                                  itemName: item.name,
+                                                  kpiName: kpi.name,
+                                                  brandName: brand.name,
+                                                  brandColor: brand.color
+                                                });
+                                              }
+                                            }}
+                                            style={{ 
+                                              padding: '10px 12px', 
+                                              background: 'white', 
+                                              borderRadius: 8, 
+                                              border: `1px solid ${itemProjects.length > 0 ? brand.color + '40' : '#E5E8EB'}`,
+                                              cursor: itemProjects.length > 0 ? 'pointer' : 'default',
+                                              transition: 'all 0.15s'
+                                            }}
+                                            onMouseEnter={(e) => { if (itemProjects.length > 0) { e.currentTarget.style.borderColor = brand.color; e.currentTarget.style.background = `${brand.color}05`; }}}
+                                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = itemProjects.length > 0 ? brand.color + '40' : '#E5E8EB'; e.currentTarget.style.background = 'white'; }}
+                                          >
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                              <span style={{ fontSize: 12, fontWeight: 500, color: '#191F28', flex: 1 }}>{item.name}</span>
+                                              <span style={{ fontSize: 12, fontWeight: 600, color: progress === 100 ? '#00C471' : (progress > 0 ? brand.color : '#B0B8C1'), marginLeft: 8 }}>{progress}%</span>
+                                            </div>
+                                            <div style={{ height: 3, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
+                                              <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? '#00C471' : brand.color, borderRadius: 2 }} />
+                                            </div>
+                                            {itemProjects.length > 0 ? (
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <span style={{ padding: '2px 6px', borderRadius: 4, background: `${brand.color}15`, color: brand.color, fontSize: 10, fontWeight: 600 }}>
+                                                  {itemProjects.length}개 프로젝트
+                                                </span>
+                                                <span style={{ fontSize: 10, color: '#8B95A1' }}>{completedTasks}/{totalTasks}</span>
+                                              </div>
+                                            ) : (
+                                              <span style={{ fontSize: 10, color: '#B0B8C1' }}>연동된 프로젝트 없음</span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
+                            <p style={{ fontSize: 13 }}>등록된 KPI가 없습니다</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
           
           {/* 팀 프로젝트 뷰 */}
@@ -10644,6 +11020,22 @@
           </div>
           )}
 
+          {/* KPI 전체 화면 뷰 - 좌우 분할 레이아웃 */}
+          {selectedKpiItem && (
+            <KpiFullScreenView 
+              kpiItem={selectedKpiItem}
+              kpiBrands={kpiBrands}
+              projects={projects}
+              tasks={tasks}
+              setProjects={setProjects}
+              setTasks={setTasks}
+              currentUser={currentUser}
+              meetings={meetings}
+              onClose={() => setSelectedKpiItem(null)}
+              onOpenProject={openProject}
+            />
+          )}
+
           {selectedProject && <ProjectDetailSlide project={selectedProject} tasks={tasks.filter(t => t.projectId === selectedProject.id)} meetings={(meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProject.id))} currentUser={currentUser} onClose={() => setSelectedProject(null)} onAddComment={(t, f) => addComment(selectedProject.id, t, f)} onUpdateComment={(cid, t) => updateComment(selectedProject.id, cid, t)} onDeleteComment={(cid) => deleteComment(selectedProject.id, cid)} onAddTask={(t) => addTask({ ...t, projectId: selectedProject.id })} onToggleTask={toggleTaskComplete} onDeleteTask={requestDeleteTask} onUpdateTask={updateTask} onUpdateProject={updateProject} onDeleteProject={requestDeleteProject} onReorderTasks={reorderTasks} projectTemplates={projectTemplates} onUpdateMeeting={(updatedMeeting) => setMeetings(prev => prev.map(m => m.id === updatedMeeting.id ? updatedMeeting : m))} onAddMeeting={(newMeeting) => setMeetings(prev => [...prev, newMeeting])} onDeleteMeeting={(meetingId) => setMeetings(prev => prev.filter(m => m.id !== meetingId))} projects={projects} kpiBrands={kpiBrands} />}
           {showAddProject && <ProjectModal project={null} currentUser={currentUser} onSave={(p) => { addProject(p); setShowAddProject(false); }} onClose={() => setShowAddProject(false)} projectTemplates={projectTemplates} />}
           {showKpiLinkModal && <KpiLinkModal projects={projects} kpiBrands={kpiBrands} onSave={updateProject} onClose={() => setShowKpiLinkModal(false)} onCreateProject={(p) => { addProject(p); setShowKpiLinkModal(false); }} currentUser={currentUser} />}
@@ -10660,6 +11052,365 @@
               onCancel={() => setConfirmDelete(null)}
             />
           )}
+        </div>
+      );
+    }
+
+    // KPI 전체 화면 뷰 컴포넌트
+    function KpiFullScreenView({ kpiItem, kpiBrands, projects, tasks, setProjects, setTasks, currentUser, meetings, onClose, onOpenProject }) {
+      const [selectedProjectId, setSelectedProjectId] = useState(null);
+      const [detailTab, setDetailTab] = useState('tasks');
+      
+      const brand = kpiBrands[kpiItem.brandId];
+      const kpi = brand?.kpis?.find(k => k.id === kpiItem.kpiId);
+      const item = kpi?.items?.find(i => i.id === kpiItem.itemId);
+      
+      // 해당 후행지표에 연동된 모든 프로젝트
+      const linkedProjects = projects.filter(p => 
+        p.linkedKpi?.brandId === kpiItem.brandId &&
+        p.linkedKpi?.kpiId === kpiItem.kpiId &&
+        p.linkedKpi?.itemId === kpiItem.itemId &&
+        !p.deletedAt
+      ).map(p => ({
+        ...p,
+        projectTasks: tasks.filter(t => t.projectId === p.id && !t.deletedAt)
+      }));
+      
+      // 첫 번째 프로젝트 자동 선택
+      useEffect(() => {
+        if (linkedProjects.length > 0 && !selectedProjectId) {
+          setSelectedProjectId(linkedProjects[0].id);
+        }
+      }, [linkedProjects.length]);
+      
+      // 전체 진행률 계산
+      const totalTasks = linkedProjects.reduce((sum, p) => sum + p.projectTasks.length, 0);
+      const completedTasks = linkedProjects.reduce((sum, p) => sum + p.projectTasks.filter(t => t.completed).length, 0);
+      const overallProgress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+      
+      const selectedProjectData = linkedProjects.find(p => p.id === selectedProjectId);
+      
+      const handleAddProject = () => {
+        const title = prompt('새 프로젝트명:');
+        if (title && title.trim()) {
+          const newProject = {
+            id: Date.now(),
+            title: title.trim(),
+            description: '',
+            brandId: brand?.id === 'pour-solution' ? 2 : brand?.id === 'pour-method' ? 1 : brand?.id === 'apartment-square' ? 3 : 4,
+            status: 'progress',
+            creatorId: currentUser.id,
+            memberIds: [currentUser.id],
+            createdDate: new Date().toISOString().split('T')[0],
+            comments: [],
+            linkedKpi: {
+              brandId: kpiItem.brandId,
+              kpiId: kpiItem.kpiId,
+              itemId: kpiItem.itemId
+            }
+          };
+          setProjects(prev => [...prev, newProject]);
+          setSelectedProjectId(newProject.id);
+        }
+      };
+      
+      const handleAddTask = (projectId) => {
+        const title = prompt('새 업무:');
+        if (title && title.trim()) {
+          const newTask = {
+            id: Date.now(),
+            projectId: projectId,
+            title: title.trim(),
+            completed: false,
+            date: new Date().toISOString().split('T')[0],
+            memberId: currentUser.id,
+            createdAt: new Date().toISOString()
+          };
+          setTasks(prev => [...prev, newTask]);
+        }
+      };
+      
+      const toggleTaskComplete = (taskId) => {
+        setTasks(prev => prev.map(t => 
+          t.id === taskId ? { ...t, completed: !t.completed, completedAt: !t.completed ? new Date().toISOString() : null } : t
+        ));
+      };
+      
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ width: '100%', maxWidth: 1600, height: '95vh', background: 'white', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* 상단 헤더 */}
+            <div style={{ padding: '16px 24px', background: 'white', borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: '#F2F4F6', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>
+                  ← 돌아가기
+                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ padding: '4px 10px', borderRadius: 6, background: `${kpiItem.brandColor}15`, color: kpiItem.brandColor, fontSize: 13, fontWeight: 600 }}>{kpiItem.brandName}</span>
+                  <span style={{ color: '#B0B8C1' }}>›</span>
+                  <span style={{ fontSize: 14, color: '#6B7684' }}>{kpiItem.kpiName}</span>
+                  <span style={{ color: '#B0B8C1' }}>›</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#191F28' }}>{kpiItem.itemName}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 120, height: 8, background: '#E5E8EB', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ width: `${overallProgress}%`, height: '100%', background: overallProgress === 100 ? '#00C471' : kpiItem.brandColor, borderRadius: 4 }} />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: overallProgress === 100 ? '#00C471' : kpiItem.brandColor }}>{overallProgress}%</span>
+                </div>
+                <button onClick={handleAddProject} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', background: kpiItem.brandColor, border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: 'white', cursor: 'pointer' }}>
+                  <Icon name="plus" size={16} color="white" /> 프로젝트 추가
+                </button>
+              </div>
+            </div>
+            
+            {/* 좌우 분할 영역 */}
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              {/* 왼쪽: 프로젝트 목록 */}
+              <div style={{ width: 320, background: '#F7F8FA', borderRight: '1px solid #E5E8EB', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E8EB' }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: '#191F28', margin: 0 }}>📁 프로젝트 목록</h3>
+                  <p style={{ fontSize: 12, color: '#8B95A1', marginTop: 4 }}>{linkedProjects.length}개 프로젝트 · {completedTasks}/{totalTasks} 업무 완료</p>
+                </div>
+                <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
+                  {linkedProjects.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
+                      <p style={{ fontSize: 13 }}>프로젝트가 없습니다</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {linkedProjects.map(project => {
+                        const projectProgress = project.projectTasks.length > 0 
+                          ? Math.round((project.projectTasks.filter(t => t.completed).length / project.projectTasks.length) * 100) 
+                          : 0;
+                        const isSelected = selectedProjectId === project.id;
+                        
+                        return (
+                          <div 
+                            key={project.id}
+                            onClick={() => setSelectedProjectId(project.id)}
+                            style={{ 
+                              padding: 14, 
+                              background: isSelected ? 'white' : 'transparent', 
+                              borderRadius: 12, 
+                              border: isSelected ? `2px solid ${kpiItem.brandColor}` : '2px solid transparent',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                              <div style={{ width: 10, height: 10, borderRadius: '50%', background: projectProgress === 100 ? '#00C471' : projectProgress > 0 ? '#F59E0B' : '#E5E8EB' }} />
+                              <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1, height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                                <div style={{ width: `${projectProgress}%`, height: '100%', background: projectProgress === 100 ? '#00C471' : kpiItem.brandColor, borderRadius: 2 }} />
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: projectProgress === 100 ? '#00C471' : '#6B7684' }}>
+                                {project.projectTasks.filter(t => t.completed).length}/{project.projectTasks.length}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* 오른쪽: 프로젝트 상세 */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {selectedProjectData ? (
+                  <>
+                    {/* 프로젝트 헤더 */}
+                    <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB', background: 'white' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#191F28', margin: 0 }}>{selectedProjectData.title}</h2>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ padding: '6px 12px', borderRadius: 8, background: `${STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.color}15`, color: STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.color, fontSize: 13, fontWeight: 600 }}>
+                            {STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.label}
+                          </span>
+                          <button 
+                            onClick={() => {
+                              onClose();
+                              onOpenProject(selectedProjectData);
+                            }}
+                            style={{ padding: '8px 14px', background: '#F2F4F6', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}
+                          >
+                            상세 편집 ↗
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <span style={{ fontSize: 13, color: '#8B95A1' }}>📅 등록: {selectedProjectData.createdDate}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                          <span style={{ fontSize: 13, color: '#8B95A1' }}>진행률</span>
+                          <div style={{ flex: 1, maxWidth: 200, height: 8, background: '#E5E8EB', borderRadius: 4, overflow: 'hidden' }}>
+                            <div style={{ width: `${selectedProjectData.projectTasks.length > 0 ? Math.round((selectedProjectData.projectTasks.filter(t => t.completed).length / selectedProjectData.projectTasks.length) * 100) : 0}%`, height: '100%', background: kpiItem.brandColor, borderRadius: 4 }} />
+                          </div>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: kpiItem.brandColor }}>
+                            {selectedProjectData.projectTasks.filter(t => t.completed).length}/{selectedProjectData.projectTasks.length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* 탭 메뉴 */}
+                    <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #E5E8EB', background: 'white', padding: '0 24px' }}>
+                      {[
+                        { id: 'tasks', label: '하위업무', count: selectedProjectData.projectTasks.length },
+                        { id: 'comments', label: '댓글', count: selectedProjectData.comments?.length || 0 },
+                        { id: 'meetings', label: '회의록', count: (meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProjectData.id)).length }
+                      ].map(tab => (
+                        <button 
+                          key={tab.id}
+                          onClick={() => setDetailTab(tab.id)}
+                          style={{ 
+                            padding: '14px 20px', 
+                            background: 'transparent', 
+                            border: 'none', 
+                            borderBottom: detailTab === tab.id ? `3px solid ${kpiItem.brandColor}` : '3px solid transparent',
+                            color: detailTab === tab.id ? kpiItem.brandColor : '#8B95A1', 
+                            fontSize: 14, 
+                            fontWeight: 600, 
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6
+                          }}
+                        >
+                          {tab.label}
+                          <span style={{ 
+                            padding: '2px 8px', 
+                            borderRadius: 10, 
+                            background: detailTab === tab.id ? `${kpiItem.brandColor}15` : '#F2F4F6', 
+                            fontSize: 12, 
+                            fontWeight: 700 
+                          }}>{tab.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* 탭 콘텐츠 */}
+                    <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#F7F8FA' }}>
+                      {detailTab === 'tasks' && (
+                        <div>
+                          {/* 업무 추가 버튼 */}
+                          <button 
+                            onClick={() => handleAddTask(selectedProjectData.id)}
+                            style={{ 
+                              width: '100%', 
+                              marginBottom: 16, 
+                              padding: '14px', 
+                              background: 'white', 
+                              border: `2px dashed ${kpiItem.brandColor}40`, 
+                              borderRadius: 12, 
+                              color: kpiItem.brandColor, 
+                              fontSize: 14, 
+                              fontWeight: 600, 
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 8
+                            }}
+                          >
+                            <Icon name="plus" size={18} color={kpiItem.brandColor} /> 하위업무 추가
+                          </button>
+                          
+                          {/* 업무 리스트 */}
+                          {selectedProjectData.projectTasks.length === 0 ? (
+                            <div style={{ padding: 40, textAlign: 'center', color: '#8B95A1' }}>
+                              <p style={{ fontSize: 14 }}>등록된 업무가 없습니다</p>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {selectedProjectData.projectTasks.map(task => {
+                                const member = TEAM_MEMBERS.find(m => m.id === task.memberId);
+                                return (
+                                  <div 
+                                    key={task.id} 
+                                    style={{ 
+                                      padding: '14px 16px', 
+                                      background: 'white', 
+                                      borderRadius: 12, 
+                                      border: `1px solid ${task.completed ? '#00C47130' : '#E5E8EB'}`,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 12
+                                    }}
+                                  >
+                                    <input 
+                                      type="checkbox" 
+                                      checked={task.completed} 
+                                      onChange={() => toggleTaskComplete(task.id)}
+                                      style={{ width: 20, height: 20, cursor: 'pointer', accentColor: kpiItem.brandColor }}
+                                    />
+                                    <div style={{ flex: 1 }}>
+                                      <span style={{ 
+                                        fontSize: 15, 
+                                        fontWeight: 500,
+                                        color: task.completed ? '#00C471' : '#191F28',
+                                        textDecoration: task.completed ? 'line-through' : 'none'
+                                      }}>{task.title}</span>
+                                      {task.memo && (
+                                        <p style={{ fontSize: 13, color: '#8B95A1', marginTop: 4 }}>{task.memo}</p>
+                                      )}
+                                    </div>
+                                    {member && (
+                                      <div style={{ 
+                                        width: 28, 
+                                        height: 28, 
+                                        borderRadius: '50%', 
+                                        background: member.color, 
+                                        color: 'white', 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        justifyContent: 'center', 
+                                        fontSize: 11, 
+                                        fontWeight: 700 
+                                      }}>{member.name.charAt(0)}</div>
+                                    )}
+                                    {task.date && (
+                                      <span style={{ fontSize: 12, color: '#8B95A1' }}>{task.date}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {detailTab === 'comments' && (
+                        <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
+                          <p>댓글 {selectedProjectData.comments?.length || 0}개</p>
+                          <p style={{ fontSize: 13, marginTop: 8 }}>"상세 편집" 버튼을 클릭하여 댓글을 확인하세요</p>
+                        </div>
+                      )}
+                      
+                      {detailTab === 'meetings' && (
+                        <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
+                          <p>회의록 {(meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProjectData.id)).length}개</p>
+                          <p style={{ fontSize: 13, marginTop: 8 }}>"상세 편집" 버튼을 클릭하여 회의록을 확인하세요</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B95A1' }}>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>👈</div>
+                      <p style={{ fontSize: 16 }}>왼쪽에서 프로젝트를 선택하세요</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
