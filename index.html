@@ -1613,7 +1613,7 @@
               <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
+              <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} kpiBrands={kpiBrands} setKpiBrands={setKpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'onboarding' ? 'flex' : 'none', flexDirection: 'column' }}>
               <ManualTab currentUser={currentUser} />
@@ -5876,10 +5876,12 @@
     };
 
     // ============ KPI 대시보드 탭 컴포넌트 ============
-    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null, projects = [], tasks = [], onOpenProject }) {
+    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null, projects = [], tasks = [], onOpenProject, kpiBrands = {}, setKpiBrands }) {
       const [companyGoal, setCompanyGoal] = useState('');
       const [teamGoal, setTeamGoal] = useState('');
-      const [brands, setBrands] = useState({});
+      // props로 받은 kpiBrands를 사용, 내부 brands state는 백업용
+      const brands = kpiBrands;
+      const setBrands = setKpiBrands || (() => {});
       const [kpiTeamMembers, setKpiTeamMembers] = useState({});
       const [loading, setLoading] = useState(true);
       const [currentPage, setCurrentPage] = useState(initialPage);
@@ -5905,29 +5907,13 @@
           })
         );
         
-        // 브랜드 실시간 구독
-        unsubscribes.push(
-          KPIStorageService.subscribeToBrands((data) => {
-            const brandsData = data || {};
-            setBrands(brandsData);
-            
-            // 브랜드 데이터가 있으면 분기별 업무도 실시간 구독
-            if (Object.keys(brandsData).length > 0) {
-              if (quarterPlansUnsubscribe) quarterPlansUnsubscribe();
-              quarterPlansUnsubscribe = KPIStorageService.subscribeToAllQuarterPlans(
-                Object.keys(brandsData),
-                (plansData) => setAllQuarterPlans(plansData)
-              );
-            }
-            
-            // 초기 데이터가 없으면 샘플 데이터 생성
-            if (!Object.keys(brandsData).length) {
-              initializeSampleData();
-            }
-            
-            setLoading(false);
-          })
-        );
+        // 분기별 업무 실시간 구독 (kpiBrands가 있을 때)
+        if (Object.keys(kpiBrands).length > 0) {
+          quarterPlansUnsubscribe = KPIStorageService.subscribeToAllQuarterPlans(
+            Object.keys(kpiBrands),
+            (plansData) => setAllQuarterPlans(plansData)
+          );
+        }
         
         // 팀원 실시간 구독
         unsubscribes.push(
@@ -5936,12 +5922,19 @@
           })
         );
         
+        // 초기 데이터가 없으면 샘플 데이터 생성
+        if (!Object.keys(kpiBrands).length) {
+          initializeSampleData();
+        }
+        
+        setLoading(false);
+        
         // 컴포넌트 언마운트 시 구독 해제
         return () => {
           unsubscribes.forEach(unsub => unsub && unsub());
           if (quarterPlansUnsubscribe) quarterPlansUnsubscribe();
         };
-      }, []);
+      }, [kpiBrands]);
 
       // initialBrandId가 있고 brands가 로드되면 해당 브랜드 선택
       useEffect(() => {
