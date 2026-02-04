@@ -1280,10 +1280,6 @@
           children: [
             { id: 'growthboard', label: '그로스보드', icon: 'layout' },
             { id: 'kpi', label: 'KPI 대시보드', icon: 'target', isNew: true },
-            { id: 'brand-pour-method', label: 'POUR공법', icon: 'chart', isNew: true },
-            { id: 'brand-pour-solution', label: 'POUR솔루션', icon: 'chart', isNew: true },
-            { id: 'brand-apartment-square', label: '아파트스퀘어', icon: 'chart', isNew: true },
-            { id: 'brand-automation-system', label: '자동화&시스템화', icon: 'chart', isNew: true },
           ]
         },
         {
@@ -1618,18 +1614,6 @@
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
               <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
-            </div>
-            <div style={{ flex: 1, display: activeTab === 'brand-pour-method' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-method" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
-            </div>
-            <div style={{ flex: 1, display: activeTab === 'brand-pour-solution' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="pour-solution" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
-            </div>
-            <div style={{ flex: 1, display: activeTab === 'brand-apartment-square' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="apartment-square" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
-            </div>
-            <div style={{ flex: 1, display: activeTab === 'brand-automation-system' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="brand-detail" initialBrandId="automation-system" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'onboarding' ? 'flex' : 'none', flexDirection: 'column' }}>
               <ManualTab currentUser={currentUser} />
@@ -4425,7 +4409,14 @@
         return snapshot.val();
       },
       async saveBrand(brandId, data) {
-        await database.ref(`kpi/brands/${brandId}`).set(data);
+        console.log('[KPIStorageService] saveBrand 호출:', brandId, data);
+        try {
+          await database.ref(`kpi/brands/${brandId}`).set(data);
+          console.log('[KPIStorageService] saveBrand 성공');
+        } catch (error) {
+          console.error('[KPIStorageService] saveBrand 실패:', error);
+          throw error;
+        }
       },
       async getBrands() {
         const snapshot = await database.ref('kpi/brands').once('value');
@@ -4465,7 +4456,11 @@
       },
       subscribeToBrands(callback) {
         const ref = database.ref('kpi/brands');
-        ref.on('value', snapshot => callback(snapshot.val() || {}));
+        ref.on('value', snapshot => {
+          const data = snapshot.val() || {};
+          console.log('[KPIStorageService] subscribeToBrands 데이터 수신:', Object.keys(data), data['pour-method']?.kpis?.[0]?.items?.length);
+          callback(data);
+        });
         return () => ref.off('value');
       },
       subscribeToTeamMembers(callback) {
@@ -4567,6 +4562,10 @@
       const [expanded, setExpanded] = useState(true);
       const [editingKpiId, setEditingKpiId] = useState(null);
       const [editKpiName, setEditKpiName] = useState('');
+      const [expandedKpiId, setExpandedKpiId] = useState(null); // 아코디언용
+      const [editingItemId, setEditingItemId] = useState(null);
+      const [editItemName, setEditItemName] = useState('');
+      const [newItemName, setNewItemName] = useState('');
       
       // 후행지표별 progress 계산 (연동된 프로젝트 기반)
       const getItemProgress = (kpiId, itemId) => {
@@ -4596,7 +4595,8 @@
         ? Math.round(brand.kpis.reduce((sum, kpi) => sum + getKpiProgress(kpi), 0) / brand.kpis.length)
         : 0;
 
-      const startEditKpi = (kpi) => {
+      const startEditKpi = (e, kpi) => {
+        e.stopPropagation();
         setEditingKpiId(kpi.id);
         setEditKpiName(kpi.name);
       };
@@ -4612,6 +4612,72 @@
       const cancelEdit = () => {
         setEditingKpiId(null);
         setEditKpiName('');
+      };
+      
+      // 후행지표 추가
+      const addItem = async (kpiId) => {
+        if (!newItemName.trim()) return;
+        try {
+          const allBrands = await KPIStorageService.getBrands();
+          const currentBrand = allBrands[brand.id];
+          if (!currentBrand) return;
+          
+          const updatedKpis = currentBrand.kpis?.map(kpi => {
+            if (kpi.id == kpiId) {
+              return { ...kpi, items: [...(kpi.items || []), { id: Date.now(), name: newItemName.trim(), progress: 0 }] };
+            }
+            return kpi;
+          });
+          
+          await KPIStorageService.saveBrand(brand.id, { ...currentBrand, kpis: updatedKpis });
+          setNewItemName('');
+        } catch (error) {
+          console.error('후행지표 추가 오류:', error);
+        }
+      };
+      
+      // 후행지표 수정
+      const saveItemName = async (kpiId, itemId) => {
+        if (!editItemName.trim()) return;
+        try {
+          const allBrands = await KPIStorageService.getBrands();
+          const currentBrand = allBrands[brand.id];
+          if (!currentBrand) return;
+          
+          const updatedKpis = currentBrand.kpis?.map(kpi => {
+            if (kpi.id == kpiId) {
+              return { ...kpi, items: kpi.items?.map(item => item.id == itemId ? { ...item, name: editItemName.trim() } : item) };
+            }
+            return kpi;
+          });
+          
+          await KPIStorageService.saveBrand(brand.id, { ...currentBrand, kpis: updatedKpis });
+          setEditingItemId(null);
+          setEditItemName('');
+        } catch (error) {
+          console.error('후행지표 수정 오류:', error);
+        }
+      };
+      
+      // 후행지표 삭제
+      const deleteItem = async (kpiId, itemId) => {
+        if (!confirm('이 후행지표를 삭제하시겠습니까?')) return;
+        try {
+          const allBrands = await KPIStorageService.getBrands();
+          const currentBrand = allBrands[brand.id];
+          if (!currentBrand) return;
+          
+          const updatedKpis = currentBrand.kpis?.map(kpi => {
+            if (kpi.id == kpiId) {
+              return { ...kpi, items: kpi.items?.filter(item => item.id != itemId) };
+            }
+            return kpi;
+          });
+          
+          await KPIStorageService.saveBrand(brand.id, { ...currentBrand, kpis: updatedKpis });
+        } catch (error) {
+          console.error('후행지표 삭제 오류:', error);
+        }
       };
 
       return (
@@ -4657,11 +4723,16 @@
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16 }}>
                 {brand.kpis.map(kpi => {
                   const kpiProgress = getKpiProgress(kpi);
+                  const isExpanded = expandedKpiId === kpi.id;
                   return (
-                  <div key={kpi.id} style={{ padding: 12, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                  <div key={kpi.id} style={{ background: 'white', borderRadius: 8, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                    {/* KPI 헤더 - 클릭하면 아코디언 펼침 */}
+                    <div 
+                      onClick={() => setExpandedKpiId(isExpanded ? null : kpi.id)}
+                      style={{ padding: 12, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+                    >
                       {editingKpiId === kpi.id ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }} onClick={(e) => e.stopPropagation()}>
                           <input
                             type="text"
                             value={editKpiName}
@@ -4677,20 +4748,98 @@
                           <button onClick={cancelEdit} style={{ padding: '6px 10px', background: '#F2F4F6', color: '#6B7684', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>취소</button>
                         </div>
                       ) : (
-                        <span 
-                          onClick={() => startEditKpi(kpi)} 
-                          style={{ fontSize: 13, fontWeight: 600, color: '#191F28', flex: 1, cursor: 'pointer', padding: '4px 6px', borderRadius: 4, marginLeft: -6 }}
-                          className="kpi-name-editable"
-                          title="클릭하여 수정"
-                        >
-                          {kpi.name}
-                        </span>
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                            <span style={{ fontSize: 12, color: '#8B95A1', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                            <span 
+                              onDoubleClick={(e) => startEditKpi(e, kpi)} 
+                              style={{ fontSize: 13, fontWeight: 600, color: '#191F28', flex: 1, padding: '4px 6px', borderRadius: 4 }}
+                              className="kpi-name-editable"
+                              title="더블클릭하여 수정"
+                            >
+                              {kpi.name}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: kpiProgress === 100 ? '#00C471' : brand.color }}>{kpiProgress}%</span>
+                        </>
                       )}
-                      <span style={{ fontSize: 15, fontWeight: 700, color: kpiProgress === 100 ? '#00C471' : brand.color }}>{kpiProgress}%</span>
                     </div>
-                    <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ width: `${kpiProgress}%`, height: '100%', background: kpiProgress === 100 ? '#00C471' : brand.color, borderRadius: 2, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                    
+                    {/* 프로그레스 바 */}
+                    <div style={{ padding: '0 12px 12px 12px' }}>
+                      <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ width: `${kpiProgress}%`, height: '100%', background: kpiProgress === 100 ? '#00C471' : brand.color, borderRadius: 2, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                      </div>
                     </div>
+                    
+                    {/* 아코디언 - 후행지표 목록 */}
+                    {isExpanded && (
+                      <div style={{ padding: '0 12px 12px 12px', background: '#F9FAFB', borderTop: '1px solid #E5E8EB' }}>
+                        <div style={{ paddingTop: 12 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8 }}>후행지표 ({kpi.items?.length || 0})</div>
+                          
+                          {/* 후행지표 목록 */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {kpi.items?.map(item => {
+                              const itemProgress = getItemProgress(kpi.id, item.id);
+                              return (
+                                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'white', borderRadius: 6, border: '1px solid #E5E8EB' }}>
+                                  {editingItemId === item.id ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                                      <input
+                                        type="text"
+                                        value={editItemName}
+                                        onChange={(e) => setEditItemName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') saveItemName(kpi.id, item.id);
+                                          if (e.key === 'Escape') { setEditingItemId(null); setEditItemName(''); }
+                                        }}
+                                        autoFocus
+                                        style={{ flex: 1, padding: '4px 8px', fontSize: 12, border: '1px solid #3182F6', borderRadius: 4, outline: 'none' }}
+                                      />
+                                      <button onClick={() => saveItemName(kpi.id, item.id)} style={{ padding: '4px 8px', background: '#3182F6', color: 'white', border: 'none', borderRadius: 4, fontSize: 10, cursor: 'pointer' }}>저장</button>
+                                      <button onClick={() => { setEditingItemId(null); setEditItemName(''); }} style={{ padding: '4px 8px', background: '#F2F4F6', color: '#6B7684', border: 'none', borderRadius: 4, fontSize: 10, cursor: 'pointer' }}>취소</button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <span 
+                                        onClick={() => { setEditingItemId(item.id); setEditItemName(item.name); }}
+                                        style={{ flex: 1, fontSize: 12, color: '#4E5968', cursor: 'pointer' }}
+                                        title="클릭하여 수정"
+                                      >
+                                        {item.name}
+                                      </span>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: itemProgress === 100 ? '#00C471' : brand.color }}>{itemProgress}%</span>
+                                      <button 
+                                        onClick={() => deleteItem(kpi.id, item.id)}
+                                        style={{ padding: '2px 6px', background: '#FEE4E2', border: 'none', borderRadius: 4, color: '#F04452', fontSize: 11, cursor: 'pointer' }}
+                                      >×</button>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* 후행지표 추가 */}
+                          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                            <input
+                              type="text"
+                              value={newItemName}
+                              onChange={(e) => setNewItemName(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') addItem(kpi.id); }}
+                              placeholder="새 후행지표 입력..."
+                              style={{ flex: 1, padding: '6px 10px', fontSize: 12, border: '1px dashed #D1D5DB', borderRadius: 6, outline: 'none' }}
+                            />
+                            <button 
+                              onClick={() => addItem(kpi.id)}
+                              disabled={!newItemName.trim()}
+                              style={{ padding: '6px 12px', background: newItemName.trim() ? brand.color : '#E5E8EB', color: newItemName.trim() ? 'white' : '#8B95A1', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: newItemName.trim() ? 'pointer' : 'default' }}
+                            >+ 추가</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   );
                 })}
@@ -5002,34 +5151,67 @@
         if (updatedKpis) {
           const updatedBrand = { ...brand, kpis: updatedKpis };
           await KPIStorageService.saveBrand(brand.id, updatedBrand);
-          if (onBrandUpdate) {
-            const brandsData = await KPIStorageService.getBrands();
-            onBrandUpdate(brandsData);
-          }
+          // 실시간 구독이 자동으로 업데이트
         }
       };
 
       const deleteKpiItem = async (kpiId, itemId) => {
+        console.log('deleteKpiItem 호출:', { kpiId, itemId, brandId: brand.id, kpiIdType: typeof kpiId, itemIdType: typeof itemId });
         if (!confirm('이 후행지표를 삭제하시겠습니까?')) return;
-        const updatedKpis = brand.kpis?.map(kpi => {
-          if (kpi.id === kpiId) return { ...kpi, items: kpi.items?.filter(item => item.id !== itemId) };
-          return kpi;
-        });
-        if (updatedKpis) {
-          const updatedBrand = { ...brand, kpis: updatedKpis };
+        
+        if (!brand.id) {
+          alert('브랜드 ID가 없습니다. 페이지를 새로고침 해주세요.');
+          return;
+        }
+        
+        try {
+          // Firebase에서 최신 브랜드 데이터 가져오기
+          const allBrands = await KPIStorageService.getBrands();
+          const currentBrand = allBrands[brand.id];
+          
+          if (!currentBrand) {
+            alert('브랜드 데이터를 찾을 수 없습니다.');
+            return;
+          }
+          
+          console.log('현재 Firebase 브랜드:', currentBrand);
+          console.log('삭제할 kpiId:', kpiId, '삭제할 itemId:', itemId);
+          
+          // 현재 items 확인
+          currentBrand.kpis?.forEach(kpi => {
+            console.log(`KPI ${kpi.id} (type: ${typeof kpi.id}) items:`, kpi.items?.map(i => ({ id: i.id, type: typeof i.id, name: i.name })));
+          });
+          
+          const updatedKpis = currentBrand.kpis?.map(kpi => {
+            // 느슨한 비교 (==) 사용하여 타입 차이 무시
+            if (kpi.id == kpiId) {
+              const filteredItems = kpi.items?.filter(item => item.id != itemId);
+              console.log(`KPI ${kpi.id} 필터링: ${kpi.items?.length} -> ${filteredItems?.length}`);
+              return { ...kpi, items: filteredItems };
+            }
+            return kpi;
+          });
+          
+          const updatedBrand = { ...currentBrand, kpis: updatedKpis };
+          console.log('저장할 브랜드:', updatedBrand);
           await KPIStorageService.saveBrand(brand.id, updatedBrand);
+          console.log('Firebase 저장 완료');
+          
+          // 분기별 계획에서 연결 해제
           const updatedPlans = { ...quarterPlans };
           Object.keys(updatedPlans).forEach(quarter => {
             updatedPlans[quarter] = updatedPlans[quarter].map(task => {
-              if (task.linkedKpiItem?.kpiId === kpiId && task.linkedKpiItem?.itemId === itemId) return { ...task, linkedKpiItem: null };
+              if (task.linkedKpiItem?.kpiId == kpiId && task.linkedKpiItem?.itemId == itemId) {
+                return { ...task, linkedKpiItem: null };
+              }
               return task;
             });
           });
           await saveQuarterPlans(updatedPlans);
-          if (onBrandUpdate) {
-            const brandsData = await KPIStorageService.getBrands();
-            onBrandUpdate(brandsData);
-          }
+          
+        } catch (error) {
+          console.error('후행지표 삭제 오류:', error);
+          alert('삭제 중 오류가 발생했습니다: ' + error.message);
         }
       };
 
@@ -5047,10 +5229,7 @@
         if (updatedKpis) {
           const updatedBrand = { ...brand, kpis: updatedKpis };
           await KPIStorageService.saveBrand(brand.id, updatedBrand);
-          if (onBrandUpdate) {
-            const brandsData = await KPIStorageService.getBrands();
-            onBrandUpdate(brandsData);
-          }
+          // 실시간 구독이 자동으로 업데이트
         }
       };
 
@@ -5155,8 +5334,10 @@
                                 onClick={(e) => { 
                                   e.stopPropagation(); 
                                   e.preventDefault();
+                                  console.log('삭제 클릭:', kpi.id, item.id);
                                   deleteKpiItem(kpi.id, item.id); 
-                                }} 
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
                                 style={{ 
                                   width: 28, 
                                   height: 28, 
@@ -5171,8 +5352,11 @@
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
-                                  flexShrink: 0
+                                  flexShrink: 0,
+                                  zIndex: 10,
+                                  position: 'relative'
                                 }}
+                                title="후행지표 삭제"
                               >×</button>
                             </div>
                           );
@@ -6098,7 +6282,8 @@
               </div>
             ) : currentPage === 'brand-detail' && selectedBrand ? (
               <KPIBrandDetailPage 
-                brand={brands[selectedBrand.id] || selectedBrand} 
+                key={selectedBrand.id + '-' + JSON.stringify(brands[selectedBrand.id]?.kpis?.map(k => k.items?.length))}
+                brand={{ ...(brands[selectedBrand.id] || selectedBrand), id: selectedBrand.id }} 
                 onBack={() => { setCurrentPage('main'); setSelectedBrand(null); }} 
                 onBrandUpdate={setBrands} 
                 kpiTeamMembers={kpiTeamMembers} 
@@ -10004,15 +10189,21 @@
         return [...new Set(tasks.filter(t => t.projectId === projectId).map(t => t.memberId))];
       };
       
-      // 내 프로젝트: 내가 담당자(memberIds)로 지정되어 있고 나 혼자인 프로젝트
+      // 내 프로젝트: 내가 담당자(memberIds)로 지정되어 있고 나 혼자인 프로젝트 (KPI 연동 프로젝트 제외)
       const myProjects = filteredProjects.filter(p => {
+        // KPI 연동된 프로젝트는 "내 KPI 업무"에서 표시하므로 제외
+        if (p.linkedKpi) return false;
+        
         const memberIds = p.memberIds || [];
         if (!memberIds.includes(currentUser.id)) return false;
         return memberIds.length === 1;
       });
       
-      // 협력 프로젝트: 내가 담당자이고 다른 사람도 담당자인 프로젝트
+      // 협력 프로젝트: 내가 담당자이고 다른 사람도 담당자인 프로젝트 (KPI 연동 프로젝트 제외)
       const collabProjects = filteredProjects.filter(p => {
+        // KPI 연동된 프로젝트는 "내 KPI 업무"에서 표시하므로 제외
+        if (p.linkedKpi) return false;
+        
         const memberIds = p.memberIds || [];
         if (!memberIds.includes(currentUser.id)) return false;
         return memberIds.length > 1;
@@ -10621,7 +10812,7 @@
                                                 ) : null;
                                               })()}
                                             </div>
-                                            <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{project.title}</span>
+                                            <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{item?.name || '후행지표'}</span>
                                           </div>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                             <span style={{ padding: '3px 8px', borderRadius: 6, background: `${status?.color}15`, color: status?.color, fontSize: 11, fontWeight: 600 }}>{status?.label}</span>
@@ -10631,8 +10822,6 @@
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 42 }}>
                                           <span style={{ fontSize: 11, color: '#8B95A1' }}>📊</span>
                                           <span style={{ fontSize: 12, color: '#6B7684' }}>{kpi?.name}</span>
-                                          <span style={{ fontSize: 11, color: '#B0B8C1' }}>›</span>
-                                          <span style={{ fontSize: 12, color: kpiBrand.color, fontWeight: 500 }}>{item?.name}</span>
                                         </div>
                                       </div>
                                     );
@@ -10802,31 +10991,55 @@
                                         const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
                                         const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
                                         
+                                        // 프로젝트 추가 함수
+                                        const handleAddProject = (e) => {
+                                          e.stopPropagation();
+                                          const title = prompt('새 프로젝트명:');
+                                          if (title && title.trim()) {
+                                            const newProject = {
+                                              id: Date.now(),
+                                              title: title.trim(),
+                                              description: '',
+                                              brandId: brandId === 'pour-solution' ? 2 : brandId === 'pour-method' ? 1 : brandId === 'apartment-square' ? 3 : 4,
+                                              status: 'progress',
+                                              creatorId: currentUser.id,
+                                              memberIds: [currentUser.id],
+                                              createdDate: new Date().toISOString().split('T')[0],
+                                              comments: [],
+                                              linkedKpi: {
+                                                brandId: brandId,
+                                                kpiId: kpi.id,
+                                                itemId: item.id
+                                              }
+                                            };
+                                            setProjects(prev => [...prev, newProject]);
+                                          }
+                                        };
+                                        
                                         return (
                                           <div 
                                             key={item.id}
                                             onClick={() => {
-                                              if (itemProjects.length > 0) {
-                                                setSelectedKpiItem({
-                                                  brandId: brandId,
-                                                  kpiId: kpi.id,
-                                                  itemId: item.id,
-                                                  itemName: item.name,
-                                                  kpiName: kpi.name,
-                                                  brandName: brand.name,
-                                                  brandColor: brand.color
-                                                });
-                                              }
+                                              // 프로젝트 유무와 관계없이 전체화면 뷰 열기
+                                              setSelectedKpiItem({
+                                                brandId: brandId,
+                                                kpiId: kpi.id,
+                                                itemId: item.id,
+                                                itemName: item.name,
+                                                kpiName: kpi.name,
+                                                brandName: brand.name,
+                                                brandColor: brand.color
+                                              });
                                             }}
                                             style={{ 
                                               padding: '10px 12px', 
                                               background: 'white', 
                                               borderRadius: 8, 
                                               border: `1px solid ${itemProjects.length > 0 ? brand.color + '40' : '#E5E8EB'}`,
-                                              cursor: itemProjects.length > 0 ? 'pointer' : 'default',
+                                              cursor: 'pointer',
                                               transition: 'all 0.15s'
                                             }}
-                                            onMouseEnter={(e) => { if (itemProjects.length > 0) { e.currentTarget.style.borderColor = brand.color; e.currentTarget.style.background = `${brand.color}05`; }}}
+                                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = brand.color; e.currentTarget.style.background = `${brand.color}05`; }}
                                             onMouseLeave={(e) => { e.currentTarget.style.borderColor = itemProjects.length > 0 ? brand.color + '40' : '#E5E8EB'; e.currentTarget.style.background = 'white'; }}
                                           >
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -11342,12 +11555,36 @@
                               borderRadius: 12, 
                               border: isSelected ? `2px solid ${kpiItem.brandColor}` : '2px solid transparent',
                               cursor: 'pointer',
-                              transition: 'all 0.15s'
+                              transition: 'all 0.15s',
+                              position: 'relative'
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                               <div style={{ width: 10, height: 10, borderRadius: '50%', background: projectProgress === 100 ? '#00C471' : projectProgress > 0 ? '#F59E0B' : '#E5E8EB' }} />
                               <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{project.title}</span>
+                              {/* 삭제 버튼 */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (confirm(`"${project.title}" 프로젝트를 삭제하시겠습니까?`)) {
+                                    // 다른 프로젝트 찾기 (삭제할 프로젝트 제외)
+                                    const otherProject = linkedProjects.find(p => p.id !== project.id);
+                                    
+                                    // 프로젝트 삭제 (soft delete)
+                                    setProjects(prev => prev.map(p => 
+                                      p.id === project.id ? { ...p, deletedAt: new Date().toISOString() } : p
+                                    ));
+                                    
+                                    // 현재 선택된 프로젝트가 삭제되면 다른 프로젝트 선택
+                                    if (selectedProjectId === project.id) {
+                                      setSelectedProjectId(otherProject?.id || null);
+                                    }
+                                  }
+                                }}
+                                style={{ padding: '2px 6px', background: '#FEE4E2', border: 'none', borderRadius: 4, color: '#F04452', fontSize: 11, cursor: 'pointer', opacity: 0.7 }}
+                                title="프로젝트 삭제"
+                              >×</button>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{ flex: 1, height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
@@ -11372,10 +11609,44 @@
                     {/* 프로젝트 헤더 */}
                     <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB', background: 'white' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#191F28', margin: 0 }}>{selectedProjectData.title}</h2>
-                        <span style={{ padding: '6px 12px', borderRadius: 8, background: `${STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.color}15`, color: STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.color, fontSize: 13, fontWeight: 600 }}>
-                          {STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.label}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                          <h2 
+                            onDoubleClick={() => {
+                              const newTitle = prompt('프로젝트명 수정:', selectedProjectData.title);
+                              if (newTitle && newTitle.trim() && newTitle.trim() !== selectedProjectData.title) {
+                                setProjects(prev => prev.map(p => p.id === selectedProjectData.id ? { ...p, title: newTitle.trim() } : p));
+                              }
+                            }}
+                            style={{ fontSize: 22, fontWeight: 800, color: '#191F28', margin: 0, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, marginLeft: -8 }}
+                            className="kpi-name-editable"
+                            title="더블클릭하여 프로젝트명 수정"
+                          >{selectedProjectData.title}</h2>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ padding: '6px 12px', borderRadius: 8, background: `${STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.color}15`, color: STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.color, fontSize: 13, fontWeight: 600 }}>
+                            {STATUS_OPTIONS.find(s => s.id === selectedProjectData.status)?.label}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm(`"${selectedProjectData.title}" 프로젝트를 삭제하시겠습니까?`)) {
+                                // 다른 프로젝트 찾기
+                                const otherProject = linkedProjects.find(p => p.id !== selectedProjectData.id);
+                                
+                                // 프로젝트 삭제
+                                setProjects(prev => prev.map(p => 
+                                  p.id === selectedProjectData.id ? { ...p, deletedAt: new Date().toISOString() } : p
+                                ));
+                                
+                                // 다른 프로젝트 선택
+                                setSelectedProjectId(otherProject?.id || null);
+                              }
+                            }}
+                            style={{ padding: '6px 12px', background: '#FEE4E2', border: 'none', borderRadius: 8, color: '#F04452', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            삭제
+                          </button>
+                        </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                         <span style={{ fontSize: 13, color: '#8B95A1' }}>📅 등록: {selectedProjectData.createdDate}</span>
@@ -11576,9 +11847,92 @@
                       )}
                       
                       {detailTab === 'comments' && (
-                        <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
-                          <p>댓글 {selectedProjectData.comments?.length || 0}개</p>
-                          <p style={{ fontSize: 13, marginTop: 8 }}>댓글 기능은 프로젝트 상세에서 이용해주세요</p>
+                        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                          {/* 댓글 입력 */}
+                          <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+                            <div style={{ width: 36, height: 36, borderRadius: '50%', background: currentUser.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+                              {currentUser.initial}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <textarea
+                                placeholder="댓글을 입력하세요..."
+                                id="kpi-comment-input"
+                                style={{ width: '100%', padding: 12, borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, resize: 'none', minHeight: 60 }}
+                              />
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                                <button
+                                  onClick={() => {
+                                    const input = document.getElementById('kpi-comment-input');
+                                    const text = input.value.trim();
+                                    if (text) {
+                                      const newComment = {
+                                        id: Date.now(),
+                                        memberId: currentUser.id,
+                                        text: text,
+                                        createdAt: new Date().toISOString()
+                                      };
+                                      setProjects(prev => prev.map(p => 
+                                        p.id === selectedProjectData.id 
+                                          ? { ...p, comments: [...(p.comments || []), newComment] }
+                                          : p
+                                      ));
+                                      input.value = '';
+                                    }
+                                  }}
+                                  style={{ padding: '8px 16px', background: kpiItem.brandColor, border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  댓글 작성
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* 댓글 목록 */}
+                          <div style={{ flex: 1, overflow: 'auto' }}>
+                            {(selectedProjectData.comments || []).length === 0 ? (
+                              <div style={{ textAlign: 'center', color: '#8B95A1', padding: 40 }}>
+                                <p style={{ fontSize: 14 }}>아직 댓글이 없습니다</p>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                {(selectedProjectData.comments || []).map(comment => {
+                                  const author = TEAM_MEMBERS.find(m => m.id === comment.memberId);
+                                  return (
+                                    <div key={comment.id} style={{ display: 'flex', gap: 12 }}>
+                                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: author?.color || '#8B95A1', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, flexShrink: 0 }}>
+                                        {author?.initial || '?'}
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                          <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{author?.name || '알 수 없음'}</span>
+                                          <span style={{ fontSize: 12, color: '#8B95A1' }}>
+                                            {new Date(comment.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                          </span>
+                                          {comment.memberId === currentUser.id && (
+                                            <button
+                                              onClick={() => {
+                                                if (confirm('이 댓글을 삭제하시겠습니까?')) {
+                                                  setProjects(prev => prev.map(p => 
+                                                    p.id === selectedProjectData.id 
+                                                      ? { ...p, comments: (p.comments || []).filter(c => c.id !== comment.id) }
+                                                      : p
+                                                  ));
+                                                }
+                                              }}
+                                              style={{ padding: '2px 6px', background: 'transparent', border: 'none', fontSize: 11, color: '#DC2626', cursor: 'pointer' }}
+                                            >
+                                              삭제
+                                            </button>
+                                          )}
+                                        </div>
+                                        <p style={{ fontSize: 14, color: '#4E5968', lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>{comment.text}</p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                       
@@ -12818,17 +13172,17 @@
               </div>
             )}
             
-            {/* 템플릿 선택 (새 프로젝트일 때만) */}
+            {/* 템플릿 선택 (새 프로젝트일 때만) - 강조 표시 */}
             {!isEdit && (
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
-                  업무 템플릿 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택 시 업무 자동 생성)</span>
+              <div style={{ marginBottom: 20, padding: 16, background: '#F0F9FF', borderRadius: 12, border: '1px solid #BAE6FD' }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 700, marginBottom: 12, color: '#0369A1' }}>
+                  📋 업무 템플릿 <span style={{ fontSize: 12, fontWeight: 500, color: '#0284C7' }}>(선택하면 업무가 자동 생성됩니다)</span>
                 </label>
                 {!form.brandId ? (
                   <p style={{ fontSize: 13, color: '#8B95A1', padding: '12px 0' }}>브랜드를 먼저 선택해주세요</p>
                 ) : (
                   <>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       {projectTemplates
                         .filter(t => !t.brandId || t.brandId === form.brandId)
                         .map(t => (
@@ -12836,29 +13190,41 @@
                             key={t.id} 
                             onClick={() => setForm({ ...form, templateId: form.templateId === t.id ? null : t.id })}
                             style={{ 
-                              padding: '10px 16px', 
-                              borderRadius: 10, 
-                              border: form.templateId === t.id ? `2px solid ${t.color}` : '1px solid #E5E8EB', 
+                              padding: '12px 20px', 
+                              borderRadius: 12, 
+                              border: form.templateId === t.id ? `2px solid ${t.color}` : '2px solid #E5E8EB', 
                               background: form.templateId === t.id ? `${t.color}15` : 'white', 
-                              color: form.templateId === t.id ? t.color : '#6B7684', 
-                              fontSize: 14, 
-                              fontWeight: 500,
-                              cursor: 'pointer'
+                              color: form.templateId === t.id ? t.color : '#4E5968', 
+                              fontSize: 15, 
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              boxShadow: form.templateId === t.id ? `0 2px 8px ${t.color}30` : 'none',
+                              transition: 'all 0.15s'
                             }}
                           >
                             📋 {t.name}
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 400, color: '#8B95A1', marginTop: 2 }}>
+                              {t.tasks?.length || 0}개 업무
+                            </span>
                           </button>
                         ))}
                       {projectTemplates.filter(t => !t.brandId || t.brandId === form.brandId).length === 0 && (
-                        <p style={{ fontSize: 13, color: '#8B95A1' }}>이 브랜드에 등록된 템플릿이 없습니다</p>
+                        <div style={{ padding: 20, textAlign: 'center', width: '100%' }}>
+                          <p style={{ fontSize: 13, color: '#8B95A1', marginBottom: 8 }}>이 브랜드에 등록된 템플릿이 없습니다</p>
+                          <p style={{ fontSize: 12, color: '#B0B8C1' }}>관리 → 템플릿 관리에서 추가할 수 있어요</p>
+                        </div>
                       )}
                     </div>
                     {form.templateId && (
-                      <div style={{ marginTop: 10, padding: 12, background: '#F7F8FA', borderRadius: 8 }}>
-                        <p style={{ fontSize: 12, color: '#6B7684', marginBottom: 6 }}>자동 생성될 업무:</p>
-                        {projectTemplates.find(t => t.id === form.templateId)?.tasks.map((task, idx) => (
-                          <p key={idx} style={{ fontSize: 13, color: '#191F28', marginBottom: 2 }}>☐ {task.title}</p>
-                        ))}
+                      <div style={{ marginTop: 12, padding: 14, background: 'white', borderRadius: 10, border: '1px solid #E5E8EB' }}>
+                        <p style={{ fontSize: 13, color: '#0369A1', fontWeight: 600, marginBottom: 8 }}>✨ 자동 생성될 업무:</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {projectTemplates.find(t => t.id === form.templateId)?.tasks.map((task, idx) => (
+                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4E5968' }}>
+                              <span style={{ color: '#00C471' }}>☐</span> {task.title}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </>
@@ -12866,7 +13232,7 @@
               </div>
             )}
             <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>담당자 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택)</span></label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{TEAM_MEMBERS.map(m => <button key={m.id} onClick={() => toggleMember(m.id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 8, border: (form.memberIds || []).includes(m.id) ? `2px solid ${m.color}` : '1px solid #E5E8EB', background: (form.memberIds || []).includes(m.id) ? `${m.color}15` : 'white' }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: m.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{m.initial}</div><span style={{ fontSize: 13, fontWeight: 500, color: (form.memberIds || []).includes(m.id) ? '#191F28' : '#6B7684' }}>{m.name}</span></button>)}</div></div>
-            <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>설명</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="프로젝트에 대한 설명" rows={5} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, resize: 'none', lineHeight: 1.6 }} /></div>
+            {isEdit && <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>설명</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="프로젝트에 대한 설명" rows={3} style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 15, resize: 'none', lineHeight: 1.6 }} /></div>}
             {isEdit && <div style={{ marginBottom: 20 }}><label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>상태</label><div style={{ display: 'flex', gap: 8 }}>{STATUS_OPTIONS.map(s => <button key={s.id} onClick={() => setForm({ ...form, status: s.id })} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, border: form.status === s.id ? `2px solid ${s.color}` : '1px solid #E5E8EB', background: form.status === s.id ? s.bg : 'white', color: form.status === s.id ? s.color : '#6B7684', fontSize: 14, fontWeight: 500 }}><Icon name={s.icon} size={16} color={form.status === s.id ? s.color : '#6B7684'} /> {s.label}</button>)}</div></div>}
             <div style={{ display: 'flex', gap: 12 }}><button onClick={onClose} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', background: 'white', fontSize: 15, fontWeight: 600, color: '#6B7684' }}>취소</button><button onClick={() => form.title.trim() && onSave({ ...project, ...form })} disabled={!form.title.trim()} style={{ flex: 1, padding: 16, borderRadius: 12, border: 'none', background: form.title.trim() ? '#3182F6' : '#E5E8EB', fontSize: 15, fontWeight: 600, color: form.title.trim() ? 'white' : '#8B95A1' }}>{isEdit ? '수정' : '만들기'}</button></div>
           </div>
