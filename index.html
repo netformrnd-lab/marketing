@@ -10265,24 +10265,13 @@
         return [...new Set(tasks.filter(t => t.projectId === projectId).map(t => t.memberId))];
       };
       
-      // 내 프로젝트: 내가 담당자(memberIds)로 지정되어 있고 나 혼자인 프로젝트 (KPI 연동 프로젝트 제외)
+      // 내 프로젝트: 내가 담당자(memberIds)로 지정되어 있는 모든 프로젝트 (KPI 연동 프로젝트 제외)
       const myProjects = filteredProjects.filter(p => {
         // KPI 연동된 프로젝트는 "내 KPI 업무"에서 표시하므로 제외
         if (hasAnyKpiLink(p)) return false;
         
         const memberIds = p.memberIds || [];
-        if (!memberIds.includes(currentUser.id)) return false;
-        return memberIds.length === 1;
-      });
-      
-      // 협력 프로젝트: 내가 담당자이고 다른 사람도 담당자인 프로젝트 (KPI 연동 프로젝트 제외)
-      const collabProjects = filteredProjects.filter(p => {
-        // KPI 연동된 프로젝트는 "내 KPI 업무"에서 표시하므로 제외
-        if (hasAnyKpiLink(p)) return false;
-        
-        const memberIds = p.memberIds || [];
-        if (!memberIds.includes(currentUser.id)) return false;
-        return memberIds.length > 1;
+        return memberIds.includes(currentUser.id);
       });
       
       // 팀 프로젝트: 내가 담당자가 아닌 프로젝트
@@ -10914,40 +10903,6 @@
                     </div>
                   </div>
                   
-                  {/* 협력 프로젝트 섹션 */}
-                  <div style={{ marginBottom: 24, position: 'relative', zIndex: 20 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon name="users" size={14} color="#F59E0B" />
-                      </div>
-                      <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>협력 프로젝트</h2>
-                      <span style={{ padding: '3px 10px', borderRadius: 12, background: '#FEF3C7', color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>{collabProjects.length}</span>
-                    </div>
-                    
-                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'visible' }}>
-                      {/* 테이블 헤더 */}
-                      {collabProjects.length > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '55px 1fr 70px 55px 80px 75px 28px', gap: 8, padding: '10px 16px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, color: '#8B95A1' }}>
-                          <span style={{ textAlign: 'center' }}>우선순위</span>
-                          <span>프로젝트명</span>
-                          <span style={{ textAlign: 'center' }}>상태</span>
-                          <span style={{ textAlign: 'center' }}>진행</span>
-                          <span style={{ textAlign: 'center' }}>담당</span>
-                          <span style={{ textAlign: 'center' }}>등록일</span>
-                          <span></span>
-                        </div>
-                      )}
-                      {collabProjects.length === 0 ? (
-                        <div style={{ padding: '32px 20px', textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>
-                          협력 중인 프로젝트가 없습니다
-                        </div>
-                      ) : (
-                        collabProjects.map((project, idx) => (
-                          <ProjectListItem key={project.id} project={project} isLast={idx === collabProjects.length - 1} />
-                        ))
-                      )}
-                    </div>
-                  </div>
                 </>
               );
             })()}
