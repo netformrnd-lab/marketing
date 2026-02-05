@@ -1610,7 +1610,7 @@
               <CalendarTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'growthboard' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} />
+              <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} fixedTasks={fixedTasks.filter(t => !t.deletedAt)} teamRequests={teamRequests.filter(r => !r.deletedAt)} meetings={meetings} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
               <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} kpiBrands={kpiBrands} setKpiBrands={setKpiBrands} />
@@ -11022,8 +11022,8 @@
                                 <div key={kpi.id} style={{ background: '#F9FAFB', borderRadius: 12, padding: 14, border: '1px solid #E5E8EB' }}>
                                   {/* KPI 헤더 */}
                                   <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: `2px solid ${brand.color}30` }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: brand.color, marginBottom: 4 }}>{kpi.name}</div>
-                                    <span style={{ fontSize: 11, color: '#8B95A1' }}>{kpi.items?.length || 0}개 후행지표</span>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: brand.color, marginBottom: 4 }}>{kpi.name}</div>
+                                    <span style={{ fontSize: 12, color: '#8B95A1' }}>{kpi.items?.length || 0}개 후행지표</span>
                                   </div>
                                   
                                   {/* 후행지표 목록 - 세로로 나열 */}
@@ -11031,11 +11031,8 @@
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       {kpi.items.map(item => {
                                         const itemProjects = brandProjects.filter(p => {
-                                          // 팀 KPI 메인에서는 linkedKpi(원본 연결) 기준으로만 표시
-                                          if (p.linkedKpi) {
-                                            if (p.linkedKpi.brandId === brandId && p.linkedKpi.kpiId == kpi.id && p.linkedKpi.itemId == item.id) return true;
-                                          }
-                                          return false;
+                                          // linkedKpi(원본) 또는 linkedKpis(추가 연동) 모두 표시
+                                          return isProjectLinkedTo(p, brandId, kpi.id, item.id);
                                         });
                                         const totalTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                                         const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
@@ -11093,8 +11090,8 @@
                                             onMouseLeave={(e) => { e.currentTarget.style.borderColor = itemProjects.length > 0 ? brand.color + '40' : '#E5E8EB'; e.currentTarget.style.background = 'white'; }}
                                           >
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                                              <span style={{ fontSize: 12, fontWeight: 500, color: '#191F28', flex: 1 }}>{item.name}</span>
-                                              <span style={{ fontSize: 12, fontWeight: 600, color: progress === 100 ? '#00C471' : (progress > 0 ? brand.color : '#B0B8C1'), marginLeft: 8 }}>{progress}%</span>
+                                              <span style={{ fontSize: 13, fontWeight: 500, color: '#191F28', flex: 1 }}>{item.name}</span>
+                                              <span style={{ fontSize: 13, fontWeight: 600, color: progress === 100 ? '#00C471' : (progress > 0 ? brand.color : '#B0B8C1'), marginLeft: 8 }}>{progress}%</span>
                                             </div>
                                             <div style={{ height: 3, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden', marginBottom: 6 }}>
                                               <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? '#00C471' : brand.color, borderRadius: 2 }} />
@@ -11102,53 +11099,38 @@
                                             {itemProjects.length > 0 ? (
                                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                                 {itemProjects.map(proj => {
-                                                  const projMember = TEAM_MEMBERS.find(m => m.id === (proj.memberIds || [])[0]);
+                                                  const projMembers = (proj.memberIds || []).map(mid => TEAM_MEMBERS.find(m => m.id === mid)).filter(Boolean);
+                                                  const isLinkedCopy = !(proj.linkedKpi?.brandId === brandId && proj.linkedKpi?.kpiId == kpi.id && proj.linkedKpi?.itemId == item.id);
                                                   return (
                                                     <div key={proj.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                                                      {/* 담당자 드롭다운 */}
-                                                      <div onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
-                                                        <select
-                                                          value={(proj.memberIds || [])[0] || ''}
-                                                          onChange={(e) => {
-                                                            e.stopPropagation();
-                                                            const memberId = e.target.value ? Number(e.target.value) : null;
-                                                            const updatedProject = {
-                                                              ...proj,
-                                                              memberIds: memberId ? [memberId] : [],
-                                                              creatorId: memberId || proj.creatorId
-                                                            };
-                                                            setProjects(prev => prev.map(p => p.id === proj.id ? updatedProject : p));
-                                                          }}
-                                                          style={{
-                                                            width: 26, height: 26, borderRadius: '50%',
-                                                            border: projMember ? 'none' : '2px dashed #D1D5DB',
-                                                            background: projMember ? projMember.color : '#F9FAFB',
-                                                            color: projMember ? 'white' : '#9CA3AF',
-                                                            fontSize: 10, fontWeight: 600,
-                                                            cursor: 'pointer',
-                                                            appearance: 'none',
-                                                            textAlign: 'center'
-                                                          }}
-                                                          title="담당자 설정"
-                                                        >
-                                                          <option value="">+</option>
-                                                          {TEAM_MEMBERS.map(m => (
-                                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                                          ))}
-                                                        </select>
-                                                        {projMember && (
+                                                      {/* 담당자들 (여러명) */}
+                                                      <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center' }}>
+                                                        {projMembers.length > 0 ? (
+                                                          projMembers.slice(0, 3).map((mem, mi) => (
+                                                            <div key={mem.id} style={{
+                                                              width: 26, height: 26, borderRadius: '50%',
+                                                              background: mem.color, color: 'white',
+                                                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                              fontSize: 10, fontWeight: 600,
+                                                              border: '2px solid white',
+                                                              marginLeft: mi > 0 ? -8 : 0
+                                                            }} title={mem.name}>{mem.initial}</div>
+                                                          ))
+                                                        ) : (
                                                           <div style={{
-                                                            position: 'absolute', top: 0, left: 0,
                                                             width: 26, height: 26, borderRadius: '50%',
-                                                            background: projMember.color, color: 'white',
+                                                            border: '2px dashed #D1D5DB', background: '#F9FAFB',
                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            fontSize: 10, fontWeight: 600,
-                                                            pointerEvents: 'none'
-                                                          }}>{projMember.initial}</div>
+                                                            fontSize: 12, color: '#9CA3AF'
+                                                          }}>+</div>
+                                                        )}
+                                                        {projMembers.length > 3 && (
+                                                          <span style={{ fontSize: 9, color: '#8B95A1', marginLeft: 2 }}>+{projMembers.length - 3}</span>
                                                         )}
                                                       </div>
-                                                      <span style={{ fontSize: 11, color: '#4B5563', flex: 1 }}>{proj.title}</span>
-                                                      <span style={{ fontSize: 10, color: '#9CA3AF' }}>
+                                                      {isLinkedCopy && <span style={{ fontSize: 10, color: '#8B95A1' }} title="다른 KPI에서 연동됨">🔗</span>}
+                                                      <span style={{ fontSize: 13, color: isLinkedCopy ? '#8B95A1' : '#4B5563', flex: 1, fontStyle: isLinkedCopy ? 'italic' : 'normal' }}>{proj.title}</span>
+                                                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>
                                                         {tasks.filter(t => t.projectId === proj.id && t.completed && !t.deletedAt).length}/
                                                         {tasks.filter(t => t.projectId === proj.id && !t.deletedAt).length}
                                                       </span>
@@ -11157,7 +11139,7 @@
                                                 })}
                                               </div>
                                             ) : (
-                                              <span style={{ fontSize: 10, color: '#B0B8C1' }}>연동된 프로젝트 없음</span>
+                                              <span style={{ fontSize: 12, color: '#B0B8C1' }}>연동된 프로젝트 없음</span>
                                             )}
                                           </div>
                                         );
@@ -11466,6 +11448,7 @@
       const [expandedMeetingId, setExpandedMeetingId] = useState(null);
       const [editingMeetingId, setEditingMeetingId] = useState(null);
       const [editingMeetingContent, setEditingMeetingContent] = useState('');
+      const [lightboxImage, setLightboxImage] = useState(null);
       
       const brand = kpiBrands[kpiItem.brandId];
       const kpi = brand?.kpis?.find(k => k.id === kpiItem.kpiId);
@@ -11787,12 +11770,49 @@
                           </span>
                         </div>
                       </div>
+                      {/* 담당자 여러명 표시/편집 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                        <span style={{ fontSize: 13, color: '#8B95A1' }}>👥 담당자</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                          {TEAM_MEMBERS.map(mem => {
+                            const isAssigned = (selectedProjectData.memberIds || []).includes(mem.id);
+                            return (
+                              <div
+                                key={mem.id}
+                                onClick={() => {
+                                  const currentIds = selectedProjectData.memberIds || [];
+                                  const updated = isAssigned 
+                                    ? currentIds.filter(id => id !== mem.id) 
+                                    : [...currentIds, mem.id];
+                                  setProjects(prev => prev.map(p => 
+                                    p.id === selectedProjectData.id ? { ...p, memberIds: updated } : p
+                                  ));
+                                }}
+                                style={{
+                                  width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
+                                  background: isAssigned ? mem.color : '#F2F4F6',
+                                  color: isAssigned ? 'white' : '#B0B8C1',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: 11, fontWeight: 600,
+                                  border: isAssigned ? `2px solid ${mem.color}` : '2px dashed #D1D5DB',
+                                  opacity: isAssigned ? 1 : 0.4,
+                                  transition: 'all 0.15s'
+                                }}
+                                title={`${mem.name} ${isAssigned ? '(담당중)' : '(클릭하여 추가)'}`}
+                                onMouseEnter={(e) => { if (!isAssigned) e.currentTarget.style.opacity = '0.7'; }}
+                                onMouseLeave={(e) => { if (!isAssigned) e.currentTarget.style.opacity = '0.4'; }}
+                              >{mem.initial}</div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                     
                     {/* 탭 메뉴 */}
                     <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #E5E8EB', background: 'white', padding: '0 24px' }}>
                       {[
                         { id: 'tasks', label: '하위업무', count: selectedProjectData.projectTasks.length },
+                        { id: 'notes', label: '노트', count: (selectedProjectData.notes || []).length },
                         { id: 'comments', label: '댓글', count: selectedProjectData.comments?.length || 0 },
                         { id: 'meetings', label: '회의록', count: (meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProjectData.id)).length }
                       ].map(tab => (
@@ -12080,6 +12100,286 @@
                               </div>
                             )}
                           </div>
+                        </div>
+                      )}
+                      
+                      {detailTab === 'notes' && (
+                        <div style={{ padding: 20, flex: 1, overflow: 'auto' }}>
+                          {(() => {
+                            const projectNotes = (selectedProjectData.notes || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                            const today = new Date().toISOString().split('T')[0];
+                            
+                            // 날짜별 그룹핑
+                            const groupedNotes = {};
+                            projectNotes.forEach(n => {
+                              const d = (n.createdAt || '').split('T')[0] || '날짜 없음';
+                              if (!groupedNotes[d]) groupedNotes[d] = [];
+                              groupedNotes[d].push(n);
+                            });
+                            
+                            // 카테고리 정의
+                            const NOTE_CATEGORIES = [
+                              { id: 'progress', label: '진행 경과', icon: '📋', color: '#3182F6' },
+                              { id: 'result', label: '중간 결과물', icon: '🎯', color: '#00C471' },
+                              { id: 'issue', label: '문제점/이슈', icon: '⚠️', color: '#F59E0B' },
+                              { id: 'solution', label: '해결 과정', icon: '✅', color: '#10B981' },
+                              { id: 'reference', label: '참고자료/링크', icon: '🔗', color: '#8B5CF6' },
+                              { id: 'memo', label: '자유 메모', icon: '📝', color: '#6B7684' }
+                            ];
+                            
+                            return (
+                              <div>
+                                {/* 빠른 노트 추가 */}
+                                <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden', marginBottom: 20 }}>
+                                  <textarea
+                                    id="note-input"
+                                    placeholder="진행경과, 중간 결과물, 문제점/이슈, 해결과정, 참고자료, 링크 등 여정을 기록해주세요&#10;&#10;📷 이미지: Ctrl+V로 캡쳐/스크린샷 붙여넣기 가능"
+                                    onPaste={(e) => {
+                                      const items = e.clipboardData?.items;
+                                      if (!items) return;
+                                      for (let i = 0; i < items.length; i++) {
+                                        if (items[i].type.startsWith('image/')) {
+                                          e.preventDefault();
+                                          const file = items[i].getAsFile();
+                                          const reader = new FileReader();
+                                          reader.onload = (ev) => {
+                                            const imgContainer = document.getElementById('note-images');
+                                            if (imgContainer) {
+                                              // 이미지 데이터를 hidden input에 저장
+                                              const existing = JSON.parse(imgContainer.dataset.images || '[]');
+                                              existing.push(ev.target.result);
+                                              imgContainer.dataset.images = JSON.stringify(existing);
+                                              // 미리보기 추가
+                                              const wrapper = document.createElement('div');
+                                              wrapper.style.cssText = 'position:relative;display:inline-block;';
+                                              const img = document.createElement('img');
+                                              img.src = ev.target.result;
+                                              img.style.cssText = 'max-width:200px;max-height:150px;border-radius:8px;border:1px solid #E5E8EB;object-fit:cover;';
+                                              const removeBtn = document.createElement('button');
+                                              removeBtn.textContent = '✕';
+                                              removeBtn.style.cssText = 'position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#F04452;color:white;border:none;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+                                              removeBtn.onclick = () => {
+                                                const idx = Array.from(imgContainer.children).indexOf(wrapper);
+                                                const imgs = JSON.parse(imgContainer.dataset.images || '[]');
+                                                imgs.splice(idx, 1);
+                                                imgContainer.dataset.images = JSON.stringify(imgs);
+                                                wrapper.remove();
+                                              };
+                                              wrapper.appendChild(img);
+                                              wrapper.appendChild(removeBtn);
+                                              imgContainer.appendChild(wrapper);
+                                            }
+                                          };
+                                          reader.readAsDataURL(file);
+                                          break;
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      width: '100%', minHeight: 80, padding: '12px 16px',
+                                      border: 'none', fontSize: 14, lineHeight: 1.7,
+                                      fontFamily: 'inherit', outline: 'none', resize: 'vertical'
+                                    }}
+                                  />
+                                  {/* 이미지 미리보기 영역 */}
+                                  <div 
+                                    id="note-images" 
+                                    data-images="[]"
+                                    style={{ padding: '0 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}
+                                  />
+                                  <div style={{ padding: '8px 16px', borderTop: '1px solid #F2F4F6', display: 'flex', justifyContent: 'flex-end' }}>
+                                    <button
+                                      onClick={() => {
+                                        const textarea = document.getElementById('note-input');
+                                        const imgContainer = document.getElementById('note-images');
+                                        const content = textarea?.value?.trim();
+                                        const images = JSON.parse(imgContainer?.dataset?.images || '[]');
+                                        if (!content && images.length === 0) return;
+                                        const cat = 'memo';
+                                        const newNote = {
+                                          id: Date.now(),
+                                          content: content || '',
+                                          images: images,
+                                          category: cat,
+                                          creatorId: currentUser.id,
+                                          createdAt: new Date().toISOString()
+                                        };
+                                        setProjects(prev => prev.map(p => 
+                                          p.id === selectedProjectData.id 
+                                            ? { ...p, notes: [...(p.notes || []), newNote] } 
+                                            : p
+                                        ));
+                                        textarea.value = '';
+                                        imgContainer.dataset.images = '[]';
+                                        imgContainer.innerHTML = '';
+                                      }}
+                                      style={{
+                                        padding: '8px 20px', background: kpiItem.brandColor,
+                                        border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                                        color: 'white', cursor: 'pointer'
+                                      }}
+                                    >💾 저장</button>
+                                  </div>
+                                </div>
+                                
+                                {/* 노트 타임라인 */}
+                                {projectNotes.length === 0 ? (
+                                  <div style={{ textAlign: 'center', padding: 40, color: '#8B95A1' }}>
+                                    <div style={{ fontSize: 40, marginBottom: 12 }}>📒</div>
+                                    <p style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>아직 노트가 없습니다</p>
+                                    <p style={{ fontSize: 13 }}>위에서 프로젝트 진행 과정을 기록해보세요</p>
+                                  </div>
+                                ) : (
+                                  <div style={{ position: 'relative' }}>
+                                    {/* 타임라인 세로선 */}
+                                    <div style={{ position: 'absolute', left: 15, top: 0, bottom: 0, width: 2, background: '#E5E8EB' }} />
+                                    
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                      {Object.entries(groupedNotes).map(([date, notes]) => (
+                                        <div key={date}>
+                                          {/* 날짜 헤더 */}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, position: 'relative', paddingLeft: 36 }}>
+                                            <div style={{ position: 'absolute', left: 10, width: 12, height: 12, borderRadius: '50%', background: date === today ? kpiItem.brandColor : '#B0B8C1', border: '2px solid white' }} />
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: date === today ? kpiItem.brandColor : '#6B7684' }}>
+                                              {date === today ? '오늘' : date}
+                                            </span>
+                                          </div>
+                                          
+                                          {/* 해당 날짜 노트들 */}
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 36 }}>
+                                            {notes.map(note => {
+                                              const cat = NOTE_CATEGORIES.find(c => c.id === note.category) || NOTE_CATEGORIES[5];
+                                              const creator = TEAM_MEMBERS.find(m => m.id === note.creatorId);
+                                              const time = new Date(note.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                                              const isEditingNote = expandedMeetingId === `note-${note.id}`;
+                                              
+                                              // URL 감지
+                                              const renderContent = (text) => {
+                                                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                                                const parts = text.split(urlRegex);
+                                                return parts.map((part, i) => {
+                                                  if (part.match(urlRegex)) {
+                                                    return React.createElement('a', {
+                                                      key: i, href: part, target: '_blank', rel: 'noopener noreferrer',
+                                                      style: { color: '#3182F6', textDecoration: 'underline', wordBreak: 'break-all' }
+                                                    }, part.length > 60 ? part.slice(0, 60) + '...' : part);
+                                                  }
+                                                  return part;
+                                                });
+                                              };
+                                              
+                                              return (
+                                                <div 
+                                                  key={note.id}
+                                                  style={{ 
+                                                    background: 'white', borderRadius: 10, 
+                                                    border: '1px solid #E5E8EB', overflow: 'hidden'
+                                                  }}
+                                                >
+                                                  {/* 노트 헤더 */}
+                                                  <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #F2F4F6' }}>
+                                                    {creator && (
+                                                      <div style={{ width: 22, height: 22, borderRadius: '50%', background: creator.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600 }}>{creator.initial}</div>
+                                                    )}
+                                                    {creator && <span style={{ fontSize: 12, fontWeight: 500, color: '#4B5563' }}>{creator.name}</span>}
+                                                    <div style={{ flex: 1 }} />
+                                                    <span style={{ fontSize: 11, color: '#B0B8C1' }}>{time}</span>
+                                                    <button
+                                                      onClick={() => setExpandedMeetingId(isEditingNote ? null : `note-${note.id}`)}
+                                                      style={{ padding: '2px 6px', background: 'transparent', border: 'none', fontSize: 11, color: '#8B95A1', cursor: 'pointer' }}
+                                                    >✏️</button>
+                                                    <button
+                                                      onClick={() => {
+                                                        if (confirm('이 노트를 삭제하시겠습니까?')) {
+                                                          setProjects(prev => prev.map(p => 
+                                                            p.id === selectedProjectData.id 
+                                                              ? { ...p, notes: (p.notes || []).filter(n => n.id !== note.id) }
+                                                              : p
+                                                          ));
+                                                        }
+                                                      }}
+                                                      style={{ padding: '2px 6px', background: 'transparent', border: 'none', fontSize: 11, color: '#DC2626', cursor: 'pointer', opacity: 0.5 }}
+                                                      onMouseEnter={(e) => e.target.style.opacity = '1'}
+                                                      onMouseLeave={(e) => e.target.style.opacity = '0.5'}
+                                                    >🗑</button>
+                                                  </div>
+                                                  {/* 노트 내용 */}
+                                                  <div style={{ padding: '12px 14px' }}>
+                                                    {isEditingNote ? (
+                                                      <div>
+                                                        <textarea
+                                                          defaultValue={note.content}
+                                                          id={`edit-note-${note.id}`}
+                                                          style={{
+                                                            width: '100%', minHeight: 120, padding: 12,
+                                                            borderRadius: 8, border: '2px solid ' + kpiItem.brandColor,
+                                                            fontSize: 14, lineHeight: 1.7, fontFamily: 'inherit',
+                                                            outline: 'none', resize: 'vertical'
+                                                          }}
+                                                          autoFocus
+                                                        />
+                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                                                          <button
+                                                            onClick={() => setExpandedMeetingId(null)}
+                                                            style={{ padding: '6px 14px', background: '#F2F4F6', border: 'none', borderRadius: 6, fontSize: 12, color: '#6B7684', cursor: 'pointer' }}
+                                                          >취소</button>
+                                                          <button
+                                                            onClick={() => {
+                                                              const val = document.getElementById(`edit-note-${note.id}`)?.value;
+                                                              if (val !== undefined) {
+                                                                setProjects(prev => prev.map(p => 
+                                                                  p.id === selectedProjectData.id
+                                                                    ? { ...p, notes: (p.notes || []).map(n => n.id === note.id ? { ...n, content: val } : n) }
+                                                                    : p
+                                                                ));
+                                                              }
+                                                              setExpandedMeetingId(null);
+                                                            }}
+                                                            style={{ padding: '6px 14px', background: kpiItem.brandColor, border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, color: 'white', cursor: 'pointer' }}
+                                                          >저장</button>
+                                                        </div>
+                                                      </div>
+                                                    ) : (
+                                                      <div>
+                                                        {note.content && (
+                                                          <div style={{ fontSize: 14, color: '#333', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                                            {renderContent(note.content)}
+                                                          </div>
+                                                        )}
+                                                        {(note.images || []).length > 0 && (
+                                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: note.content ? 10 : 0 }}>
+                                                            {note.images.map((imgSrc, imgIdx) => (
+                                                              <img 
+                                                                key={imgIdx} 
+                                                                src={imgSrc} 
+                                                                onClick={() => setLightboxImage(imgSrc)}
+                                                                style={{ 
+                                                                  maxWidth: 300, maxHeight: 200, borderRadius: 8, 
+                                                                  border: '1px solid #E5E8EB', objectFit: 'cover',
+                                                                  cursor: 'zoom-in', transition: 'transform 0.15s'
+                                                                }}
+                                                                onMouseEnter={(e) => e.target.style.transform = 'scale(1.02)'}
+                                                                onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                                                                title="클릭하여 크게 보기"
+                                                              />
+                                                            ))}
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                       
@@ -12382,6 +12682,43 @@
               </div>
             </div>
           </div>
+          
+          {/* 이미지 라이트박스 */}
+          {lightboxImage && (
+            <div 
+              onClick={(e) => { e.stopPropagation(); setLightboxImage(null); }}
+              style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                background: 'rgba(0,0,0,0.85)', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 10200, cursor: 'zoom-out',
+                animation: 'fadeIn 0.15s ease'
+              }}
+            >
+              <button
+                onClick={() => setLightboxImage(null)}
+                style={{
+                  position: 'absolute', top: 20, right: 20,
+                  width: 40, height: 40, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)', border: 'none',
+                  color: 'white', fontSize: 20, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.3)'}
+                onMouseLeave={(e) => e.target.style.background = 'rgba(255,255,255,0.15)'}
+              >✕</button>
+              <img 
+                src={lightboxImage} 
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  maxWidth: '90vw', maxHeight: '90vh',
+                  borderRadius: 12, objectFit: 'contain',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                  cursor: 'default'
+                }}
+              />
+            </div>
+          )}
           
           {/* KPI 연동 추가 모달 */}
           {showLinkModal && (() => {
@@ -14998,1984 +15335,827 @@
       );
     }
 
-    // ============ 그로스보드 탭 ============
-    function GrowthBoardTab({ tasks, projects, currentUser, kpiBrands = {} }) {
-      // 주차 계산 헬퍼
-      const getWeekNumber = (date) => {
-        const d = new Date(date);
-        const firstDay = new Date(d.getFullYear(), 0, 1);
-        const pastDays = (d - firstDay) / 86400000;
-        return Math.ceil((pastDays + firstDay.getDay() + 1) / 7);
+
+
+    // ============ 그로스보드 탭 (자동 연동 마인드맵) ============
+    function GrowthBoardTab({ tasks, projects, currentUser, kpiBrands = {}, fixedTasks = [], teamRequests = [], meetings = [] }) {
+      const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'automation-system'];
+      const BRAND_DISPLAY = {
+        'pour-method': { name: 'POUR 공법', color: '#2563EB' },
+        'pour-solution': { name: 'POUR 솔루션', color: '#059669' },
+        'apartment-square': { name: '아파트스퀘어', color: '#7C3AED' },
+        'automation-system': { name: '자동화&시스템화', color: '#DC2626' }
       };
       
-      const getWeekRange = (year, week) => {
-        const firstDay = new Date(year, 0, 1);
-        const days = (week - 1) * 7;
-        const startDate = new Date(firstDay.setDate(firstDay.getDate() + days - firstDay.getDay() + 1));
-        const endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-        return { start: formatDate(startDate), end: formatDate(endDate) };
-      };
+      // ─── 보드 관리 상태 ───
+      const [boards, setBoards] = useState([]);
+      const [activeBoardId, setActiveBoardId] = useState(null);
+      const [showBoardManager, setShowBoardManager] = useState(false);
+      const [newBoardName, setNewBoardName] = useState('');
+      const [newBoardStart, setNewBoardStart] = useState(new Date().toISOString().split('T')[0]);
+      const [newBoardEnd, setNewBoardEnd] = useState('');
+      const [editingBoard, setEditingBoard] = useState(null);
       
-      const currentYear = new Date().getFullYear();
-      const currentWeek = getWeekNumber(new Date());
-      
-      // 상태
-      const [selectedYear, setSelectedYear] = useState(currentYear);
-      const [selectedWeek, setSelectedWeek] = useState(currentWeek);
-      const [selectedBrand, setSelectedBrand] = useState(1);
-      const [nodes, setNodes] = useState([]);
-      const [connections, setConnections] = useState([]);
-      const [selectedNode, setSelectedNode] = useState(null);
-      const [showAddBranch, setShowAddBranch] = useState(false);
-      const [newBranchName, setNewBranchName] = useState('');
-      const [editingNode, setEditingNode] = useState(null);
-      const [boards, setBoards] = useState({});
-      const [nodeWidths, setNodeWidths] = useState({}); // 노드 실제 너비 저장
-      
-      // 줌 & 패닝 상태 (transform 기반 무한 캔버스)
-      const [zoom, setZoom] = useState(1);
-      const [offset, setOffset] = useState({ x: 100, y: 50 }); // 초기 위치
+      // ─── 마인드맵 상태 ───
+      const [zoom, setZoom] = useState(0.85);
+      const [offset, setOffset] = useState({ x: 80, y: 40 });
       const [isPanning, setIsPanning] = useState(false);
       const [spacePressed, setSpacePressed] = useState(false);
       const panStart = React.useRef({ x: 0, y: 0, offsetX: 0, offsetY: 0 });
       const canvasRef = React.useRef(null);
       
-      // 스페이스바 & ESC 전역 이벤트 리스너
+      // ─── 회사 목표 로드 ───
+      const [companyGoal, setCompanyGoal] = useState('');
       useEffect(() => {
-        const handleKeyDown = (e) => {
-          if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-            e.preventDefault();
-            setSpacePressed(true);
-          }
-          if (e.key === 'Escape') {
-            if (showAddBranch) setShowAddBranch(false);
-            else if (editingNode) setEditingNode(null);
-            else if (selectedNode) setSelectedNode(null);
-          }
+        const loadGoal = async () => {
+          try {
+            const snapshot = await database.ref('kpi/companyGoal').once('value');
+            setCompanyGoal(snapshot.val() || '매출 300억 달성\n"본질을 측정·관리하여 2배 성장"');
+          } catch(e) { setCompanyGoal('매출 300억 달성\n"본질을 측정·관리하여 2배 성장"'); }
         };
-        const handleKeyUp = (e) => {
-          if (e.code === 'Space') {
-            e.preventDefault();
-            setSpacePressed(false);
-            setIsPanning(false);
-          }
-        };
-        
-        document.addEventListener('keydown', handleKeyDown);
-        document.addEventListener('keyup', handleKeyUp);
-        
-        return () => {
-          document.removeEventListener('keydown', handleKeyDown);
-          document.removeEventListener('keyup', handleKeyUp);
-        };
-      }, [showAddBranch, editingNode, selectedNode]);
+        loadGoal();
+      }, []);
       
-      // 현재 보드 키 (브랜드 통합)
-      const boardKey = `${currentUser.id}-${selectedYear}-W${selectedWeek}`;
+      // Firebase 키
+      const boardListKey = `growthboard-list-${currentUser.id}`;
       
-      // Firebase에서 보드 데이터 로드
+      // ─── 보드 목록 로드 ───
       useEffect(() => {
-        const loadBoard = async () => {
-          const data = await FirebaseService.getDoc('growthboards', boardKey);
+        const load = async () => {
+          const data = await FirebaseService.getDoc('growthboards', boardListKey);
+          if (data && data.boards) {
+            setBoards(data.boards);
+            // 가장 최근 활성 보드 선택
+            const active = data.boards.find(b => !b.archived) || data.boards[0];
+            if (active) setActiveBoardId(active.id);
+          }
+        };
+        load();
+      }, [boardListKey]);
+      
+      // 보드 목록 저장
+      const saveBoards = async (newBoards) => {
+        setBoards(newBoards);
+        await FirebaseService.saveDoc('growthboards', boardListKey, { boards: newBoards, updatedAt: new Date().toISOString() });
+      };
+      
+      // 새 보드 생성
+      const createBoard = () => {
+        if (!newBoardName.trim()) return;
+        const newBoard = {
+          id: `board-${Date.now()}`,
+          name: newBoardName.trim(),
+          startDate: newBoardStart,
+          endDate: newBoardEnd || null,
+          createdAt: new Date().toISOString(),
+          archived: false
+        };
+        const updated = [...boards, newBoard];
+        saveBoards(updated);
+        setActiveBoardId(newBoard.id);
+        setNewBoardName('');
+        setNewBoardEnd('');
+        setShowBoardManager(false);
+      };
+      
+      // 보관된 보드 스냅샷 상태
+      const [archivedSnapshots, setArchivedSnapshots] = useState({});
+      
+      // 보드 보관 (현재 마인드맵 스냅샷 저장)
+      const archiveBoard = async (boardId) => {
+        if (!confirm('이 보드를 보관하시겠습니까? 현재 마인드맵이 스냅샷으로 저장됩니다.')) return;
+        // 현재 autoNodes/autoConnections를 스냅샷으로 저장
+        const snapshotKey = `growthboard-snapshot-${boardId}`;
+        await FirebaseService.saveDoc('growthboards', snapshotKey, {
+          nodes: autoNodes,
+          connections: autoConnections,
+          savedAt: new Date().toISOString()
+        });
+        const updated = boards.map(b => b.id === boardId ? { ...b, archived: true, archivedAt: new Date().toISOString() } : b);
+        saveBoards(updated);
+        const nextActive = updated.find(b => !b.archived);
+        setActiveBoardId(nextActive?.id || null);
+      };
+      
+      // 보관된 보드 스냅샷 로드
+      useEffect(() => {
+        const loadSnapshot = async () => {
+          if (!activeBoard?.archived) return;
+          const snapshotKey = `growthboard-snapshot-${activeBoardId}`;
+          const data = await FirebaseService.getDoc('growthboards', snapshotKey);
           if (data) {
-            let loadedNodes = data.nodes || [];
-            let loadedConnections = data.connections || [];
-            
-            setNodes(loadedNodes);
-            setConnections(loadedConnections);
-          } else {
-            // 새 보드 초기화 - 중심 노드만
-            const centerNode = {
-              id: 'center',
-              type: 'center',
-              text: `${selectedYear}년 ${selectedWeek}주차`,
-              x: 200,
-              y: 300,
-              color: '#3182F6'
-            };
-            setNodes([centerNode]);
-            setConnections([]);
+            setArchivedSnapshots(prev => ({ ...prev, [activeBoardId]: data }));
           }
         };
-        loadBoard();
-      }, [boardKey, selectedYear, selectedWeek]);
+        loadSnapshot();
+      }, [activeBoardId, activeBoard?.archived]);
       
-      // 보드 저장
-      const saveBoard = async (newNodes, newConnections) => {
-        await FirebaseService.saveDoc('growthboards', boardKey, {
-          nodes: newNodes,
-          connections: newConnections,
-          updatedAt: new Date().toISOString()
-        });
+      // 보드 삭제
+      const deleteBoard = (boardId) => {
+        if (!confirm('정말 삭제하시겠습니까? 복구할 수 없습니다.')) return;
+        const updated = boards.filter(b => b.id !== boardId);
+        saveBoards(updated);
+        if (activeBoardId === boardId) setActiveBoardId(updated.find(b => !b.archived)?.id || null);
+      };
+
+      // 보드 수정
+      const updateBoard = (boardId, updates) => {
+        const updated = boards.map(b => b.id === boardId ? { ...b, ...updates } : b);
+        saveBoards(updated);
+        setEditingBoard(null);
       };
       
-      // 내 프로젝트만 필터링 (내가 만든 프로젝트 + 내가 참여한 프로젝트)
-      const myProjects = useMemo(() => {
-        // 내가 담당자(memberIds)로 할당된 프로젝트만 표시
-        return projects.filter(p => 
-          p.memberIds && p.memberIds.includes(currentUser.id)
-        );
-      }, [projects, currentUser.id]);
+      // 현재 활성 보드
+      const activeBoard = boards.find(b => b.id === activeBoardId);
       
-      // 프로젝트별 하위업무 (내 업무만) - 부모 업무만
-      const getProjectTasks = (projectId) => {
-        return tasks.filter(t => t.projectId === projectId && t.memberId === currentUser.id && !t.parentTaskId);
-      };
-      
-      // 프로젝트별 전체 업무 (하위업무 포함)
-      const getAllProjectTasks = (projectId) => {
-        return tasks.filter(t => t.projectId === projectId && t.memberId === currentUser.id);
-      };
-      
-      // 특정 업무의 하위업무 가져오기
-      const getSubtasks = (parentTaskId) => {
-        return tasks.filter(t => t.parentTaskId === parentTaskId && t.memberId === currentUser.id);
-      };
-      
-      // 프로젝트의 브랜드 정보 가져오기
-      const getProjectBrand = (project) => {
-        return BRANDS.find(b => b.id === project.brandId);
-      };
-      
-      // 이미 보드에 추가된 프로젝트 ID
-      const addedProjectIds = useMemo(() => {
-        return nodes.filter(n => n.projectId).map(n => n.projectId);
-      }, [nodes]);
-      
-      // 수동 동기화 함수 - 프로젝트/업무 변경사항 반영
-      const syncWithProjects = () => {
-        if (nodes.length === 0) return;
+      // ─── 자동 데이터 생성 (마인드맵 노드/연결선) ───
+      const { autoNodes, autoConnections } = useMemo(() => {
+        if (!activeBoard) return { autoNodes: [], autoConnections: [] };
         
-        let updatedNodes = [...nodes];
-        let updatedConnections = [...connections];
-        let hasChanges = false;
-        let deletedCount = 0;
-        
-        // 0. 삭제된 프로젝트/업무 동기화 (노드 제거)
-        const nodesToRemove = [];
-        
-        updatedNodes.forEach(node => {
-          // 프로젝트 노드 삭제 체크
-          if (node.projectId) {
-            const project = projects.find(p => p.id === node.projectId);
-            // 프로젝트가 없거나 삭제된 경우
-            if (!project || project.deletedAt) {
-              nodesToRemove.push(node.id);
-              deletedCount++;
-            }
-          }
-          // 업무 노드 삭제 체크
-          if (node.taskId) {
-            const task = tasks.find(t => t.id === node.taskId);
-            // 업무가 없거나 삭제된 경우
-            if (!task || task.deletedAt) {
-              nodesToRemove.push(node.id);
-              deletedCount++;
-            }
-          }
-        });
-        
-        // 삭제할 노드가 있으면 처리
-        if (nodesToRemove.length > 0) {
-          hasChanges = true;
-          // 삭제할 노드의 하위 노드들도 찾기 (재귀적으로)
-          const getAllChildNodes = (parentId) => {
-            const childIds = updatedConnections
-              .filter(c => c.from === parentId)
-              .map(c => c.to);
-            let allChildIds = [...childIds];
-            childIds.forEach(childId => {
-              allChildIds = [...allChildIds, ...getAllChildNodes(childId)];
-            });
-            return allChildIds;
-          };
-          
-          // 삭제할 노드와 그 하위 노드들 모두 수집
-          let allNodesToRemove = [...nodesToRemove];
-          nodesToRemove.forEach(nodeId => {
-            allNodesToRemove = [...allNodesToRemove, ...getAllChildNodes(nodeId)];
-          });
-          allNodesToRemove = [...new Set(allNodesToRemove)]; // 중복 제거
-          
-          // 노드 제거
-          updatedNodes = updatedNodes.filter(n => !allNodesToRemove.includes(n.id));
-          // 연결 제거
-          updatedConnections = updatedConnections.filter(c => 
-            !allNodesToRemove.includes(c.from) && !allNodesToRemove.includes(c.to)
-          );
+        // 보관된 보드: 스냅샷 데이터 사용
+        if (activeBoard.archived) {
+          const snapshot = archivedSnapshots[activeBoardId];
+          if (snapshot) return { autoNodes: snapshot.nodes || [], autoConnections: snapshot.connections || [] };
+          return { autoNodes: [], autoConnections: [] }; // 스냅샷 로딩 중
         }
         
-        // 1. 프로젝트/업무 이름 변경 동기화
-        updatedNodes = updatedNodes.map(node => {
-          // 프로젝트 노드 동기화
-          if (node.projectId) {
-            const project = projects.find(p => p.id === node.projectId);
-            if (project && node.text !== project.title) {
-              hasChanges = true;
-              return { ...node, text: project.title };
-            }
-          }
-          // 업무 노드 동기화
-          if (node.taskId) {
-            const task = tasks.find(t => t.id === node.taskId);
-            if (task && node.text !== task.title) {
-              hasChanges = true;
-              return { ...node, text: task.title };
-            }
-          }
-          return node;
-        });
+        const startDate = activeBoard.startDate || '2000-01-01';
+        const endDate = activeBoard.endDate || '2099-12-31';
         
-        // 2. 새로 추가된 완료 업무 동기화 (내가 담당한 업무만)
-        updatedNodes.forEach(node => {
-          if (node.projectId && node.type === 'branch') {
-            const projectTasks = tasks.filter(t => 
-              t.projectId === node.projectId && 
-              t.completed && 
-              !t.parentTaskId &&
-              t.memberId === currentUser.id
-            );
-            
-            // 이미 추가된 업무 ID
-            const existingTaskIds = updatedNodes
-              .filter(n => n.taskId && connections.some(c => c.from === node.id && c.to === n.id))
-              .map(n => n.taskId);
-            
-            // 새로 추가할 업무
-            projectTasks.forEach(task => {
-              if (!existingTaskIds.includes(task.id)) {
-                hasChanges = true;
-                const taskNodeId = `task-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-                updatedNodes.push({
-                  id: taskNodeId,
-                  type: 'task',
-                  taskId: task.id,
-                  text: task.title,
-                  x: 0,
-                  y: 0,
-                  completed: task.completed,
-                  color: '#00C471'
-                });
-                updatedConnections.push({
-                  id: `conn-task-${taskNodeId}`,
-                  from: node.id,
-                  to: taskNodeId
-                });
-                
-                // 서브태스크도 추가 (내가 담당한 것만)
-                const subtasks = tasks.filter(st => 
-                  st.parentTaskId === task.id && st.completed && st.memberId === currentUser.id
-                );
-                subtasks.forEach(st => {
-                  const subtaskNodeId = `subtask-${st.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-                  updatedNodes.push({
-                    id: subtaskNodeId,
-                    type: 'task',
-                    taskId: st.id,
-                    text: st.title,
-                    x: 0,
-                    y: 0,
-                    completed: st.completed,
-                    color: '#10B981',
-                    isSubtask: true
-                  });
-                  updatedConnections.push({
-                    id: `conn-subtask-${subtaskNodeId}`,
-                    from: taskNodeId,
-                    to: subtaskNodeId
-                  });
-                });
+        const nodes = [];
+        const conns = [];
+        let nodeId = 0;
+        const nid = () => `n-${++nodeId}`;
+        
+        // ── 중심 노드 ──
+        const centerId = 'center';
+        nodes.push({ id: centerId, type: 'center', text: activeBoard.name, subtitle: companyGoal, x: 0, y: 0, level: 0 });
+        
+        // ── 완료 업무 필터링 (해당 기간 + 내 업무) ──
+        const myCompletedTasks = tasks.filter(t => 
+          t.completed && t.memberId === currentUser.id &&
+          !t.parentTaskId // 부모 업무만
+        );
+        
+        // ── 카테고리 1: KPI 프로젝트 (브랜드 → 후행지표 → 프로젝트 → 업무) ──
+        const kpiProjects = projects.filter(p => 
+          (p.linkedKpi || (p.linkedKpis && p.linkedKpis.length > 0)) &&
+          p.memberIds?.includes(currentUser.id)
+        );
+        
+        // 브랜드별로 처리
+        KPI_BRAND_ORDER.forEach(brandId => {
+          const brand = kpiBrands[brandId];
+          if (!brand) return;
+          const bd = BRAND_DISPLAY[brandId] || { name: brand.name || brandId, color: '#6B7684' };
+          
+          // 이 브랜드에 연동된 프로젝트 중 완료 업무가 있는 것
+          const brandKpiProjects = kpiProjects.filter(p => {
+            if (p.linkedKpi?.brandId === brandId) return true;
+            if (p.linkedKpis?.some(lk => lk.brandId === brandId)) return true;
+            return false;
+          });
+          
+          // 후행지표별 그룹핑
+          const itemGroups = {};
+          (brand.kpis || []).forEach(kpi => {
+            (kpi.items || []).forEach(item => {
+              const itemKey = `${kpi.id}-${item.id}`;
+              // 이 후행지표에 연동된 프로젝트 찾기
+              const linkedProjects = brandKpiProjects.filter(p => {
+                if (p.linkedKpi?.brandId === brandId && p.linkedKpi?.kpiId == kpi.id && p.linkedKpi?.itemId == item.id) return true;
+                if (p.linkedKpis?.some(lk => lk.brandId === brandId && lk.kpiId == kpi.id && lk.itemId == item.id)) return true;
+                return false;
+              });
+              const withTasks = linkedProjects.map(p => ({
+                ...p,
+                completedTasks: myCompletedTasks.filter(t => t.projectId === p.id)
+              })).filter(p => p.completedTasks.length > 0);
+              
+              if (withTasks.length > 0) {
+                itemGroups[itemKey] = { kpiName: kpi.name, itemName: item.name, progress: item.progress || 0, projects: withTasks };
               }
             });
-          }
-        });
-        
-        // 항상 레이아웃 재정렬 (변경사항 없어도)
-        const layoutedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-        setNodeWidths({}); // 노드 너비 초기화
-        setNodes(layoutedNodes);
-        setConnections(updatedConnections);
-        saveBoard(layoutedNodes, updatedConnections);
-        
-        // 노드 측정 후 연결선 다시 그리도록 강제 리렌더링
-        setTimeout(() => {
-          setNodes([...layoutedNodes]);
-        }, 50);
-        
-        if (hasChanges) {
-          const deleteMsg = deletedCount > 0 ? `\n삭제된 항목: ${deletedCount}개` : '';
-          alert(`✅ 동기화 완료!\n프로젝트/업무 변경사항이 반영되었습니다.${deleteMsg}`);
-        } else {
-          alert('✅ 레이아웃 정렬 완료!');
-        }
-      };
-      
-      // 레이아웃 상수 - EdrawMind 스타일
-      const LAYOUT = {
-        centerX: 200,
-        centerY: 300,
-        level1X: 330,   // 브랜드 노드
-        level2X: 480,   // 프로젝트 노드 (브랜드+간격)
-        level3X: 660,   // 하위업무 노드
-        level4X: 840,   // 서브태스크 노드
-        nodeGapY: 25,   // 브랜드 노드 간 여백
-        taskGapY: 38,   // 프로젝트 노드 간 간격
-        subtaskGapY: 18, // 하위업무 노드 간 간격
-        nodeHeight: 36   // 노드 높이
-      };
-      
-      // 트리 자동 정렬 함수 - 서브트리 높이 계산 후 겹치지 않게 배치
-      const autoLayoutTree = (nodeList, connList) => {
-        const centerNode = nodeList.find(n => n.id === 'center');
-        if (!centerNode) return nodeList;
-        
-        // 레벨별 X 좌표
-        const levelX = {
-          0: LAYOUT.centerX,
-          1: LAYOUT.level1X,
-          2: LAYOUT.level2X,
-          3: LAYOUT.level3X,
-          4: LAYOUT.level4X,
-          5: LAYOUT.level4X + 150
-        };
-        
-        // 자식 노드 가져오기
-        const getChildren = (parentId) => {
-          return connList.filter(c => c.from === parentId).map(c => nodeList.find(n => n.id === c.to)).filter(Boolean);
-        };
-        
-        // 서브트리 높이 계산 (재귀) - 해당 노드와 모든 자손이 차지하는 총 높이
-        const getSubtreeHeight = (node, level) => {
-          const children = getChildren(node.id);
-          if (children.length === 0) {
-            return LAYOUT.nodeHeight;
-          }
-          
-          // level 1 = 브랜드의 자식(프로젝트)들 간격 → taskGapY
-          // level 2+ = 프로젝트의 자식(하위업무)들 간격 → subtaskGapY
-          const gap = level === 1 ? LAYOUT.taskGapY : LAYOUT.subtaskGapY;
-          let totalHeight = 0;
-          children.forEach((child, idx) => {
-            totalHeight += getSubtreeHeight(child, level + 1);
-            if (idx < children.length - 1) totalHeight += gap;
           });
           
-          return Math.max(LAYOUT.nodeHeight, totalHeight);
-        };
-        
-        // 레벨1 자식들 (중심에서 직접 연결된 노드들)
-        const level1Children = getChildren('center');
-        
-        // 각 레벨1 노드의 서브트리 높이 계산
-        const subtreeHeights = level1Children.map(child => getSubtreeHeight(child, 1));
-        
-        // 레벨1 노드들을 서브트리 높이 고려해서 배치
-        let currentY = 80;
-        level1Children.forEach((child, idx) => {
-          const height = subtreeHeights[idx];
-          child.x = levelX[1];
-          child.y = currentY + height / 2;
-          currentY += height + LAYOUT.nodeGapY;
+          if (Object.keys(itemGroups).length === 0) return;
+          
+          // 브랜드 카테고리 노드
+          const brandNodeId = nid();
+          nodes.push({ id: brandNodeId, type: 'category', text: bd.name, subtitle: brand.mission || '', color: bd.color, x: 0, y: 0 });
+          conns.push({ from: centerId, to: brandNodeId });
+          
+          // KPI(선행지표)별 그룹핑 → KPI 노드 → 후행지표 → 프로젝트 → 업무
+          const kpiGrouped = {};
+          Object.entries(itemGroups).forEach(([key, group]) => {
+            const kpiName = group.kpiName;
+            if (!kpiGrouped[kpiName]) kpiGrouped[kpiName] = [];
+            kpiGrouped[kpiName].push({ key, ...group });
+          });
+          
+          Object.entries(kpiGrouped).forEach(([kpiName, items]) => {
+            // KPI(선행지표) 노드
+            const kpiNodeId = nid();
+            nodes.push({ id: kpiNodeId, type: 'kpi', text: kpiName, color: bd.color, x: 0, y: 0 });
+            conns.push({ from: brandNodeId, to: kpiNodeId });
+            
+            items.forEach(group => {
+              const itemNodeId = nid();
+              const itemLabel = `${group.itemName}`;
+              nodes.push({ id: itemNodeId, type: 'indicator', text: itemLabel, color: bd.color, x: 0, y: 0 });
+              conns.push({ from: kpiNodeId, to: itemNodeId });
+              
+              group.projects.forEach(proj => {
+                const projNodeId = nid();
+                nodes.push({ id: projNodeId, type: 'project', text: proj.title, color: bd.color, x: 0, y: 0 });
+                conns.push({ from: itemNodeId, to: projNodeId });
+                
+                proj.completedTasks.forEach(task => {
+                  const taskNodeId = nid();
+                  nodes.push({ id: taskNodeId, type: 'task', text: task.title, color: bd.color, x: 0, y: 0 });
+                  conns.push({ from: projNodeId, to: taskNodeId });
+                  
+                  // 서브태스크
+                  const subs = tasks.filter(st => st.parentTaskId === task.id && st.completed && st.memberId === currentUser.id);
+                  subs.forEach(st => {
+                    const subId = nid();
+                    nodes.push({ id: subId, type: 'subtask', text: st.title, color: bd.color, x: 0, y: 0 });
+                    conns.push({ from: taskNodeId, to: subId });
+                  });
+                });
+              });
+            });
+          });
         });
         
-        // 중심 노드는 레벨1 자식들의 중앙에 배치
-        centerNode.x = LAYOUT.centerX;
-        if (level1Children.length > 0) {
-          const ys = level1Children.map(c => c.y);
-          centerNode.y = (Math.min(...ys) + Math.max(...ys)) / 2;
-        } else {
-          centerNode.y = LAYOUT.centerY;
+        // ── 카테고리 2: 그 외 프로젝트 ──
+        const otherProjects = projects.filter(p => 
+          !p.linkedKpi && (!p.linkedKpis || p.linkedKpis.length === 0) &&
+          p.memberIds?.includes(currentUser.id)
+        );
+        const otherWithTasks = otherProjects.map(p => ({
+          ...p,
+          completedTasks: myCompletedTasks.filter(t => t.projectId === p.id)
+        })).filter(p => p.completedTasks.length > 0);
+        
+        if (otherWithTasks.length > 0) {
+          const otherCatId = nid();
+          nodes.push({ id: otherCatId, type: 'category', text: '그 외 프로젝트', color: '#6B7684', x: 0, y: 0 });
+          conns.push({ from: centerId, to: otherCatId });
+          
+          otherWithTasks.forEach(proj => {
+            const projNodeId = nid();
+            nodes.push({ id: projNodeId, type: 'project', text: proj.title, color: '#6B7684', x: 0, y: 0 });
+            conns.push({ from: otherCatId, to: projNodeId });
+            
+            proj.completedTasks.forEach(task => {
+              const taskNodeId = nid();
+              nodes.push({ id: taskNodeId, type: 'task', text: task.title, color: '#6B7684', x: 0, y: 0 });
+              conns.push({ from: projNodeId, to: taskNodeId });
+            });
+          });
         }
         
-        // 레벨2 이상 노드 배치 (각 부모 노드를 중심으로, 서브트리 높이 고려)
-        const positionChildren = (parentNode, level) => {
-          const children = getChildren(parentNode.id);
+        // ── 카테고리 3: 타팀 요청 ──
+        const myRequests = teamRequests.filter(r => 
+          !r.deletedAt && r.assigneeId === currentUser.id && r.status === 'complete'
+        );
+        if (myRequests.length > 0) {
+          const reqCatId = nid();
+          nodes.push({ id: reqCatId, type: 'category', text: '타팀 요청 업무', color: '#F59E0B', x: 0, y: 0 });
+          conns.push({ from: centerId, to: reqCatId });
+          
+          myRequests.forEach(req => {
+            const reqNodeId = nid();
+            const teamLabel = req.requestTeam ? ` (${req.requestTeam})` : '';
+            nodes.push({ id: reqNodeId, type: 'task', text: req.title + teamLabel, color: '#F59E0B', x: 0, y: 0 });
+            conns.push({ from: reqCatId, to: reqNodeId });
+          });
+        }
+        
+        // ── 카테고리 4: 업무일지 (고정 업무) ──
+        const myFixed = fixedTasks.filter(f => f.memberId === currentUser.id);
+        const fixedWithCompletions = myFixed.filter(f => (f.completedDates || []).length > 0);
+        if (fixedWithCompletions.length > 0) {
+          const diaryCatId = nid();
+          nodes.push({ id: diaryCatId, type: 'category', text: '업무일지', color: '#8B5CF6', x: 0, y: 0 });
+          conns.push({ from: centerId, to: diaryCatId });
+          
+          fixedWithCompletions.forEach(ft => {
+            const ftNodeId = nid();
+            const routineLabel = { daily: '매일', weekly: '주간', monthly: '월간' }[ft.routineType] || '';
+            nodes.push({ id: ftNodeId, type: 'task', text: `[${routineLabel}] ${ft.title}`, color: '#8B5CF6', x: 0, y: 0 });
+            conns.push({ from: diaryCatId, to: ftNodeId });
+          });
+        }
+        
+        // ── 자동 레이아웃 ──
+        const getChildren = (parentId) => conns.filter(c => c.from === parentId).map(c => nodes.find(n => n.id === c.to)).filter(Boolean);
+        
+        const NODE_HEIGHTS = { center: 42, category: 40, kpi: 32, indicator: 34, project: 34, task: 26, subtask: 24 };
+        const getNodeH = (n) => NODE_HEIGHTS[n.type] || 28;
+        const GAPS = { 0: 36, 1: 32, 2: 28, 3: 22, 4: 18 };
+        const LEVEL_X = [0, 220, 440, 660, 880, 1100, 1300];
+        const LEAF_GAP = 6; // 말단 노드 세로 간격
+        const LEAF_INDENT = 18; // 말단 노드 들여쓰기
+        
+        // 말단(leaf) 판정: task/subtask이면서 자식이 없는 노드의 부모
+        const isLeafParent = (node) => {
+          const children = getChildren(node.id);
+          if (children.length === 0) return false;
+          return children.every(c => {
+            const gc = getChildren(c.id);
+            return (c.type === 'task' || c.type === 'subtask') && gc.length === 0;
+          });
+        };
+        
+        // 말단 그룹의 세로 높이 계산
+        const getLeafGroupH = (parent) => {
+          const children = getChildren(parent.id);
+          if (children.length === 0) return 0;
+          return children.reduce((sum, c) => sum + getNodeH(c) + LEAF_GAP, 0) - LEAF_GAP;
+        };
+        
+        // 서브트리 높이 계산
+        const getSubtreeH = (node, level) => {
+          const children = getChildren(node.id);
+          const selfH = getNodeH(node);
+          if (children.length === 0) return selfH;
+          
+          // 말단 부모: 자기 높이 + 아래 말단 그룹 높이
+          if (isLeafParent(node)) {
+            return selfH + 10 + getLeafGroupH(node);
+          }
+          
+          const gap = GAPS[Math.min(level, 4)];
+          let h = 0;
+          children.forEach((c, i) => {
+            h += getSubtreeH(c, level + 1);
+            if (i < children.length - 1) h += gap;
+          });
+          return Math.max(selfH, h);
+        };
+        
+        const positionChildren = (parent, level) => {
+          const children = getChildren(parent.id);
           if (children.length === 0) return;
           
-          const gap = level === 2 ? LAYOUT.taskGapY : LAYOUT.subtaskGapY;
+          // 말단 부모: 자식들을 부모 아래에 세로 배치
+          if (isLeafParent(parent)) {
+            let leafY = parent.y + getNodeH(parent) / 2 + 14;
+            children.forEach((child) => {
+              child.level = level + 1;
+              child.isLeaf = true;
+              child.x = parent.x + LEAF_INDENT;
+              child.y = leafY + getNodeH(child) / 2;
+              leafY += getNodeH(child) + LEAF_GAP;
+            });
+            return;
+          }
           
-          // 각 자식의 서브트리 높이 계산
-          const childHeights = children.map(child => getSubtreeHeight(child, level));
-          const totalHeight = childHeights.reduce((sum, h) => sum + h, 0) + (children.length - 1) * gap;
-          
-          let currentY = parentNode.y - totalHeight / 2;
-          children.forEach((child, idx) => {
-            const height = childHeights[idx];
-            child.x = levelX[level] || (levelX[4] + (level - 4) * 160);
-            child.y = currentY + height / 2;
-            currentY += height + gap;
-            
-            // 재귀적으로 자식의 자식들도 배치
+          const gap = GAPS[Math.min(level, 4)];
+          const heights = children.map(c => getSubtreeH(c, level + 1));
+          const totalH = heights.reduce((s, h) => s + h, 0) + (children.length - 1) * gap;
+          let curY = parent.y - totalH / 2;
+          children.forEach((child, i) => {
+            child.level = level + 1;
+            child.x = LEVEL_X[Math.min(level + 1, LEVEL_X.length - 1)];
+            child.y = curY + heights[i] / 2;
+            curY += heights[i] + gap;
             positionChildren(child, level + 1);
           });
         };
         
-        // 각 레벨1 노드의 자식들 배치
-        level1Children.forEach(child => {
-          positionChildren(child, 2);
+        // Level1 배치
+        const l1 = getChildren(centerId);
+        const l1Heights = l1.map(c => getSubtreeH(c, 1));
+        const totalL1 = l1Heights.reduce((s, h) => s + h, 0) + (l1.length - 1) * GAPS[0];
+        let curY = -totalL1 / 2 + 300;
+        l1.forEach((child, i) => {
+          child.level = 1;
+          child.x = LEVEL_X[1];
+          child.y = curY + l1Heights[i] / 2;
+          curY += l1Heights[i] + GAPS[0];
+          positionChildren(child, 1);
         });
         
-        return nodeList;
-      };
-      
-      // 프로젝트 드롭 핸들러 - 프로젝트 + 하위업무 추가
-      const handleDropProject = (project) => {
-        const centerNode = nodes.find(n => n.id === 'center');
-        if (!centerNode) return;
+        // 중심 노드 위치
+        const centerNode = nodes.find(n => n.id === centerId);
+        if (centerNode && l1.length > 0) {
+          const ys = l1.map(c => c.y);
+          centerNode.x = LEVEL_X[0];
+          centerNode.y = (Math.min(...ys) + Math.max(...ys)) / 2;
+        } else if (centerNode) {
+          centerNode.x = LEVEL_X[0];
+          centerNode.y = 300;
+        }
         
-        // 개별 업무일지 업무 드래그 처리
-        if (project.isDiaryTask) {
-          let updatedNodes = [...nodes];
-          let updatedConnections = [...connections];
-          
-          const task = project.task;
-          const brand = BRANDS.find(b => b.id === task.projectId);
-          
-          // 해당 브랜드의 노드가 이미 있는지 확인 (그 외 업무 또는 실제 브랜드)
-          let parentNodeId;
-          
-          if (brand) {
-            // 실제 브랜드가 있으면 그 브랜드 노드 아래에 추가
-            const brandNodeId = `brand-${brand.id}`;
-            let existingBrandNode = nodes.find(n => n.id === brandNodeId);
-            
-            if (!existingBrandNode) {
-              const brandNode = {
-                id: brandNodeId,
-                type: 'brand',
-                text: brand.name,
-                x: 0,
-                y: 0,
-                color: brand.color,
-                brandId: brand.id
-              };
-              
-              updatedNodes.push(brandNode);
-              updatedConnections.push({
-                id: `conn-brand-${brandNodeId}`,
-                from: 'center',
-                to: brandNodeId
-              });
-            }
-            parentNodeId = brandNodeId;
+        // 모든 노드를 양수 영역으로 시프트 (음수 좌표 방지)
+        const allYs = nodes.map(n => n.y);
+        const minY = Math.min(...allYs);
+        if (minY < 100) {
+          const shiftY = 100 - minY;
+          nodes.forEach(n => { n.y += shiftY; });
+        }
+        
+        return { autoNodes: nodes, autoConnections: conns };
+      }, [activeBoard, activeBoardId, archivedSnapshots, tasks, projects, teamRequests, fixedTasks, currentUser.id, kpiBrands, companyGoal]);
+      
+      // ─── 키보드 이벤트 ───
+      useEffect(() => {
+        const kd = (e) => {
+          if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            e.preventDefault(); setSpacePressed(true);
+          }
+        };
+        const ku = (e) => {
+          if (e.code === 'Space') { e.preventDefault(); setSpacePressed(false); setIsPanning(false); }
+        };
+        document.addEventListener('keydown', kd);
+        document.addEventListener('keyup', ku);
+        return () => { document.removeEventListener('keydown', kd); document.removeEventListener('keyup', ku); };
+      }, []);
+      
+      // ─── 캔버스 Ctrl+휠 줌 (non-passive로 등록하여 브라우저 줌 방지) ───
+      useEffect(() => {
+        const el = canvasRef.current;
+        if (!el) return;
+        const handleWheel = (e) => {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = el.getBoundingClientRect();
+            const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            setZoom(prevZoom => {
+              const nz = Math.min(3, Math.max(0.2, prevZoom * delta));
+              const r = nz / prevZoom;
+              setOffset(prev => ({ x: mx - (mx - prev.x) * r, y: my - (my - prev.y) * r }));
+              return nz;
+            });
           } else {
-            // 브랜드가 없으면 "그 외 업무" 노드 아래에 추가
-            const otherNodeId = 'brand-other';
-            let existingOtherNode = nodes.find(n => n.id === otherNodeId);
-            
-            if (!existingOtherNode) {
-              const otherNode = {
-                id: otherNodeId,
-                type: 'brand',
-                text: '그 외 업무',
-                x: 0,
-                y: 0,
-                color: '#8B95A1',
-                brandId: 'other'
-              };
-              
-              updatedNodes.push(otherNode);
-              updatedConnections.push({
-                id: `conn-brand-${otherNodeId}`,
-                from: 'center',
-                to: otherNodeId
-              });
+            e.preventDefault();
+            setOffset(prev => ({ x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+          }
+        };
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
+      }, []);
+      
+      // ─── 노드 스타일 ───
+      const getNodeStyle = (node) => {
+        const base = { display: 'inline-flex', alignItems: 'center', padding: '8px 16px', borderRadius: 10, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'default' };
+        switch (node.type) {
+          case 'center':
+            return { ...base, background: '#191F28', color: 'white', fontSize: 15, fontWeight: 800, padding: '12px 24px', borderRadius: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.2)' };
+          case 'category':
+            return { ...base, background: 'white', color: node.color || '#191F28', fontSize: 13, fontWeight: 700, border: `2px solid ${node.color || '#E5E8EB'}`, borderRadius: 10, padding: '8px 18px' };
+          case 'kpi':
+            return { ...base, background: `${node.color}08`, color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${node.color}50`, borderRadius: 8, padding: '6px 14px' };
+          case 'indicator':
+            return { ...base, background: `${node.color}12`, color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${node.color}60`, borderRadius: 8, padding: '6px 14px' };
+          case 'project':
+            return { ...base, background: `${node.color}10` || '#F7F8FA', color: '#191F28', fontSize: 12, fontWeight: 600, border: `1px solid ${node.color}40`, padding: '6px 14px' };
+          case 'task':
+            if (node.isLeaf) {
+              return { ...base, background: 'transparent', color: '#4E5968', fontSize: 11, fontWeight: 500, border: 'none', padding: '3px 0', borderRadius: 0 };
             }
-            parentNodeId = otherNodeId;
-          }
-          
-          // 업무 노드 추가
-          const taskNodeId = `diary-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-          
-          updatedNodes.push({
-            id: taskNodeId,
-            type: 'task',
-            taskId: task.id,
-            text: task.title,
-            x: 0,
-            y: 0,
-            completed: task.completed,
-            color: brand ? brand.color : '#8B95A1',
-            isDiaryTask: true,
-            brandId: task.projectId || null
-          });
-          
-          updatedConnections.push({
-            id: `conn-diary-${taskNodeId}`,
-            from: parentNodeId,
-            to: taskNodeId
-          });
-          
-          // 하위업무도 함께 추가
-          const subtaskList = project.subtasks || tasks.filter(t => t.parentTaskId === task.id && t.memberId === currentUser.id);
-          subtaskList.forEach((st) => {
-            const subtaskNodeId = `subtask-${st.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-            updatedNodes.push({
-              id: subtaskNodeId,
-              type: 'task',
-              taskId: st.id,
-              text: st.title,
-              x: 0,
-              y: 0,
-              completed: st.completed,
-              color: '#10B981',
-              isDiaryTask: true,
-              isSubtask: true,
-              brandId: task.projectId || null
-            });
-            
-            updatedConnections.push({
-              id: `conn-subtask-${subtaskNodeId}`,
-              from: taskNodeId,
-              to: subtaskNodeId
-            });
-          });
-          
-          // 자동 레이아웃 적용
-          updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-          
-          setNodes(updatedNodes);
-          setConnections(updatedConnections);
-          saveBoard(updatedNodes, updatedConnections);
-          return;
+            return { ...base, background: 'white', color: '#333D4B', fontSize: 11, fontWeight: 500, border: '1px solid #E5E8EB', padding: '5px 12px', borderRadius: 8 };
+          case 'subtask':
+            if (node.isLeaf) {
+              return { ...base, background: 'transparent', color: '#8B95A1', fontSize: 10, fontWeight: 400, border: 'none', padding: '2px 0', borderRadius: 0 };
+            }
+            return { ...base, background: '#FAFBFC', color: '#6B7684', fontSize: 10, fontWeight: 500, border: '1px solid #F2F4F6', padding: '4px 10px', borderRadius: 6 };
+          default:
+            return base;
         }
-        
-        // "그 외 업무" 브랜드 드래그 처리
-        if (project.isOtherBrand) {
-          let updatedNodes = [...nodes];
-          let updatedConnections = [...connections];
-          
-          // "그 외 업무" 브랜드 노드 생성
-          const brandNodeId = 'brand-other';
-          const existingBrandNode = nodes.find(n => n.id === brandNodeId);
-          
-          if (!existingBrandNode) {
-            const brandNode = {
-              id: brandNodeId,
-              type: 'brand',
-              text: '그 외 업무',
-              x: 0,
-              y: 0,
-              color: '#8B95A1',
-              brandId: 'other'
-            };
-            
-            updatedNodes.push(brandNode);
-            updatedConnections.push({
-              id: `conn-brand-${brandNodeId}`,
-              from: 'center',
-              to: brandNodeId
-            });
-          }
-          
-          // 업무일지 업무들을 자식 노드로 추가
-          project.diaryTasks?.forEach((task) => {
-            const taskNodeId = `diary-${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-            const brand = BRANDS.find(b => b.id === task.projectId);
-            
-            updatedNodes.push({
-              id: taskNodeId,
-              type: 'task',
-              taskId: task.id,
-              text: task.title,
-              x: 0,
-              y: 0,
-              completed: task.completed,
-              color: brand ? brand.color : '#8B95A1',
-              isDiaryTask: true,
-              brandId: task.projectId || null
-            });
-            
-            updatedConnections.push({
-              id: `conn-diary-${taskNodeId}`,
-              from: brandNodeId,
-              to: taskNodeId
-            });
-            
-            // 하위업무도 함께 추가
-            const subtaskList = tasks.filter(t => t.parentTaskId === task.id && t.memberId === currentUser.id);
-            subtaskList.forEach((st) => {
-              const subtaskNodeId = `subtask-${st.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-              updatedNodes.push({
-                id: subtaskNodeId,
-                type: 'task',
-                taskId: st.id,
-                text: st.title,
-                x: 0,
-                y: 0,
-                completed: st.completed,
-                color: '#10B981',
-                isDiaryTask: true,
-                isSubtask: true,
-                brandId: task.projectId || null
-              });
-              
-              updatedConnections.push({
-                id: `conn-subtask-${subtaskNodeId}`,
-                from: taskNodeId,
-                to: subtaskNodeId
-              });
-            });
-          });
-          
-          // 자동 레이아웃 적용
-          updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-          
-          setNodes(updatedNodes);
-          setConnections(updatedConnections);
-          saveBoard(updatedNodes, updatedConnections);
-          return;
-        }
-        
-        const projectBrand = getProjectBrand(project);
-        if (!projectBrand) return;
-        
-        // 해당 브랜드의 노드가 이미 있는지 확인
-        const brandNodeId = `brand-${projectBrand.id}`;
-        let existingBrandNode = nodes.find(n => n.id === brandNodeId);
-        
-        let updatedNodes = [...nodes];
-        let updatedConnections = [...connections];
-        
-        // 브랜드 노드가 없으면 생성
-        if (!existingBrandNode) {
-          const brandNode = {
-            id: brandNodeId,
-            type: 'brand',
-            text: projectBrand.name,
-            x: 0,
-            y: 0,
-            color: projectBrand.color,
-            brandId: projectBrand.id
-          };
-          
-          updatedNodes.push(brandNode);
-          updatedConnections.push({
-            id: `conn-brand-${brandNodeId}`,
-            from: 'center',
-            to: brandNodeId
-          });
-        }
-        
-        // 완료된 하위업무 중 내가 담당한 업무만 필터링 (부모 업무만)
-        const allProjectTasks = getProjectTasks(project.id);
-        const projectTasks = allProjectTasks.filter(t => 
-          t.completed && !t.parentTaskId && t.memberId === currentUser.id
-        );
-        
-        // 프로젝트 노드 (브랜치로 생성)
-        const projectNodeId = `project-${project.id}-${Date.now()}`;
-        
-        const projectNode = {
-          id: projectNodeId,
-          type: 'branch',
-          projectId: project.id,
-          text: project.title,
-          x: 0,
-          y: 0,
-          color: projectBrand?.color || '#6B7684',
-          brandId: project.brandId,
-          kpiLabel: '',
-          kpiValue: ''
-        };
-        
-        // 프로젝트-브랜드 연결 (브랜드 노드 아래에)
-        const projectConnection = {
-          id: `conn-project-${Date.now()}`,
-          from: brandNodeId,
-          to: projectNodeId
-        };
-        
-        // 완료된 하위업무 노드들
-        const taskNodes = [];
-        const taskConnections = [];
-        const subtaskNodes = [];
-        const subtaskConnections = [];
-        
-        projectTasks.forEach((task) => {
-          const taskNodeId = `task-${task.id}-${Date.now()}`;
-          
-          taskNodes.push({
-            id: taskNodeId,
-            type: 'task',
-            taskId: task.id,
-            text: task.title,
-            x: 0,
-            y: 0,
-            completed: task.completed,
-            color: '#00C471'
-          });
-          
-          taskConnections.push({
-            id: `conn-task-${taskNodeId}`,
-            from: projectNodeId,
-            to: taskNodeId
-          });
-          
-          // 서브태스크 추가
-          const subtasks = allProjectTasks.filter(st => st.parentTaskId === task.id && st.completed && st.memberId === currentUser.id);
-          subtasks.forEach((st) => {
-            const subtaskNodeId = `subtask-${st.id}-${Date.now()}`;
-            subtaskNodes.push({
-              id: subtaskNodeId,
-              type: 'task',
-              taskId: st.id,
-              text: st.title,
-              x: 0,
-              y: 0,
-              completed: st.completed,
-              color: '#10B981',
-              isSubtask: true
-            });
-            
-            subtaskConnections.push({
-              id: `conn-subtask-${subtaskNodeId}`,
-              from: taskNodeId,
-              to: subtaskNodeId
-            });
-          });
+      };
+      
+      // ─── 노드 높이 ───
+      const getNodeHeight = (node) => {
+        return node.type === 'center' ? 42 : node.type === 'category' ? 40 : node.type === 'kpi' ? 32 : node.type === 'indicator' ? 34 : node.type === 'project' ? 34 : node.type === 'subtask' ? 24 : 26;
+      };
+      
+      // ─── 연결선 SVG ───
+      const LEVEL_X_RENDER = [0, 220, 440, 660, 880, 1100, 1300];
+      
+      const renderConnections = () => {
+        const childrenMap = {};
+        autoConnections.forEach(conn => {
+          if (!childrenMap[conn.from]) childrenMap[conn.from] = [];
+          childrenMap[conn.from].push(conn.to);
         });
         
-        updatedNodes = [...updatedNodes, projectNode, ...taskNodes, ...subtaskNodes];
-        updatedConnections = [...updatedConnections, projectConnection, ...taskConnections, ...subtaskConnections];
+        const paths = [];
         
-        // 자동 레이아웃 적용
-        updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-        
-        setNodes(updatedNodes);
-        setConnections(updatedConnections);
-        saveBoard(updatedNodes, updatedConnections);
-      };
-      
-      // 가지(브랜치) 추가
-      const addBranch = () => {
-        if (!newBranchName.trim()) return;
-        
-        const newNode = {
-          id: `branch-${Date.now()}`,
-          type: 'branch',
-          text: newBranchName.trim(),
-          x: 0,
-          y: 0,
-          color: '#6B7684',
-          kpiLabel: '',
-          kpiValue: ''
-        };
-        
-        const newConnection = {
-          id: `conn-${Date.now()}`,
-          from: 'center',
-          to: newNode.id
-        };
-        
-        let updatedNodes = [...nodes, newNode];
-        const updatedConnections = [...connections, newConnection];
-        
-        // 자동 레이아웃 적용
-        updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-        
-        setNodes(updatedNodes);
-        setConnections(updatedConnections);
-        saveBoard(updatedNodes, updatedConnections);
-        
-        setNewBranchName('');
-        setShowAddBranch(false);
-      };
-      
-      // 업무를 브랜치에 추가 (드롭)
-      const handleDropOnBranch = (branchId, task) => {
-        const branchNode = nodes.find(n => n.id === branchId);
-        if (!branchNode) return;
-        
-        const childCount = connections.filter(c => c.from === branchId).length;
-        const offsetY = childCount * 50;
-        
-        const newNode = {
-          id: `task-${Date.now()}`,
-          type: 'task',
-          taskId: task.id,
-          text: task.title,
-          x: branchNode.x + 180,
-          y: branchNode.y - 50 + offsetY,
-          completed: task.completed,
-          color: task.completed ? '#00C471' : '#3182F6'
-        };
-        
-        const newConnection = {
-          id: `conn-${Date.now()}`,
-          from: branchId,
-          to: newNode.id
-        };
-        
-        const updatedNodes = [...nodes, newNode];
-        const updatedConnections = [...connections, newConnection];
-        
-        setNodes(updatedNodes);
-        setConnections(updatedConnections);
-        saveBoard(updatedNodes, updatedConnections);
-      };
-      
-      // 노드 드래그 중인 노드 ID와 겹치는 대상 노드
-      const [draggingNodeId, setDraggingNodeId] = useState(null);
-      const [dropTargetNodeId, setDropTargetNodeId] = useState(null);
-      const dropTargetRef = React.useRef(null); // ref로 실시간 추적
-      
-      // 노드의 모든 자손 ID 가져오기
-      const getAllDescendantIds = (nodeId, connList) => {
-        const descendants = [];
-        const childConns = connList.filter(c => c.from === nodeId);
-        childConns.forEach(conn => {
-          descendants.push(conn.to);
-          descendants.push(...getAllDescendantIds(conn.to, connList));
-        });
-        return descendants;
-      };
-      
-      // 노드 드래그 (자식들도 함께 이동)
-      const handleNodeDrag = (nodeId, dx, dy) => {
-        setDraggingNodeId(nodeId);
-        
-        // 이동할 노드들 (자신 + 모든 자손)
-        const descendantIds = getAllDescendantIds(nodeId, connections);
-        const moveIds = [nodeId, ...descendantIds];
-        
-        // 드래그 노드의 부모 찾기
-        const dragParentConn = connections.find(c => c.to === nodeId);
-        const dragParentId = dragParentConn?.from;
-        
-        setNodes(prev => {
-          const updated = prev.map(n => 
-            // 드래그 중에는 자유롭게 이동
-            moveIds.includes(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n
-          );
+        // 1) 수평 트리 연결선 (비-말단 노드 간)
+        Object.keys(childrenMap).forEach(fromId => {
+          const from = autoNodes.find(n => n.id === fromId);
+          if (!from) return;
           
-          // 노드 너비 계산 (연결선용 - 실제 노드 너비와 일치)
-          const getNodeWidth = (n) => {
-            if (n.type === 'center') return 120;
-            if (n.type === 'brand' || n.type === 'other') return 120;
-            if (n.type === 'branch') return 150;
-            return n.isSubtask ? 130 : 160;
-          };
+          const children = childrenMap[fromId].map(cid => autoNodes.find(n => n.id === cid)).filter(Boolean);
+          if (children.length === 0) return;
           
-          // 노드 중심점 계산 (왼쪽 정렬 노드는 x + width/2)
-          const getNodeCenter = (n) => {
-            if (n.type === 'center') return { x: n.x, y: n.y };
-            return { x: n.x + getNodeWidth(n) / 2, y: n.y };
-          };
+          // 말단 노드들 (isLeaf) → 세로 연결 처리
+          const leafChildren = children.filter(c => c.isLeaf);
+          const branchChildren = children.filter(c => !c.isLeaf);
           
-          // 드래그 중인 노드와 겹치는 노드 찾기 (자손 제외)
-          const draggingNode = updated.find(n => n.id === nodeId);
-          if (draggingNode) {
-            const dragCenter = getNodeCenter(draggingNode);
-            let foundTarget = null;
-            let minDist = Infinity;
+          // 가지(branch) 자식들: 수평 꺾임선
+          if (branchChildren.length > 0) {
+            const fromLevel = from.level || 0;
+            const fromLevelX = LEVEL_X_RENDER[Math.min(fromLevel, LEVEL_X_RENDER.length - 1)];
+            const toLevelX = LEVEL_X_RENDER[Math.min(fromLevel + 1, LEVEL_X_RENDER.length - 1)];
+            const elbowX = fromLevelX + (toLevelX - fromLevelX) * 0.45;
             
-            for (const otherNode of updated) {
-              if (otherNode.id === nodeId) continue;
-              if (moveIds.includes(otherNode.id)) continue; // 자손은 드롭 대상에서 제외
-              
-              // 타겟 노드의 부모 찾기
-              const otherParentConn = connections.find(c => c.to === otherNode.id);
-              const otherParentId = otherParentConn?.from;
-              
-              // 같은 부모의 형제가 아닌 task는 드롭 대상에서 제외 (부모가 될 수 없음)
-              const isSibling = dragParentId && dragParentId === otherParentId;
-              if (otherNode.type === 'task' && !isSibling) continue;
-              
-              const otherCenter = getNodeCenter(otherNode);
-              
-              // 겹침 판정 (노드 중심 간 거리)
-              const dist = Math.sqrt(
-                Math.pow(dragCenter.x - otherCenter.x, 2) + 
-                Math.pow(dragCenter.y - otherCenter.y, 2)
-              );
-              
-              if (dist < 100 && dist < minDist) { // 100px 이내 중 가장 가까운 노드
-                foundTarget = otherNode.id;
-                minDist = dist;
+            const color = branchChildren[0].color || '#D1D5DB';
+            const sw = from.type === 'center' ? 1.5 : 1;
+            
+            // 수직 줄기
+            if (branchChildren.length > 1) {
+              const ys = branchChildren.map(c => c.y);
+              paths.push(React.createElement('line', {
+                key: `stem-${fromId}`,
+                x1: elbowX, y1: Math.min(...ys),
+                x2: elbowX, y2: Math.max(...ys),
+                stroke: color + '40', strokeWidth: sw
+              }));
+            }
+            
+            // 각 자식에게 수평선
+            branchChildren.forEach((child, ci) => {
+              // 줄기→자식 수평선
+              paths.push(React.createElement('line', {
+                key: `br-h-${fromId}-${ci}`,
+                x1: elbowX, y1: child.y,
+                x2: child.x, y2: child.y,
+                stroke: (child.color || '#D1D5DB') + '40', strokeWidth: sw
+              }));
+              // 부모→줄기 수평선 (부모 y에서)
+              if (branchChildren.length === 1) {
+                paths.push(React.createElement('path', {
+                  key: `br-p-${fromId}-${ci}`,
+                  d: `M${elbowX},${from.y} L${elbowX},${child.y} L${child.x},${child.y}`,
+                  stroke: (child.color || '#D1D5DB') + '40', strokeWidth: sw,
+                  fill: 'none', strokeLinejoin: 'round'
+                }));
               }
-            }
-            dropTargetRef.current = foundTarget; // ref도 업데이트
-            setDropTargetNodeId(foundTarget);
-          }
-          
-          return updated;
-        });
-      };
-      
-      const handleNodeDragEnd = (nodeId) => {
-        // 드롭 대상이 있으면 이동 (ref 사용으로 최신 값 보장)
-        const targetId = dropTargetRef.current;
-        if (targetId && nodeId) {
-          handleMoveNodeToParent(nodeId, targetId);
-        } else {
-          // 드래그만 한 경우 - X좌표를 레벨별로 자동 정렬
-          const alignedNodes = alignXPositions(nodes, connections);
-          setNodes(alignedNodes);
-          saveBoard(alignedNodes, connections);
-        }
-        setDraggingNodeId(null);
-        setDropTargetNodeId(null);
-        dropTargetRef.current = null;
-      };
-      
-      // X좌표만 레벨별로 정렬 (Y좌표는 유지)
-      const alignXPositions = (nodeList, connList) => {
-        const levelX = {
-          0: LAYOUT.centerX,
-          1: LAYOUT.level1X,
-          2: LAYOUT.level2X,
-          3: LAYOUT.level3X,
-          4: LAYOUT.level4X,
-          5: LAYOUT.level4X + 150
-        };
-        
-        // 노드의 레벨 계산
-        const getNodeLevel = (nodeId, visited = new Set()) => {
-          if (visited.has(nodeId)) return -1;
-          visited.add(nodeId);
-          
-          if (nodeId === 'center') return 0;
-          const parentConn = connList.find(c => c.to === nodeId);
-          if (!parentConn) return 1; // 연결 없으면 레벨1로 간주
-          return getNodeLevel(parentConn.from, visited) + 1;
-        };
-        
-        return nodeList.map(node => {
-          if (node.type === 'center') {
-            return { ...node, x: LAYOUT.centerX };
-          }
-          const level = getNodeLevel(node.id);
-          const targetX = levelX[level] || (levelX[4] + (level - 4) * 160);
-          return { ...node, x: targetX };
-        });
-      };
-      
-      // 노드를 다른 노드의 하위로 이동 또는 순서 변경
-      const handleMoveNodeToParent = (childNodeId, targetNodeId) => {
-        if (childNodeId === targetNodeId) return;
-        if (childNodeId === 'center') return;
-        
-        const childNode = nodes.find(n => n.id === childNodeId);
-        const targetNode = nodes.find(n => n.id === targetNodeId);
-        if (!childNode || !targetNode) return;
-        
-        // 드래그 노드의 현재 부모 찾기
-        const childParentConn = connections.find(c => c.to === childNodeId);
-        const childParentId = childParentConn?.from;
-        
-        // 타겟 노드의 부모 찾기
-        const targetParentConn = connections.find(c => c.to === targetNodeId);
-        const targetParentId = targetParentConn?.from;
-        
-        // 자기 자신의 자식에게 이동하는 것 방지
-        const isChildOfDragging = (nodeId) => {
-          const childConns = connections.filter(c => c.from === childNodeId);
-          for (const conn of childConns) {
-            if (conn.to === nodeId) return true;
-            if (isChildOfDragging(conn.to)) return true;
-          }
-          return false;
-        };
-        if (isChildOfDragging(targetNodeId)) return;
-        
-        let updatedConnections = [...connections];
-        
-        // 같은 부모를 가진 형제 노드인 경우 → 순서만 변경 (연결은 그대로)
-        if (childParentId === targetParentId && childParentId) {
-          // 연결은 변경하지 않고, 순서만 바꾸기 위해 connections 배열 순서 조정
-          const parentConns = updatedConnections.filter(c => c.from === childParentId);
-          const otherConns = updatedConnections.filter(c => c.from !== childParentId);
-          
-          // 타겟 노드 위치 찾기
-          const targetIdx = parentConns.findIndex(c => c.to === targetNodeId);
-          const childIdx = parentConns.findIndex(c => c.to === childNodeId);
-          
-          if (targetIdx !== -1 && childIdx !== -1) {
-            // child를 target 위치로 이동
-            const [childConn] = parentConns.splice(childIdx, 1);
-            const newTargetIdx = parentConns.findIndex(c => c.to === targetNodeId);
-            parentConns.splice(newTargetIdx, 0, childConn);
-            updatedConnections = [...otherConns, ...parentConns];
-          }
-        } else {
-          // 다른 부모의 노드 → 하위로 이동
-          // 기존 연결 제거
-          updatedConnections = connections.filter(c => c.to !== childNodeId);
-          
-          // 새 연결 추가 (타겟 노드의 하위로)
-          updatedConnections.push({
-            id: `conn-move-${Date.now()}`,
-            from: targetNodeId,
-            to: childNodeId
-          });
-        }
-        
-        // 자동 레이아웃 적용
-        let updatedNodes = autoLayoutTree([...nodes], updatedConnections);
-        
-        setNodes(updatedNodes);
-        setConnections(updatedConnections);
-        saveBoard(updatedNodes, updatedConnections);
-        setDraggingNodeId(null);
-        setDropTargetNodeId(null);
-        dropTargetRef.current = null;
-      };
-      
-      // 노드 삭제
-      const deleteNode = (nodeId) => {
-        if (nodeId === 'center') return;
-        
-        // 연결된 자식 노드도 함께 삭제
-        const childIds = connections.filter(c => c.from === nodeId).map(c => c.to);
-        const allDeleteIds = [nodeId, ...childIds];
-        
-        const updatedNodes = nodes.filter(n => !allDeleteIds.includes(n.id));
-        const updatedConnections = connections.filter(c => 
-          !allDeleteIds.includes(c.from) && !allDeleteIds.includes(c.to)
-        );
-        
-        setNodes(updatedNodes);
-        setConnections(updatedConnections);
-        saveBoard(updatedNodes, updatedConnections);
-        setSelectedNode(null);
-      };
-      
-      // KPI 업데이트
-      const updateNodeKpi = (nodeId, kpiLabel, kpiValue) => {
-        const updatedNodes = nodes.map(n => 
-          n.id === nodeId ? { ...n, kpiLabel, kpiValue } : n
-        );
-        setNodes(updatedNodes);
-        saveBoard(updatedNodes, connections);
-      };
-      
-      // 노드 텍스트 업데이트
-      const updateNodeText = (nodeId, text) => {
-        const updatedNodes = nodes.map(n => 
-          n.id === nodeId ? { ...n, text } : n
-        );
-        setNodes(updatedNodes);
-        saveBoard(updatedNodes, connections);
-        setEditingNode(null);
-      };
-      
-      // 브랜드 정보
-      const brand = BRANDS.find(b => b.id === selectedBrand);
-      
-      // 드래그 중인 프로젝트
-      const [draggedProject, setDraggedProject] = useState(null);
-      const [dragOverNodeId, setDragOverNodeId] = useState(null);
-      
-      // 카테고리에 프로젝트 드롭 핸들러
-      const handleDropOnCategory = (categoryNodeId, project) => {
-        const categoryNode = nodes.find(n => n.id === categoryNodeId);
-        if (!categoryNode || categoryNode.projectId) return; // 이미 프로젝트가 연결된 노드면 무시
-        
-        const projectBrand = getProjectBrand(project);
-        
-        // 완료된 하위업무 중 내가 담당한 업무만 필터링 (부모 업무만)
-        const allProjectTasks = getAllProjectTasks(project.id);
-        const projectTasks = allProjectTasks.filter(t => 
-          t.completed && !t.parentTaskId && t.memberId === currentUser.id
-        );
-        
-        // 프로젝트 노드 생성 (카테고리 하위에)
-        const projectNodeId = `project-${project.id}-${Date.now()}`;
-        const projectNode = {
-          id: projectNodeId,
-          type: 'branch',
-          projectId: project.id,
-          text: project.title,
-          x: 0,
-          y: 0,
-          color: projectBrand?.color || '#6B7684',
-          brandId: project.brandId,
-          kpiLabel: '',
-          kpiValue: ''
-        };
-        
-        // 프로젝트-카테고리 연결
-        const projectConnection = {
-          id: `conn-project-${Date.now()}`,
-          from: categoryNodeId,
-          to: projectNodeId
-        };
-        
-        // 완료된 하위업무 노드들 + 서브태스크
-        const taskNodes = [];
-        const taskConnections = [];
-        const subtaskNodes = [];
-        const subtaskConnections = [];
-        
-        projectTasks.forEach((task) => {
-          const taskNodeId = `task-${task.id}-${Date.now()}`;
-          
-          taskNodes.push({
-            id: taskNodeId,
-            type: 'task',
-            taskId: task.id,
-            text: task.title,
-            x: 0,
-            y: 0,
-            completed: task.completed,
-            color: '#00C471'
-          });
-          
-          taskConnections.push({
-            id: `conn-task-${taskNodeId}`,
-            from: projectNodeId,
-            to: taskNodeId
-          });
-          
-          // 서브태스크 추가
-          const subtasks = allProjectTasks.filter(st => st.parentTaskId === task.id && st.completed && st.memberId === currentUser.id);
-          subtasks.forEach((st) => {
-            const subtaskNodeId = `subtask-${st.id}-${Date.now()}`;
-            subtaskNodes.push({
-              id: subtaskNodeId,
-              type: 'task',
-              taskId: st.id,
-              text: st.title,
-              x: 0,
-              y: 0,
-              completed: st.completed,
-              color: '#10B981',
-              isSubtask: true
             });
+          }
+          
+          // 말단(leaf) 자식들: 부모 아래로 세로 대시 연결
+          if (leafChildren.length > 0) {
+            const color = (leafChildren[0].color || '#D1D5DB') + '30';
+            const parentBottom = from.y + getNodeHeight(from) / 2;
+            const lineX = from.x + 8;
             
-            subtaskConnections.push({
-              id: `conn-subtask-${subtaskNodeId}`,
-              from: taskNodeId,
-              to: subtaskNodeId
+            // 부모에서 아래로 내려오는 수직선
+            const lastLeaf = leafChildren[leafChildren.length - 1];
+            paths.push(React.createElement('line', {
+              key: `leaf-stem-${fromId}`,
+              x1: lineX, y1: parentBottom + 4,
+              x2: lineX, y2: lastLeaf.y,
+              stroke: color, strokeWidth: 1, strokeDasharray: '3,3'
+            }));
+            
+            // 각 말단 노드에 짧은 수평 대시
+            leafChildren.forEach((child, ci) => {
+              paths.push(React.createElement('line', {
+                key: `leaf-h-${fromId}-${ci}`,
+                x1: lineX, y1: child.y,
+                x2: child.x - 4, y2: child.y,
+                stroke: color, strokeWidth: 1
+              }));
             });
-          });
+          }
         });
         
-        let updatedNodes = [...nodes, projectNode, ...taskNodes, ...subtaskNodes];
-        const updatedConnections = [...connections, projectConnection, ...taskConnections, ...subtaskConnections];
-        
-        // 자동 레이아웃 적용
-        updatedNodes = autoLayoutTree(updatedNodes, updatedConnections);
-        
-        setNodes(updatedNodes);
-        setConnections(updatedConnections);
-        saveBoard(updatedNodes, updatedConnections);
+        return paths;
       };
       
-      // 전체 레이아웃 재정렬 함수
-      const reLayoutAll = () => {
-        const updatedNodes = autoLayoutTree([...nodes], connections);
-        setNodes(updatedNodes);
-        saveBoard(updatedNodes, connections);
-      };
-
+      // ─── 렌더링 ───
       return (
-        <div style={{ display: 'flex', height: '100vh', background: '#F7F8FA' }}>
-          {/* 왼쪽: 프로젝트 목록 (브랜드별 그룹화) */}
-          <div style={{ width: 320, background: 'white', borderRight: '1px solid #E5E8EB', display: 'flex', flexDirection: 'column' }}>
-            
-            {/* KPI 현황 섹션 */}
-            {Object.keys(kpiBrands).length > 0 && (
-              <div style={{ padding: 16, borderBottom: '1px solid #E5E8EB' }}>
-                <h2 style={{ fontSize: 14, fontWeight: 700, color: '#191F28', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  📊 KPI 현황
-                </h2>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {Object.values(kpiBrands).map(brand => {
-                    const avgProgress = brand.kpis && brand.kpis.length > 0
-                      ? Math.round(brand.kpis.reduce((sum, kpi) => sum + (kpi.progress || 0), 0) / brand.kpis.length)
-                      : 0;
-                    return (
-                      <div key={brand.id} style={{ 
-                        padding: '10px 12px', 
-                        background: `${brand.color}08`, 
-                        borderRadius: 10,
-                        borderLeft: `3px solid ${brand.color}`
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{brand.name}</span>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: brand.color }}>{avgProgress}%</span>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#FAFBFC' }}>
+          {/* 상단 툴바 */}
+          <div style={{ padding: '14px 24px', background: 'white', borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <h1 style={{ fontSize: 20, fontWeight: 800, color: '#191F28', margin: 0 }}>🎯 그로스보드</h1>
+              {/* 보드 선택 드롭다운 */}
+              <select
+                value={activeBoardId || ''}
+                onChange={(e) => setActiveBoardId(e.target.value)}
+                style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13, fontWeight: 600, background: '#F7F8FA' }}
+              >
+                {boards.filter(b => !b.archived).map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+                {boards.filter(b => b.archived).length > 0 && (
+                  <optgroup label="📦 보관된 보드">
+                    {boards.filter(b => b.archived).map(b => (
+                      <option key={b.id} value={b.id}>📦 {b.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {activeBoard && (
+                <span style={{ fontSize: 12, color: '#8B95A1' }}>
+                  {activeBoard.startDate} ~ {activeBoard.endDate || '진행중'}
+                  {activeBoard.archived && ' (보관됨)'}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {activeBoard && !activeBoard.archived && (
+                <button onClick={() => archiveBoard(activeBoardId)}
+                  style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>
+                  📦 보관
+                </button>
+              )}
+              <button onClick={() => setShowBoardManager(true)}
+                style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#3182F6', fontSize: 12, fontWeight: 600, color: 'white', cursor: 'pointer' }}>
+                + 새 보드
+              </button>
+            </div>
+          </div>
+          
+          {/* 캔버스 */}
+          <div
+            ref={canvasRef}
+            style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: spacePressed ? (isPanning ? 'grabbing' : 'grab') : 'default' }}
+            onMouseDown={(e) => {
+              if (spacePressed || e.button === 1) {
+                setIsPanning(true);
+                panStart.current = { x: e.clientX, y: e.clientY, offsetX: offset.x, offsetY: offset.y };
+              }
+            }}
+            onMouseMove={(e) => {
+              if (isPanning) {
+                setOffset({ x: panStart.current.offsetX + (e.clientX - panStart.current.x), y: panStart.current.offsetY + (e.clientY - panStart.current.y) });
+              }
+            }}
+            onMouseUp={() => setIsPanning(false)}
+            onMouseLeave={() => setIsPanning(false)}
+          >
+            {!activeBoard ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 16 }}>
+                <div style={{ fontSize: 48 }}>📊</div>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28' }}>그로스보드를 시작하세요</h2>
+                <p style={{ fontSize: 14, color: '#8B95A1' }}>성과 발표회 기간을 설정하고 새 보드를 만들어보세요</p>
+                <button onClick={() => setShowBoardManager(true)}
+                  style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  + 새 보드 만들기
+                </button>
+              </div>
+            ) : activeBoard.archived && !archivedSnapshots[activeBoardId] ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 40 }}>⏳</div>
+                <p style={{ fontSize: 15, fontWeight: 600, color: '#191F28' }}>보관된 보드를 불러오는 중...</p>
+              </div>
+            ) : autoNodes.length <= 1 ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 40 }}>📋</div>
+                <p style={{ fontSize: 15, fontWeight: 600, color: '#191F28' }}>완료된 업무가 없습니다</p>
+                <p style={{ fontSize: 13, color: '#8B95A1' }}>업무를 완료하면 자동으로 마인드맵에 표시됩니다</p>
+              </div>
+            ) : (
+              <div style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: '0 0', position: 'absolute', top: 0, left: 0 }}>
+                {/* 연결선 - SVG viewBox 없이 동일 좌표계 */}
+                <svg style={{ position: 'absolute', top: 0, left: 0, width: 5000, height: 5000, pointerEvents: 'none', overflow: 'visible', zIndex: 0 }}>
+                  {renderConnections()}
+                </svg>
+                {/* 노드 - y는 노드 중앙이므로 top에서 높이/2 빼기 */}
+                {autoNodes.map(node => {
+                  const h = getNodeHeight(node);
+                  return (
+                    <div key={node.id} style={{ position: 'absolute', left: node.x, top: node.y - h / 2, zIndex: 1 }}>
+                      {/* 중심 노드: 위에 회사 목표 표시 */}
+                      {node.type === 'center' && node.subtitle && (
+                        <div style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 10, textAlign: 'center', whiteSpace: 'pre-line' }}>
+                          <div style={{ padding: '10px 20px', background: '#F7F8FA', borderRadius: 10, border: '1px solid #E5E8EB', minWidth: 200 }}>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: '#8B95A1', marginBottom: 4 }}>넷폼알앤디 2026 목표</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#191F28', lineHeight: 1.5 }}>{node.subtitle}</div>
+                          </div>
                         </div>
-                        <div style={{ width: '100%', height: 4, background: '#E5E8EB', borderRadius: 2, overflow: 'hidden' }}>
-                          <div style={{ 
-                            width: `${avgProgress}%`, 
-                            height: '100%', 
-                            background: brand.color, 
-                            borderRadius: 2,
-                            transition: 'width 0.3s ease'
-                          }} />
-                        </div>
-                        {/* KPI 연동된 프로젝트 수 */}
-                        {(() => {
-                          const linkedCount = projects.filter(p => isProjectLinkedToBrand(p, brand.id)).length;
-                          const completedCount = projects.filter(p => isProjectLinkedToBrand(p, brand.id) && p.status === 'complete').length;
-                          return linkedCount > 0 ? (
-                            <div style={{ marginTop: 6, fontSize: 10, color: '#6B7684' }}>
-                              연동 프로젝트: {completedCount}/{linkedCount} 완료
-                            </div>
-                          ) : null;
-                        })()}
+                      )}
+                      <div style={getNodeStyle(node)}>
+                        {node.text}
                       </div>
-                    );
-                  })}
-                </div>
+                      {/* KPI 노드: 위에 'KPI' 라벨 */}
+                      {node.type === 'kpi' && (
+                        <div style={{ position: 'absolute', top: -14, left: 0, fontSize: 9, fontWeight: 700, color: node.color || '#8B95A1', letterSpacing: '0.5px', opacity: 0.7 }}>KPI</div>
+                      )}
+                      {/* 카테고리 노드: 아래에 미션 표시 */}
+                      {node.type === 'category' && node.subtitle && (
+                        <div style={{ marginTop: 2, maxWidth: 180, textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, color: '#8B95A1', lineHeight: 1.3, wordBreak: 'keep-all' }}>{node.subtitle}</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             
-            <div style={{ padding: 20, borderBottom: '1px solid #E5E8EB' }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>📁 프로젝트</h2>
-              
-              {/* 기간 선택 */}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select 
-                  value={selectedYear} 
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }}
-                >
-                  {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}년</option>)}
-                </select>
-                <select 
-                  value={selectedWeek} 
-                  onChange={(e) => setSelectedWeek(Number(e.target.value))}
-                  style={{ flex: 1, padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }}
-                >
-                  {Array.from({ length: 52 }, (_, i) => i + 1).map(w => 
-                    <option key={w} value={w}>{w}주차</option>
-                  )}
-                </select>
-              </div>
+            {/* 줌 컨트롤 */}
+            <div style={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', alignItems: 'center', gap: 4, background: 'white', borderRadius: 8, border: '1px solid #E5E8EB', padding: '4px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+              <button onClick={() => setZoom(z => Math.max(0.2, z * 0.9))} style={{ width: 28, height: 28, border: 'none', background: 'transparent', fontSize: 16, cursor: 'pointer', borderRadius: 4 }}>−</button>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#6B7684', minWidth: 40, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => Math.min(3, z * 1.1))} style={{ width: 28, height: 28, border: 'none', background: 'transparent', fontSize: 16, cursor: 'pointer', borderRadius: 4 }}>+</button>
+              <div style={{ width: 1, height: 16, background: '#E5E8EB', margin: '0 4px' }} />
+              <button onClick={() => { setZoom(0.85); setOffset({ x: 80, y: 40 }); }} style={{ padding: '2px 8px', border: 'none', background: 'transparent', fontSize: 11, cursor: 'pointer', color: '#6B7684' }}>리셋</button>
             </div>
-            
-            {/* 브랜드별 프로젝트 목록 */}
-            <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-              {BRANDS.map(brand => {
-                const brandProjects = myProjects.filter(p => p.brandId === brand.id);
-                
-                if (brandProjects.length === 0) return null;
-                
-                return (
-                  <div key={brand.id} style={{ marginBottom: 20 }}>
-                    {/* 브랜드 헤더 */}
-                    <div style={{ 
-                      display: 'flex', alignItems: 'center', gap: 8, 
-                      padding: '8px 12px', marginBottom: 8,
-                      background: `${brand.color}10`, borderRadius: 8,
-                      borderLeft: `3px solid ${brand.color}`
-                    }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: brand.color }}>{brand.name}</span>
-                      <span style={{ fontSize: 11, color: '#8B95A1' }}>({brandProjects.length})</span>
-                    </div>
-                    
-                    {/* 프로젝트 카드들 */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {brandProjects.map(project => {
-                        const isAdded = addedProjectIds.includes(project.id);
-                        const projectTasks = getProjectTasks(project.id);
-                        const allTasks = getAllProjectTasks(project.id);
-                        const completedCount = allTasks.filter(t => t.completed).length;
-                        const subtaskCount = allTasks.filter(t => t.parentTaskId).length;
-                        const statusColors = { progress: '#3182F6', hold: '#F59E0B', complete: '#00C471' };
-                        const statusLabels = { progress: '진행중', hold: '보류', complete: '완료' };
-                        
-                        return (
-                          <div
-                            key={project.id}
-                            draggable={!isAdded}
-                            onDragStart={(e) => {
-                              if (isAdded) return;
-                              setDraggedProject(project);
-                              e.dataTransfer.effectAllowed = 'copy';
-                            }}
-                            onDragEnd={() => setDraggedProject(null)}
-                            style={{
-                              padding: '12px 14px', borderRadius: 10,
-                              background: isAdded ? '#F7F8FA' : 'white',
-                              border: `1px solid ${isAdded ? '#E5E8EB' : '#E5E8EB'}`,
-                              opacity: isAdded ? 0.5 : 1,
-                              cursor: isAdded ? 'default' : 'grab',
-                              borderLeft: `3px solid ${brand.color}`
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                              <span style={{ 
-                                fontSize: 13, fontWeight: 600, 
-                                color: '#191F28',
-                                flex: 1
-                              }}>{project.title}</span>
-                              {isAdded && <span style={{ fontSize: 10, color: '#00C471', fontWeight: 600 }}>✓ 추가됨</span>}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span style={{ 
-                                fontSize: 10, padding: '2px 6px', borderRadius: 4, 
-                                background: `${statusColors[project.status]}15`, 
-                                color: statusColors[project.status],
-                                fontWeight: 600
-                              }}>{statusLabels[project.status]}</span>
-                              <span style={{ fontSize: 10, color: '#8B95A1' }}>
-                                완료 {completedCount} / 전체 {projectTasks.length}
-                              </span>
-                              {subtaskCount > 0 && (
-                                <span style={{ fontSize: 10, color: '#3182F6', fontWeight: 500 }}>
-                                  +{subtaskCount} 하위
-                                </span>
-                              )}
-                              {/* KPI 연동 표시 */}
-                              {project.linkedKpi && (() => {
-                                const linkedBrand = kpiBrands[project.linkedKpi.brandId];
-                                return linkedBrand ? (
-                                  <span style={{ 
-                                    fontSize: 9, padding: '2px 6px', borderRadius: 4,
-                                    background: `${linkedBrand.color}15`,
-                                    color: linkedBrand.color,
-                                    fontWeight: 600
-                                  }}>
-                                    📊 KPI
-                                  </span>
-                                ) : null;
-                              })()}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-              
-              {/* 그 외 업무 섹션 (업무일지 업무 통합) */}
-              {(() => {
-                const weekRange = getWeekRange(selectedYear, selectedWeek);
-                const diaryTasks = tasks.filter(t => 
-                  t.memberId === currentUser.id &&
-                  t.completed &&
-                  !t.parentTaskId &&
-                  t.date >= weekRange.start &&
-                  t.date <= weekRange.end &&
-                  (BRANDS.some(b => b.id === t.projectId) || !t.projectId)
-                );
-                
-                if (diaryTasks.length === 0) return null;
-                
-                // 그 외 업무 브랜드 노드가 이미 추가되었는지 확인
-                const isOtherAdded = nodes.some(n => n.id === 'other-tasks' || (n.type === 'brand' && n.text === '그 외 업무'));
-                
-                return (
-                  <div style={{ marginBottom: 20 }}>
-                    {/* 그 외 업무 헤더 - 드래그 가능 */}
-                    <div 
-                      draggable={!isOtherAdded}
-                      onDragStart={(e) => {
-                        if (isOtherAdded) return;
-                        // 가상의 프로젝트 객체로 처리
-                        setDraggedProject({
-                          id: 'other-brand',
-                          title: '그 외 업무',
-                          brandId: 'other',
-                          isOtherBrand: true,
-                          diaryTasks: diaryTasks
-                        });
-                        e.dataTransfer.effectAllowed = 'copy';
-                      }}
-                      onDragEnd={() => setDraggedProject(null)}
-                      style={{ 
-                        display: 'flex', alignItems: 'center', gap: 8, 
-                        padding: '8px 12px', marginBottom: 8,
-                        background: isOtherAdded ? '#E5E7EB' : '#F3F4F6', 
-                        borderRadius: 8,
-                        borderLeft: '3px solid #8B95A1',
-                        cursor: isOtherAdded ? 'default' : 'grab',
-                        opacity: isOtherAdded ? 0.5 : 1
-                      }}
-                    >
-                      <span style={{ fontSize: 13, fontWeight: 700, color: '#6B7684' }}>그 외 업무</span>
-                      <span style={{ fontSize: 11, color: '#8B95A1' }}>({diaryTasks.length})</span>
-                      {isOtherAdded && <span style={{ fontSize: 10, color: '#00C471', fontWeight: 600, marginLeft: 'auto' }}>✓ 추가됨</span>}
-                    </div>
-                    
-                    {/* 업무일지 업무 카드들 */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {diaryTasks.map(task => {
-                        const brand = BRANDS.find(b => b.id === task.projectId);
-                        const isAdded = nodes.some(n => n.taskId === task.id && n.isDiaryTask);
-                        const subtaskList = getSubtasks(task.id);
-                        const completedSubtasks = subtaskList.filter(st => st.completed).length;
-                        return (
-                          <div
-                            key={`diary-${task.id}`}
-                            draggable={!isAdded}
-                            onDragStart={(e) => {
-                              if (isAdded) return;
-                              setDraggedProject({
-                                id: `diary-task-${task.id}`,
-                                title: task.title,
-                                brandId: task.projectId || 'other',
-                                isDiaryTask: true,
-                                task: task,
-                                subtasks: subtaskList
-                              });
-                              e.dataTransfer.effectAllowed = 'copy';
-                            }}
-                            onDragEnd={() => setDraggedProject(null)}
-                            style={{
-                              padding: '10px 12px', borderRadius: 8,
-                              background: isAdded ? '#F9FAFB' : '#F3F4F6',
-                              border: '1px solid #E5E7EB',
-                              opacity: isAdded ? 0.6 : 1,
-                              borderLeft: `3px solid ${brand ? brand.color : '#8B95A1'}`,
-                              cursor: isAdded ? 'default' : 'grab'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <span style={{ fontSize: 12, fontWeight: 500, color: '#4B5563' }}>{task.title}</span>
-                              {isAdded && <span style={{ fontSize: 10, color: '#6B7684', fontWeight: 600 }}>✓ 추가됨</span>}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <span style={{ fontSize: 10, color: '#9CA3AF' }}>📝 업무일지</span>
-                              {brand && <span style={{ fontSize: 10, color: brand.color, fontWeight: 500 }}>{brand.name}</span>}
-                              {subtaskList.length > 0 && (
-                                <span style={{ fontSize: 10, color: '#3182F6', fontWeight: 500 }}>
-                                  하위 {completedSubtasks}/{subtaskList.length}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-              
-              {myProjects.length === 0 && (
-                <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
-                  <Icon name="folder" size={32} color="#D1D6DB" />
-                  <p style={{ fontSize: 13, marginTop: 8 }}>내 프로젝트가 없습니다</p>
-                </div>
-              )}
+
+            {/* 안내 */}
+            <div style={{ position: 'absolute', bottom: 16, left: 16, fontSize: 11, color: '#B0B8C1' }}>
+              스페이스+드래그: 이동 | Ctrl+휠: 줌 | 휠: 스크롤
             </div>
           </div>
           
-          {/* 오른쪽: 마인드맵 캔버스 */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            {/* 상단 툴바 */}
-            <div style={{ padding: '16px 24px', background: 'white', borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <h1 style={{ fontSize: 20, fontWeight: 700, color: '#191F28' }}>
-                  🎯 그로스보드
-                </h1>
-                <span style={{ fontSize: 14, color: '#6B7684', background: '#F7F8FA', padding: '4px 12px', borderRadius: 6 }}>
-                  {selectedYear}년 {selectedWeek}주차
-                </span>
-              </div>
-              
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={syncWithProjects}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '10px 16px', borderRadius: 8,
-                    border: '1px solid #00C471', background: '#F0FDF4', color: '#00C471',
-                    fontSize: 13, fontWeight: 600, cursor: 'pointer'
-                  }}
-                  title="프로젝트/업무 변경사항 동기화 + 정렬"
-                >
-                  <Icon name="refresh" size={16} color="#00C471" /> 동기화
+          {/* 보드 관리 모달 */}
+          {showBoardManager && (
+            <div onClick={() => setShowBoardManager(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 28, width: 500, maxHeight: '80vh', overflow: 'auto' }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, color: '#191F28', marginBottom: 20 }}>📊 그로스보드 관리</h2>
+                
+                {/* 새 보드 생성 */}
+                <div style={{ background: '#F7F8FA', borderRadius: 12, padding: 16, marginBottom: 20, border: '1px solid #E5E8EB' }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: '#191F28', marginBottom: 12 }}>새 보드 만들기</h3>
+                  <input
+                    value={newBoardName}
+                    onChange={e => setNewBoardName(e.target.value)}
+                    placeholder="보드 이름 (예: 2월 성과발표회)"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, marginBottom: 10 }}
+                    onKeyDown={e => e.key === 'Enter' && createBoard()}
+                  />
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 4, display: 'block' }}>시작일</label>
+                      <input type="date" value={newBoardStart} onChange={e => setNewBoardStart(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 4, display: 'block' }}>종료일 (비워두면 진행중)</label>
+                      <input type="date" value={newBoardEnd} onChange={e => setNewBoardEnd(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                    </div>
+                  </div>
+                  <button onClick={createBoard} disabled={!newBoardName.trim()}
+                    style={{ width: '100%', padding: '10px', borderRadius: 8, border: 'none', background: newBoardName.trim() ? '#3182F6' : '#E5E8EB', color: newBoardName.trim() ? 'white' : '#B0B8C1', fontSize: 14, fontWeight: 600, cursor: newBoardName.trim() ? 'pointer' : 'default' }}>
+                    보드 생성
+                  </button>
+                </div>
+                
+                {/* 기존 보드 목록 */}
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#191F28', marginBottom: 10 }}>보드 목록</h3>
+                {boards.length === 0 ? (
+                  <p style={{ fontSize: 13, color: '#8B95A1', textAlign: 'center', padding: 20 }}>보드가 없습니다</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {boards.map(b => (
+                      <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1px solid ${b.id === activeBoardId ? '#3182F6' : '#E5E8EB'}`, background: b.archived ? '#F7F8FA' : 'white', opacity: b.archived ? 0.7 : 1 }}>
+                        {b.archived && <span style={{ fontSize: 12 }}>📦</span>}
+                        {editingBoard === b.id ? (
+                          <div style={{ flex: 1, display: 'flex', gap: 6 }}>
+                            <input defaultValue={b.name} id={`edit-board-${b.id}`} style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid #3182F6', fontSize: 13 }} />
+                            <button onClick={() => { 
+                              const val = document.getElementById(`edit-board-${b.id}`)?.value;
+                              if (val?.trim()) updateBoard(b.id, { name: val.trim() });
+                            }} style={{ padding: '4px 10px', border: 'none', background: '#3182F6', color: 'white', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>저장</button>
+                            <button onClick={() => setEditingBoard(null)} style={{ padding: '4px 10px', border: '1px solid #E5E8EB', background: 'white', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>취소</button>
+                          </div>
+                        ) : (
+                          <React.Fragment>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{b.name}</div>
+                              <div style={{ fontSize: 11, color: '#8B95A1' }}>{b.startDate} ~ {b.endDate || '진행중'}</div>
+                            </div>
+                            <button onClick={() => setActiveBoardId(b.id)} style={{ padding: '4px 10px', border: '1px solid #E5E8EB', background: b.id === activeBoardId ? '#EBF4FF' : 'white', borderRadius: 6, fontSize: 11, cursor: 'pointer', color: b.id === activeBoardId ? '#3182F6' : '#6B7684' }}>
+                              {b.id === activeBoardId ? '보는중' : '보기'}
+                            </button>
+                            <button onClick={() => setEditingBoard(b.id)} style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer' }}>✏️</button>
+                            {b.archived ? (
+                              <button onClick={() => updateBoard(b.id, { archived: false })} style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer' }} title="복원">↩️</button>
+                            ) : (
+                              <button onClick={() => archiveBoard(b.id)} style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer' }} title="보관">📦</button>
+                            )}
+                            <button onClick={() => deleteBoard(b.id)} style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 12, cursor: 'pointer', opacity: 0.5 }} title="삭제">🗑</button>
+                          </React.Fragment>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <button onClick={() => setShowBoardManager(false)}
+                  style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer', marginTop: 16 }}>
+                  닫기
                 </button>
-                <button
-                  onClick={() => setShowAddBranch(true)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '10px 16px', borderRadius: 8,
-                    border: 'none', background: '#3182F6', color: 'white',
-                    fontSize: 13, fontWeight: 600, cursor: 'pointer'
-                  }}
-                >
-                  <Icon name="plus" size={16} color="white" /> 카테고리 추가
-                </button>
-              </div>
-            </div>
-            
-            {/* 캔버스 컨테이너 - 무한 캔버스 */}
-            <div 
-              ref={canvasRef}
-              style={{ 
-                flex: 1, 
-                position: 'relative', 
-                overflow: 'hidden',
-                background: draggedProject ? '#F0F7FF' : '#FAFBFC',
-                cursor: spacePressed ? (isPanning ? 'grabbing' : 'grab') : 'default',
-                outline: 'none'
-              }}
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (!draggedProject) return;
-                handleDropProject(draggedProject);
-                setDraggedProject(null);
-              }}
-              onWheel={(e) => {
-                e.preventDefault();
-                if (e.ctrlKey || e.metaKey) {
-                  // 줌 (마우스 위치 기준)
-                  const rect = canvasRef.current.getBoundingClientRect();
-                  const mouseX = e.clientX - rect.left;
-                  const mouseY = e.clientY - rect.top;
-                  
-                  const delta = e.deltaY > 0 ? 0.9 : 1.1;
-                  const newZoom = Math.min(3, Math.max(0.2, zoom * delta));
-                  
-                  // 마우스 위치 기준 줌
-                  const zoomRatio = newZoom / zoom;
-                  setOffset(prev => ({
-                    x: mouseX - (mouseX - prev.x) * zoomRatio,
-                    y: mouseY - (mouseY - prev.y) * zoomRatio
-                  }));
-                  setZoom(newZoom);
-                } else {
-                  // 일반 스크롤 = 패닝
-                  setOffset(prev => ({
-                    x: prev.x - e.deltaX,
-                    y: prev.y - e.deltaY
-                  }));
-                }
-              }}
-              onMouseDown={(e) => {
-                // 스페이스바 + 왼쪽 마우스 버튼으로 패닝
-                if (e.button === 0 && spacePressed) {
-                  e.preventDefault();
-                  setIsPanning(true);
-                  panStart.current = { 
-                    x: e.clientX, 
-                    y: e.clientY,
-                    offsetX: offset.x,
-                    offsetY: offset.y
-                  };
-                }
-              }}
-              onMouseMove={(e) => {
-                if (isPanning) {
-                  e.preventDefault();
-                  const dx = e.clientX - panStart.current.x;
-                  const dy = e.clientY - panStart.current.y;
-                  setOffset({
-                    x: panStart.current.offsetX + dx,
-                    y: panStart.current.offsetY + dy
-                  });
-                }
-              }}
-              onMouseUp={() => setIsPanning(false)}
-              onMouseLeave={() => setIsPanning(false)}
-            >
-              {/* 줌 컨트롤 */}
-              <div style={{
-                position: 'absolute', bottom: 20, right: 20, zIndex: 100,
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'white', padding: '8px 12px', borderRadius: 8,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)', border: '1px solid #E5E8EB'
-              }}>
-                <button
-                  onClick={() => setZoom(z => Math.max(0.2, z * 0.9))}
-                  style={{ width: 28, height: 28, border: '1px solid #E5E8EB', borderRadius: 4, background: 'white', cursor: 'pointer', fontSize: 16 }}
-                >−</button>
-                <span style={{ fontSize: 12, color: '#6B7684', minWidth: 45, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-                <button
-                  onClick={() => setZoom(z => Math.min(3, z * 1.1))}
-                  style={{ width: 28, height: 28, border: '1px solid #E5E8EB', borderRadius: 4, background: 'white', cursor: 'pointer', fontSize: 16 }}
-                >+</button>
-                <button
-                  onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}
-                  style={{ padding: '4px 8px', border: '1px solid #E5E8EB', borderRadius: 4, background: 'white', cursor: 'pointer', fontSize: 11, color: '#6B7684' }}
-                >리셋</button>
-              </div>
-              
-              {/* 도움말 */}
-              <div style={{
-                position: 'absolute', bottom: 20, left: 20, zIndex: 100,
-                fontSize: 11, color: '#8B95A1', background: 'rgba(255,255,255,0.9)', 
-                padding: '6px 10px', borderRadius: 6
-              }}>
-                스페이스+드래그: 이동 | Ctrl+휠: 줌 | 휠: 스크롤
-              </div>
-              
-              {/* 드래그 중 안내 */}
-              {draggedProject && (
-                <div style={{
-                  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                  background: 'white', padding: '20px 32px', borderRadius: 16,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.15)', textAlign: 'center',
-                  border: '2px dashed #3182F6', zIndex: 10
-                }}>
-                  <p style={{ fontSize: 16, fontWeight: 600, color: '#3182F6', marginBottom: 4 }}>
-                    🎯 여기에 놓으세요!
-                  </p>
-                  <p style={{ fontSize: 13, color: '#6B7684' }}>
-                    프로젝트 + 하위업무가 자동으로 추가됩니다
-                  </p>
-                </div>
-              )}
-              
-              {/* 무한 캔버스 - transform으로 줌/패닝 */}
-              <div 
-                data-canvas="true"
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-                  transformOrigin: '0 0'
-                }}
-              >
-              
-              {/* SVG 연결선 - EdrawMind 스타일 직각 */}
-              <svg style={{ position: 'absolute', left: 0, top: 0, width: 3000, height: 2000, pointerEvents: 'none', overflow: 'visible', zIndex: 0 }}>
-                {connections.map(conn => {
-                  const fromNode = nodes.find(n => n.id === conn.from);
-                  const toNode = nodes.find(n => n.id === conn.to);
-                  if (!fromNode || !toNode) return null;
-                  
-                  // 실제 측정된 너비 사용 (없으면 기본값)
-                  const getNodeWidth = (n) => {
-                    if (nodeWidths[n.id]) {
-                      return nodeWidths[n.id] / zoom; // zoom 보정
-                    }
-                    // 기본값 (측정 전)
-                    return 100;
-                  };
-                  
-                  const fromWidth = getNodeWidth(fromNode);
-                  
-                  // from 노드 오른쪽 끝
-                  let fromX;
-                  if (fromNode.type === 'center') {
-                    fromX = fromNode.x + fromWidth / 2; // center는 중앙정렬
-                  } else {
-                    fromX = fromNode.x + fromWidth; // 나머지는 왼쪽정렬
-                  }
-                  
-                  // to 노드 왼쪽 끝
-                  const toX = toNode.x;
-                  
-                  const fromY = fromNode.y;
-                  const toY = toNode.y;
-                  
-                  // 직각 연결선
-                  const midX = fromX + 15;
-                  const pathD = `M ${fromX} ${fromY} H ${midX} V ${toY} H ${toX}`;
-                  
-                  // 색상 - 모두 연한 회색
-                  const lineColor = '#D1D6DB';
-                  
-                  return (
-                    <path
-                      key={conn.id}
-                      d={pathD}
-                      stroke={lineColor}
-                      strokeWidth={1.5}
-                      fill="none"
-                    />
-                  );
-                })}
-              </svg>
-              
-              {/* 노드들 */}
-              {nodes.map(node => (
-                <MindMapNode
-                  key={node.id}
-                  node={node}
-                  isSelected={selectedNode === node.id}
-                  isEditing={editingNode === node.id}
-                  isDragOver={(dragOverNodeId === node.id && draggedProject) || (dropTargetNodeId === node.id)}
-                  onClick={() => setSelectedNode(node.id === selectedNode ? null : node.id)}
-                  onDoubleClick={() => setEditingNode(node.id)}
-                  onDrag={handleNodeDrag}
-                  onDragEnd={() => handleNodeDragEnd(node.id)}
-                  onDelete={() => deleteNode(node.id)}
-                  onUpdateText={(text) => updateNodeText(node.id, text)}
-                  onUpdateKpi={(label, value) => updateNodeKpi(node.id, label, value)}
-                  onCancelEdit={() => setEditingNode(null)}
-                  onDragOver={() => setDragOverNodeId(node.id)}
-                  onDragLeave={() => setDragOverNodeId(null)}
-                  onDrop={() => {
-                    if (draggedProject && node.type === 'branch' && !node.projectId) {
-                      handleDropOnCategory(node.id, draggedProject);
-                      setDraggedProject(null);
-                      setDragOverNodeId(null);
-                    }
-                  }}
-                  draggingNodeId={draggingNodeId}
-                  onMeasure={(id, width) => {
-                    setNodeWidths(prev => {
-                      if (prev[id] !== width) {
-                        return { ...prev, [id]: width };
-                      }
-                      return prev;
-                    });
-                  }}
-                />
-              ))}
-              
-              {/* 빈 상태 안내 */}
-              {nodes.length <= 1 && (
-                <div style={{ 
-                  position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
-                  background: 'white', padding: '16px 24px', borderRadius: 12,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)', textAlign: 'center'
-                }}>
-                  <p style={{ fontSize: 14, color: '#6B7684', marginBottom: 8 }}>
-                    💡 <strong>카테고리 추가</strong> 버튼으로 가지를 만들고
-                  </p>
-                  <p style={{ fontSize: 14, color: '#6B7684' }}>
-                    왼쪽 프로젝트를 <strong>드래그</strong>해서 가지에 놓아보세요!
-                  </p>
-                </div>
-              )}
-              </div> {/* 줌/패닝 내부 컨테이너 닫기 */}
-            </div>
-          </div>
-          
-          {/* 카테고리 추가 모달 */}
-          {showAddBranch && (
-            <div onClick={() => setShowAddBranch(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: 16, padding: 24, width: 360 }}>
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 20 }}>카테고리 추가</h3>
-                <input
-                  type="text"
-                  value={newBranchName}
-                  onChange={(e) => setNewBranchName(e.target.value)}
-                  placeholder="예: 홈페이지 리뉴얼, 블로그 전략..."
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14, marginBottom: 16 }}
-                  autoFocus
-                  onKeyDown={(e) => e.key === 'Enter' && addBranch()}
-                />
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <button onClick={() => setShowAddBranch(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>취소</button>
-                  <button onClick={addBranch} style={{ flex: 1, padding: 12, borderRadius: 10, border: 'none', background: '#3182F6', fontSize: 14, fontWeight: 600, color: 'white', cursor: 'pointer' }}>추가</button>
-                </div>
               </div>
             </div>
           )}
         </div>
       );
     }
-    
-    // 마인드맵 노드 컴포넌트
-    function MindMapNode({ node, isSelected, isEditing, isDragOver, onClick, onDoubleClick, onDrag, onDragEnd, onDelete, onUpdateText, onUpdateKpi, onCancelEdit, onDragOver, onDragLeave, onDrop, draggingNodeId, onMeasure }) {
-      const [isDragging, setIsDragging] = useState(false);
-      const [editText, setEditText] = useState(node.text);
-      const [editKpiLabel, setEditKpiLabel] = useState(node.kpiLabel || '');
-      const [editKpiValue, setEditKpiValue] = useState(node.kpiValue || '');
-      const dragStart = React.useRef({ x: 0, y: 0 });
-      const nodeRef = React.useRef(null);
-      
-      // 노드 렌더링 후 실제 너비 측정
-      React.useEffect(() => {
-        if (nodeRef.current && onMeasure) {
-          const rect = nodeRef.current.getBoundingClientRect();
-          onMeasure(node.id, rect.width);
-        }
-      }, [node.text, node.id, isEditing]);
-      
-      const handleMouseDown = (e) => {
-        if (isEditing || node.type === 'center') return; // other 노드도 드래그 가능
-        e.preventDefault();
-        setIsDragging(true);
-        dragStart.current = { x: e.clientX, y: e.clientY };
-        
-        const handleMouseMove = (e) => {
-          const dx = e.clientX - dragStart.current.x;
-          const dy = e.clientY - dragStart.current.y;
-          dragStart.current = { x: e.clientX, y: e.clientY };
-          onDrag(node.id, dx, dy);
-        };
-        
-        const handleMouseUp = (e) => {
-          setIsDragging(false);
-          onDragEnd();
-          window.removeEventListener('mousemove', handleMouseMove);
-          window.removeEventListener('mouseup', handleMouseUp);
-        };
-        
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-      };
-      
-      const handleSave = () => {
-        onUpdateText(editText);
-        if (node.type === 'branch') {
-          onUpdateKpi(editKpiLabel, editKpiValue);
-        }
-      };
-      
-      // 노드 스타일 - EdrawMind 스타일 각진 네모
-      const getNodeStyle = () => {
-        const base = {
-          position: 'absolute',
-          left: node.x,
-          top: node.y,
-          transform: 'translateY(-50%)', // 왼쪽 정렬, Y만 중앙
-          cursor: isDragging ? 'grabbing' : (node.type === 'center' ? 'default' : 'grab'),
-          transition: isDragging ? 'none' : 'box-shadow 0.2s',
-          zIndex: isDragging ? 100 : 10, // 연결선 위에 표시
-          boxSizing: 'border-box', // padding 포함한 너비 계산
-        };
-        
-        if (node.type === 'center') {
-          return {
-            ...base,
-            transform: 'translate(-50%, -50%)', // 센터만 중앙 정렬
-            background: `linear-gradient(135deg, ${node.color}, ${node.color}dd)`,
-            color: 'white',
-            padding: '12px 20px',
-            borderRadius: 8,
-            fontSize: 15,
-            fontWeight: 700,
-            textAlign: 'center',
-            boxShadow: isSelected ? `0 0 0 3px ${node.color}50, 0 6px 20px rgba(0,0,0,0.15)` : '0 4px 12px rgba(0,0,0,0.1)',
-            whiteSpace: 'nowrap',
-          };
-        }
-        
-        if (node.type === 'branch') {
-          return {
-            ...base,
-            background: isDragOver ? '#EBF4FF' : 'white',
-            border: isDragOver ? '2px dashed #3182F6' : `1px solid ${isSelected ? '#191F28' : '#E5E8EB'}`,
-            padding: '6px 12px',
-            borderRadius: 4,
-            fontSize: 14,
-            fontWeight: 500,
-            color: '#191F28',
-            boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-            whiteSpace: 'nowrap',
-          };
-        }
-        
-        // brand - 브랜드 노드 스타일 (색상 유지)
-        if (node.type === 'brand') {
-          const brandColor = node.color || '#6B7684';
-          return {
-            ...base,
-            background: `linear-gradient(135deg, ${brandColor}15, ${brandColor}08)`,
-            border: `2px solid ${brandColor}`,
-            padding: '8px 14px',
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 700,
-            color: brandColor,
-            boxShadow: isSelected ? `0 0 0 3px ${brandColor}30, 0 4px 12px rgba(0,0,0,0.1)` : '0 2px 6px rgba(0,0,0,0.08)',
-            whiteSpace: 'nowrap',
-          };
-        }
-        
-        // other - 그 외 업무 노드 스타일 (brand와 동일하게)
-        if (node.type === 'other') {
-          const brandColor = node.color || '#6B7684';
-          return {
-            ...base,
-            background: `linear-gradient(135deg, ${brandColor}15, ${brandColor}08)`,
-            border: `2px solid ${brandColor}`,
-            padding: '8px 14px',
-            borderRadius: 6,
-            fontSize: 14,
-            fontWeight: 700,
-            color: brandColor,
-            boxShadow: isSelected ? `0 0 0 3px ${brandColor}30, 0 4px 12px rgba(0,0,0,0.1)` : '0 2px 6px rgba(0,0,0,0.08)',
-            whiteSpace: 'nowrap',
-          };
-        }
-        
-        // task - 통일된 스타일 (색상 없음)
-        return {
-          ...base,
-          background: 'white',
-          border: `1px solid ${isSelected ? '#191F28' : '#E5E8EB'}`,
-          padding: '6px 12px',
-          borderRadius: 4,
-          fontSize: 14,
-          fontWeight: 500,
-          color: '#191F28',
-          whiteSpace: 'nowrap',
-          boxShadow: isSelected ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-        };
-      };
-      
-      return (
-        <div
-          ref={nodeRef}
-          style={getNodeStyle()}
-          onMouseDown={handleMouseDown}
-          onClick={onClick}
-          onDoubleClick={onDoubleClick}
-          onDragOver={(e) => { if (node.type === 'branch' && !node.projectId) { e.preventDefault(); onDragOver && onDragOver(); } }}
-          onDragLeave={() => onDragLeave && onDragLeave()}
-          onDrop={(e) => { e.preventDefault(); onDrop && onDrop(); }}
-        >
-          {isEditing ? (
-            <div onClick={(e) => e.stopPropagation()}>
-              <input
-                type="text"
-                value={editText}
-                onChange={(e) => setEditText(e.target.value)}
-                style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #3182F6', fontSize: 13, marginBottom: 8 }}
-                autoFocus
-              />
-              {node.type === 'branch' && (
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  <input
-                    placeholder="KPI 라벨"
-                    value={editKpiLabel}
-                    onChange={(e) => setEditKpiLabel(e.target.value)}
-                    style={{ flex: 1, padding: 6, borderRadius: 6, border: '1px solid #E5E8EB', fontSize: 11 }}
-                  />
-                  <input
-                    placeholder="목표값"
-                    value={editKpiValue}
-                    onChange={(e) => setEditKpiValue(e.target.value)}
-                    style={{ width: 60, padding: 6, borderRadius: 6, border: '1px solid #E5E8EB', fontSize: 11 }}
-                  />
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={onCancelEdit} style={{ flex: 1, padding: 6, borderRadius: 6, border: '1px solid #E5E8EB', background: 'white', fontSize: 11, cursor: 'pointer' }}>취소</button>
-                <button onClick={handleSave} style={{ flex: 1, padding: 6, borderRadius: 6, border: 'none', background: '#3182F6', color: 'white', fontSize: 11, cursor: 'pointer' }}>저장</button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div>{node.text}</div>
-              {node.type === 'branch' && node.kpiLabel && (
-                <div style={{ marginTop: 8, padding: '6px 10px', background: '#F0FDF4', borderRadius: 6, fontSize: 11, color: '#059669' }}>
-                  📊 {node.kpiLabel}: {node.kpiValue}
-                </div>
-              )}
-              {isDragOver && node.type !== 'task' && (
-                <div style={{ marginTop: 8, fontSize: 11, color: '#3182F6', fontWeight: 600 }}>
-                  🔗 여기에 놓으세요!
-                </div>
-              )}
-            </>
-          )}
-          
-          {/* 삭제 버튼 */}
-          {isSelected && node.type !== 'center' && !isEditing && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              style={{
-                position: 'absolute', top: -8, right: -8,
-                width: 22, height: 22, borderRadius: '50%',
-                background: '#F04452', border: 'none',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
-              }}
-            >
-              <Icon name="x" size={12} color="white" />
-            </button>
-          )}
-        </div>
-      );
-    }
+
 
     // 렌더링
     const root = ReactDOM.createRoot(document.getElementById('root'));
