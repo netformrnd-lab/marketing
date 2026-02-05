@@ -12,6 +12,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -15761,6 +15763,135 @@
         return { autoNodes: nodes, autoConnections: conns };
       }, [activeBoard, activeBoardId, archivedSnapshots, tasks, projects, teamRequests, fixedTasks, currentUser.id, kpiBrands, companyGoal]);
       
+      // ─── 다운로드 기능 ───
+      const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+      const downloadMenuRef = React.useRef(null);
+      
+      // 외부 클릭시 드롭다운 닫기
+      useEffect(() => {
+        const handleClickOutside = (e) => {
+          if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target)) {
+            setShowDownloadMenu(false);
+          }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, []);
+      
+      // 마인드맵 캡처 공통 로직
+      const captureCanvas = async () => {
+        const canvasEl = canvasRef.current;
+        if (!canvasEl) throw new Error('캔버스를 찾을 수 없습니다.');
+        
+        // 마인드맵 컨텐츠 영역 (transform 적용된 div)
+        const mindmapEl = canvasEl.querySelector('div[style*="transform"]');
+        if (!mindmapEl) throw new Error('마인드맵 컨텐츠를 찾을 수 없습니다.');
+        
+        // 모든 노드 좌표로 실제 영역 계산
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        autoNodes.forEach(node => {
+          const h = getNodeHeight(node);
+          const nodeMinX = node.x - 20;
+          const nodeMinY = node.y - h / 2 - 80; // 위 여백 (subtitle 등)
+          const nodeMaxX = node.x + 300; // 넉넉한 너비
+          const nodeMaxY = node.y + h / 2 + 20;
+          if (nodeMinX < minX) minX = nodeMinX;
+          if (nodeMinY < minY) minY = nodeMinY;
+          if (nodeMaxX > maxX) maxX = nodeMaxX;
+          if (nodeMaxY > maxY) maxY = nodeMaxY;
+        });
+        
+        const padding = 60;
+        const captureW = (maxX - minX) + padding * 2;
+        const captureH = (maxY - minY) + padding * 2;
+        
+        // 임시 wrapper 생성하여 원본 변경 없이 캡처
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = `position:fixed;left:-99999px;top:0;width:${captureW}px;height:${captureH}px;background:#FAFBFC;overflow:visible;z-index:-1;`;
+        document.body.appendChild(wrapper);
+        
+        // 마인드맵 컨텐츠 클론
+        const clone = mindmapEl.cloneNode(true);
+        clone.style.transform = `translate(${-minX + padding}px, ${-minY + padding}px) scale(1)`;
+        clone.style.transformOrigin = '0 0';
+        clone.style.position = 'absolute';
+        clone.style.top = '0';
+        clone.style.left = '0';
+        wrapper.appendChild(clone);
+        
+        // 보드명 + 날짜 워터마크
+        const watermark = document.createElement('div');
+        watermark.style.cssText = `position:absolute;top:20px;left:24px;font-family:'Pretendard',sans-serif;`;
+        watermark.innerHTML = `<div style="font-size:18px;font-weight:800;color:#191F28;">🎯 ${activeBoard?.name || '그로스보드'}</div><div style="font-size:12px;color:#8B95A1;margin-top:4px;">${activeBoard?.startDate || ''} ~ ${activeBoard?.endDate || '진행중'} · 저장: ${new Date().toLocaleDateString('ko-KR')}</div>`;
+        wrapper.appendChild(watermark);
+        
+        await new Promise(r => setTimeout(r, 100));
+        
+        const canvas = await html2canvas(wrapper, {
+          backgroundColor: '#FAFBFC',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          width: captureW,
+          height: captureH,
+          windowWidth: captureW,
+          windowHeight: captureH
+        });
+        
+        document.body.removeChild(wrapper);
+        return { canvas, captureW, captureH };
+      };
+      
+      // PNG 다운로드
+      const downloadAsPNG = async () => {
+        setShowDownloadMenu(false);
+        try {
+          const { canvas } = await captureCanvas();
+          const link = document.createElement('a');
+          link.download = `그로스보드_${activeBoard?.name || 'board'}_${new Date().toISOString().split('T')[0]}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        } catch (err) {
+          alert('이미지 저장에 실패했습니다: ' + err.message);
+        }
+      };
+      
+      // PDF 다운로드
+      const downloadAsPDF = async () => {
+        setShowDownloadMenu(false);
+        try {
+          const { canvas, captureW, captureH } = await captureCanvas();
+          const imgData = canvas.toDataURL('image/png');
+          
+          // 가로가 세로보다 크면 landscape, 아니면 portrait
+          const isLandscape = captureW > captureH;
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({
+            orientation: isLandscape ? 'landscape' : 'portrait',
+            unit: 'mm',
+            format: 'a4'
+          });
+          
+          const pageW = pdf.internal.pageSize.getWidth();
+          const pageH = pdf.internal.pageSize.getHeight();
+          const margin = 10;
+          const maxW = pageW - margin * 2;
+          const maxH = pageH - margin * 2;
+          
+          // 비율 유지하며 맞추기
+          const ratio = Math.min(maxW / captureW, maxH / captureH);
+          const imgW = captureW * ratio;
+          const imgH = captureH * ratio;
+          const x = (pageW - imgW) / 2;
+          const y = (pageH - imgH) / 2;
+          
+          pdf.addImage(imgData, 'PNG', x, y, imgW, imgH);
+          pdf.save(`그로스보드_${activeBoard?.name || 'board'}_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (err) {
+          alert('PDF 저장에 실패했습니다: ' + err.message);
+        }
+      };
+      
       // ─── 키보드 이벤트 ───
       useEffect(() => {
         const kd = (e) => {
@@ -15803,19 +15934,30 @@
       }, []);
       
       // ─── 노드 스타일 ───
+      // hex 색상에서 밝은 불투명 배경 생성
+      const lightenColor = (hex, amt) => {
+        const h = (hex || '#6B7684').replace('#','');
+        const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+        return `rgb(${Math.round(r+(255-r)*amt)},${Math.round(g+(255-g)*amt)},${Math.round(b+(255-b)*amt)})`;
+      };
+      const bdrColor = (hex, a) => {
+        const h = (hex || '#6B7684').replace('#','');
+        return `rgba(${parseInt(h.substring(0,2),16)},${parseInt(h.substring(2,4),16)},${parseInt(h.substring(4,6),16)},${a})`;
+      };
       const getNodeStyle = (node) => {
         const base = { display: 'inline-flex', alignItems: 'center', padding: '8px 16px', borderRadius: 10, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'default' };
+        const c = node.color || '#6B7684';
         switch (node.type) {
           case 'center':
             return { ...base, background: '#191F28', color: 'white', fontSize: 15, fontWeight: 800, padding: '12px 24px', borderRadius: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.2)' };
           case 'category':
-            return { ...base, background: 'white', color: node.color || '#191F28', fontSize: 13, fontWeight: 700, border: `2px solid ${node.color || '#E5E8EB'}`, borderRadius: 10, padding: '8px 18px' };
+            return { ...base, background: 'white', color: c, fontSize: 13, fontWeight: 700, border: `2px solid ${c}`, borderRadius: 10, padding: '8px 18px' };
           case 'kpi':
-            return { ...base, background: `${node.color}08`, color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${node.color}50`, borderRadius: 8, padding: '6px 14px' };
+            return { ...base, background: lightenColor(c, 0.93), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.25)}`, borderRadius: 8, padding: '6px 14px' };
           case 'indicator':
-            return { ...base, background: `${node.color}12`, color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${node.color}60`, borderRadius: 8, padding: '6px 14px' };
+            return { ...base, background: lightenColor(c, 0.88), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.3)}`, borderRadius: 8, padding: '6px 14px' };
           case 'project':
-            return { ...base, background: `${node.color}10` || '#F7F8FA', color: '#191F28', fontSize: 12, fontWeight: 600, border: `1px solid ${node.color}40`, padding: '6px 14px' };
+            return { ...base, background: lightenColor(c, 0.9), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1px solid ${bdrColor(c, 0.2)}`, padding: '6px 14px' };
           case 'task':
             if (node.isLeaf) {
               return { ...base, background: 'transparent', color: '#4E5968', fontSize: 11, fontWeight: 500, border: 'none', padding: '3px 0', borderRadius: 0 };
@@ -15887,14 +16029,14 @@
               paths.push(React.createElement('line', {
                 key: `br-h-${fromId}-${ci}`,
                 x1: elbowX, y1: child.y,
-                x2: child.x, y2: child.y,
+                x2: child.x - 6, y2: child.y,
                 stroke: (child.color || '#D1D5DB') + '40', strokeWidth: sw
               }));
               // 부모→줄기 수평선 (부모 y에서)
               if (branchChildren.length === 1) {
                 paths.push(React.createElement('path', {
                   key: `br-p-${fromId}-${ci}`,
-                  d: `M${elbowX},${from.y} L${elbowX},${child.y} L${child.x},${child.y}`,
+                  d: `M${elbowX},${from.y} L${elbowX},${child.y} L${child.x - 6},${child.y}`,
                   stroke: (child.color || '#D1D5DB') + '40', strokeWidth: sw,
                   fill: 'none', strokeLinejoin: 'round'
                 }));
@@ -15969,6 +16111,38 @@
                   style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>
                   📦 보관
                 </button>
+              )}
+              {activeBoard && autoNodes.length > 1 && (
+                <div ref={downloadMenuRef} style={{ position: 'relative' }}>
+                  <button onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                    style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 12, fontWeight: 600, color: '#6B7684', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    ⬇ 다운받기
+                    <span style={{ fontSize: 10, marginLeft: 2 }}>{showDownloadMenu ? '▲' : '▼'}</span>
+                  </button>
+                  {showDownloadMenu && (
+                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', overflow: 'hidden', zIndex: 100, minWidth: 180 }}>
+                      <button onClick={downloadAsPNG}
+                        style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', fontSize: 13, fontWeight: 500, color: '#191F28', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background='#F7F8FA'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                        <span style={{ fontSize: 16 }}>🖼️</span>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>이미지로 저장</div>
+                          <div style={{ fontSize: 11, color: '#8B95A1', marginTop: 2 }}>PNG 파일로 다운로드</div>
+                        </div>
+                      </button>
+                      <div style={{ height: 1, background: '#F2F4F6', margin: '0 12px' }} />
+                      <button onClick={downloadAsPDF}
+                        style={{ width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', fontSize: 13, fontWeight: 500, color: '#191F28', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left' }}
+                        onMouseEnter={e => e.currentTarget.style.background='#F7F8FA'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                        <span style={{ fontSize: 16 }}>📄</span>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>PDF로 저장</div>
+                          <div style={{ fontSize: 11, color: '#8B95A1', marginTop: 2 }}>A4 사이즈로 다운로드</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               <button onClick={() => setShowBoardManager(true)}
                 style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#3182F6', fontSize: 12, fontWeight: 600, color: 'white', cursor: 'pointer' }}>
