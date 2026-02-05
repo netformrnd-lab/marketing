@@ -1302,7 +1302,7 @@
             { id: 'templates', label: '템플릿 관리', icon: 'file' },
             { id: 'payment', label: '결제 주기 체크', icon: 'calendar', isNew: true },
             { id: 'vendor', label: '업체 관리', icon: 'users', isNew: true },
-            ...(currentUser?.isAdmin ? [{ id: 'accounts', label: '계정 관리', icon: 'user', isNew: true }] : []),
+            { id: 'accounts', label: '계정 관리', icon: 'user', isNew: true },
           ]
         },
       ];
@@ -1642,16 +1642,14 @@
               />
             </div>
             <div style={{ flex: 1, display: activeTab === 'payment' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <PlaceholderTab title="결제 주기 체크" icon="💳" description="정기 결제 일정을 관리합니다" />
+              <PaymentCycleTab currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'vendor' ? 'flex' : 'none', flexDirection: 'column' }}>
               <PlaceholderTab title="업체 관리" icon="🏢" description="협력 업체 정보를 관리합니다" />
             </div>
-            {currentUser?.isAdmin && (
-              <div style={{ flex: 1, display: activeTab === 'accounts' ? 'flex' : 'none', flexDirection: 'column' }}>
-                <AccountManageTab currentUser={currentUser} teamMembers={teamMembers} setTeamMembers={setTeamMembers} />
-              </div>
-            )}
+            <div style={{ flex: 1, display: activeTab === 'accounts' ? 'flex' : 'none', flexDirection: 'column' }}>
+              <AccountManageTab currentUser={currentUser} teamMembers={teamMembers} setTeamMembers={setTeamMembers} />
+            </div>
             <div style={{ flex: 1, display: activeTab === 'trash' ? 'flex' : 'none', flexDirection: 'column' }}>
               <TrashTab 
                 tasks={tasks} setTasks={setTasks} 
@@ -1709,445 +1707,396 @@
 
     // ============ 계정 관리 탭 (관리자 전용) ============
     function AccountManageTab({ currentUser, teamMembers, setTeamMembers }) {
-      const [accountStatus, setAccountStatus] = useState({});
-      const [isLoading, setIsLoading] = useState(false);
-      const [message, setMessage] = useState('');
-      const [showResetModal, setShowResetModal] = useState(null);
-      const [showAddModal, setShowAddModal] = useState(false);
-      const [newMember, setNewMember] = useState({
-        name: '',
-        email: '',
-        role: '매니저',
-        isAdmin: false,
-        password: 'netform2025'
+      const ACCOUNT_CATEGORIES = [
+        { id: 'common', name: '공통/통합', emoji: '🏢', color: '#6366F1', description: '전사 공용 계정' },
+        { id: 'pour-method', name: 'POUR공법', emoji: '🏗️', color: '#3182F6', description: 'POUR공법 관련 계정' },
+        { id: 'pour-solution', name: 'POUR솔루션', emoji: '🔧', color: '#00C471', description: 'POUR솔루션 관련 계정' },
+        { id: 'apartment-square', name: '아파트스퀘어', emoji: '🏠', color: '#F97316', description: '아파트스퀘어 관련 계정' },
+        { id: 'automation', name: '자동화&시스템', emoji: '⚙️', color: '#F59E0B', description: '자동화/시스템 관련 계정' }
+      ];
+      const SITE_TYPES = [
+        { id: 'sns', name: 'SNS', emoji: '📱' },
+        { id: 'ad', name: '광고', emoji: '📢' },
+        { id: 'cms', name: 'CMS/홈페이지', emoji: '🌐' },
+        { id: 'analytics', name: '분석/데이터', emoji: '📊' },
+        { id: 'design', name: '디자인/영상', emoji: '🎨' },
+        { id: 'cloud', name: '클라우드/SaaS', emoji: '☁️' },
+        { id: 'email', name: '이메일/메신저', emoji: '✉️' },
+        { id: 'ecommerce', name: '커머스', emoji: '🛒' },
+        { id: 'other', name: '기타', emoji: '📦' }
+      ];
+      
+      const [accounts, setAccounts] = useState([]);
+      const [showModal, setShowModal] = useState(false);
+      const [editingAccount, setEditingAccount] = useState(null);
+      const [filterBrand, setFilterBrand] = useState('all');
+      const [filterType, setFilterType] = useState('all');
+      const [searchTerm, setSearchTerm] = useState('');
+      const [revealedPasswords, setRevealedPasswords] = useState({});
+      const [copiedId, setCopiedId] = useState(null);
+      
+      const [form, setForm] = useState({
+        siteName: '', siteUrl: '', siteType: 'sns', brandId: 'common',
+        loginId: '', password: '', memo: '', manager: ''
       });
-
-      // 색상 팔레트
-      const colorPalette = ['#3182F6', '#00C471', '#F97316', '#8B5CF6', '#F04452', '#06B6D4', '#EC4899', '#14B8A6'];
-
-      // 계정 상태 확인
-      const checkAccountStatus = async (member) => {
-        try {
-          return 'unknown';
-        } catch (error) {
-          return 'not_created';
-        }
+      
+      const storageKey = 'account-manager';
+      
+      useEffect(() => {
+        const load = async () => {
+          const data = await FirebaseService.getDoc('settings', storageKey);
+          if (data?.items) setAccounts(data.items);
+        };
+        load();
+      }, []);
+      
+      const saveAccounts = async (items) => {
+        setAccounts(items);
+        await FirebaseService.saveDoc('settings', storageKey, { items, updatedAt: new Date().toISOString() });
       };
-
-      // 단일 계정 생성
-      const createAccount = async (member) => {
-        setIsLoading(true);
-        setMessage('');
-        const defaultPassword = 'netform2025';
-
-        try {
-          await auth.createUserWithEmailAndPassword(member.email, defaultPassword);
-          setAccountStatus(prev => ({ ...prev, [member.id]: 'created' }));
-          setMessage(`✓ ${member.name} 계정이 생성되었습니다. (비밀번호: ${defaultPassword})`);
-        } catch (error) {
-          if (error.code === 'auth/email-already-in-use') {
-            setAccountStatus(prev => ({ ...prev, [member.id]: 'exists' }));
-            setMessage(`ⓘ ${member.name} 계정이 이미 존재합니다.`);
-          } else {
-            setMessage(`✗ ${member.name} 계정 생성 실패: ${error.message}`);
-          }
-        }
-        setIsLoading(false);
+      
+      const resetForm = () => {
+        setForm({ siteName: '', siteUrl: '', siteType: 'sns', brandId: 'common', loginId: '', password: '', memo: '', manager: '' });
+        setEditingAccount(null);
       };
-
-      // 전체 계정 생성
-      const createAllAccounts = async () => {
-        setIsLoading(true);
-        setMessage('계정 생성 중...\n');
-        const defaultPassword = 'netform2025';
-
-        for (const member of teamMembers) {
-          try {
-            await auth.createUserWithEmailAndPassword(member.email, defaultPassword);
-            setAccountStatus(prev => ({ ...prev, [member.id]: 'created' }));
-            setMessage(prev => prev + `✓ ${member.name} (${member.email}) 생성됨\n`);
-          } catch (error) {
-            if (error.code === 'auth/email-already-in-use') {
-              setAccountStatus(prev => ({ ...prev, [member.id]: 'exists' }));
-              setMessage(prev => prev + `⊙ ${member.name} (이미 존재)\n`);
-            } else {
-              setMessage(prev => prev + `✗ ${member.name} (실패: ${error.message})\n`);
-            }
-          }
+      
+      const handleSave = () => {
+        if (!form.siteName.trim()) return;
+        const item = {
+          ...form, id: editingAccount?.id || `acc-${Date.now()}`,
+          createdBy: editingAccount?.createdBy || currentUser.id,
+          updatedAt: new Date().toISOString(),
+          createdAt: editingAccount?.createdAt || new Date().toISOString()
+        };
+        if (editingAccount) {
+          saveAccounts(accounts.map(a => a.id === editingAccount.id ? item : a));
+        } else {
+          saveAccounts([...accounts, item]);
         }
-        setMessage(prev => prev + `\n완료! 기본 비밀번호: ${defaultPassword}`);
-        setIsLoading(false);
+        setShowModal(false);
+        resetForm();
       };
-
-      // 비밀번호 재설정 이메일 발송
-      const sendPasswordReset = async (member) => {
-        setIsLoading(true);
-        try {
-          await auth.sendPasswordResetEmail(member.email);
-          setMessage(`✓ ${member.name}(${member.email})에게 비밀번호 재설정 이메일을 발송했습니다.`);
-        } catch (error) {
-          setMessage(`✗ 이메일 발송 실패: ${error.message}`);
-        }
-        setIsLoading(false);
-        setShowResetModal(null);
+      
+      const handleDelete = (id) => {
+        if (!confirm('이 계정 정보를 삭제하시겠습니까?')) return;
+        saveAccounts(accounts.filter(a => a.id !== id));
       };
-
-      // 새 팀원 추가
-      const addNewMember = async () => {
-        if (!newMember.name || !newMember.email) {
-          setMessage('✗ 이름과 이메일은 필수입니다.');
-          return;
-        }
-
-        // 중복 이메일 체크
-        if (teamMembers.some(m => m.email === newMember.email)) {
-          setMessage('✗ 이미 등록된 이메일입니다.');
-          return;
-        }
-
-        setIsLoading(true);
-        setMessage('');
-
-        try {
-          // 1. Firebase Auth에 계정 생성
-          await auth.createUserWithEmailAndPassword(newMember.email, newMember.password);
-          
-          // 2. 팀원 목록에 추가 (ID는 100부터 시작하여 기본 멤버와 겹치지 않게)
-          const existingIds = teamMembers.map(m => m.id);
-          const newId = Math.max(...existingIds, 99) + 1; // 최소 100부터 시작
-          const memberData = {
-            id: newId,
-            name: newMember.name,
-            initial: newMember.name.charAt(1) || newMember.name.charAt(0),
-            color: colorPalette[(newId - 100) % colorPalette.length],
-            role: newMember.role,
-            email: newMember.email,
-            isAdmin: newMember.isAdmin
-          };
-
-          // Firebase에 팀원 정보 저장
-          const ref = firebase.database().ref('teamMembers/' + newId);
-          await ref.set(memberData);
-
-          setTeamMembers(prev => [...prev, memberData]);
-          setMessage(`✓ ${newMember.name} 팀원이 추가되었습니다! (비밀번호: ${newMember.password})`);
-          setShowAddModal(false);
-          setNewMember({ name: '', email: '', role: '매니저', isAdmin: false, password: 'netform2025' });
-        } catch (error) {
-          if (error.code === 'auth/email-already-in-use') {
-            setMessage(`✗ 이미 사용 중인 이메일입니다.`);
-          } else {
-            setMessage(`✗ 추가 실패: ${error.message}`);
-          }
-        }
-        setIsLoading(false);
+      
+      const handleEdit = (acc) => {
+        setForm({ ...acc });
+        setEditingAccount(acc);
+        setShowModal(true);
       };
-
-      // 팀원 삭제
-      const deleteMember = async (member) => {
-        if (!confirm(`정말 ${member.name} 팀원을 삭제하시겠습니까?`)) return;
-        
-        try {
-          // Firebase에서 팀원 정보 삭제
-          const ref = firebase.database().ref('teamMembers/' + member.id);
-          await ref.remove();
-          
-          setTeamMembers(prev => prev.filter(m => m.id !== member.id));
-          setMessage(`✓ ${member.name} 팀원이 삭제되었습니다.`);
-        } catch (error) {
-          setMessage(`✗ 삭제 실패: ${error.message}`);
-        }
+      
+      const copyToClipboard = (text, id) => {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopiedId(id);
+          setTimeout(() => setCopiedId(null), 1500);
+        });
       };
-
-      if (!currentUser?.isAdmin) {
-        return (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ color: '#F04452', fontSize: 16 }}>관리자만 접근할 수 있습니다.</p>
-          </div>
-        );
-      }
-
+      
+      const togglePassword = (id) => {
+        setRevealedPasswords(prev => ({ ...prev, [id]: !prev[id] }));
+      };
+      
+      const maskPassword = (pw) => {
+        if (!pw) return '';
+        return '•'.repeat(Math.min(pw.length, 12));
+      };
+      
+      // 필터링
+      const getFiltered = () => {
+        let filtered = [...accounts];
+        if (filterBrand !== 'all') filtered = filtered.filter(a => a.brandId === filterBrand);
+        if (filterType !== 'all') filtered = filtered.filter(a => a.siteType === filterType);
+        if (searchTerm.trim()) {
+          const s = searchTerm.toLowerCase();
+          filtered = filtered.filter(a => a.siteName.toLowerCase().includes(s) || a.loginId?.toLowerCase().includes(s) || a.siteUrl?.toLowerCase().includes(s) || a.memo?.toLowerCase().includes(s));
+        }
+        return filtered;
+      };
+      
+      // 브랜드별 그룹
+      const groupByBrand = () => {
+        const filtered = getFiltered();
+        const groups = {};
+        ACCOUNT_CATEGORIES.forEach(cat => { groups[cat.id] = []; });
+        filtered.forEach(a => {
+          const bId = a.brandId || 'common';
+          if (groups[bId]) groups[bId].push(a);
+          else groups['common'].push(a);
+        });
+        return groups;
+      };
+      
+      const grouped = groupByBrand();
+      
+      // 복사 버튼
+      const CopyBtn = ({ text, id, label }) => (
+        <button onClick={(e) => { e.stopPropagation(); copyToClipboard(text, id); }}
+          style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid #E5E8EB', background: copiedId === id ? '#ECFDF5' : 'white', fontSize: 10, fontWeight: 600, color: copiedId === id ? '#059669' : '#8B95A1', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s' }}
+          title={`${label} 복사`}>
+          {copiedId === id ? '✓ 복사됨' : '📋'}
+        </button>
+      );
+      
       return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA', overflow: 'auto' }}>
           {/* 헤더 */}
-          <header style={{ background: 'white', padding: '20px 32px', borderBottom: '1px solid #E5E8EB' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ padding: '24px 32px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
-                <h1 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 4 }}>👤 계정 관리</h1>
-                <p style={{ fontSize: 13, color: '#8B95A1' }}>팀원 계정을 생성하고 관리합니다 (관리자 전용)</p>
+                <h1 style={{ fontSize: 22, fontWeight: 800, color: '#191F28', margin: 0 }}>🔑 계정 관리</h1>
+                <p style={{ fontSize: 13, color: '#8B95A1', marginTop: 4 }}>브랜드별 사이트 계정 정보를 안전하게 관리합니다</p>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  style={{
-                    padding: '10px 20px',
-                    borderRadius: 8,
-                    border: '1px solid #00C471',
-                    background: '#ECFDF5',
-                    color: '#00C471',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                >
-                  <Icon name="plus" size={16} color="#00C471" /> 팀원 추가
-                </button>
-                <button
-                  onClick={createAllAccounts}
-                  disabled={isLoading}
-                  style={{
-                    padding: '10px 20px',
-                    borderRadius: 8,
-                    border: 'none',
-                    background: isLoading ? '#E5E8EB' : '#3182F6',
-                    color: 'white',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: isLoading ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isLoading ? '처리 중...' : `전체 계정 생성 (${teamMembers.length}명)`}
-                </button>
+              <button onClick={() => { resetForm(); setShowModal(true); }}
+                style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 16 }}>+</span> 계정 등록
+              </button>
+            </div>
+            
+            {/* 요약 카드 */}
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${ACCOUNT_CATEGORIES.length}, 1fr)`, gap: 10, marginBottom: 20 }}>
+              {ACCOUNT_CATEGORIES.map(cat => {
+                const count = accounts.filter(a => (a.brandId || 'common') === cat.id).length;
+                return (
+                  <button key={cat.id} onClick={() => setFilterBrand(filterBrand === cat.id ? 'all' : cat.id)}
+                    style={{ background: filterBrand === cat.id ? cat.color + '12' : 'white', borderRadius: 12, padding: '14px 16px', border: filterBrand === cat.id ? `1.5px solid ${cat.color}` : '1px solid #E5E8EB', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: 14 }}>{cat.emoji}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>{cat.name}</span>
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: cat.color }}>{count}<span style={{ fontSize: 12, fontWeight: 600, color: '#8B95A1' }}>건</span></div>
+                  </button>
+                );
+              })}
+            </div>
+            
+            {/* 검색 & 필터 */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <div style={{ flex: 1, position: 'relative' }}>
+                <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                  placeholder="사이트명, 아이디, URL 검색..."
+                  style={{ width: '100%', padding: '9px 14px 9px 34px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13, background: 'white' }} />
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#B0B8C1' }}>🔍</span>
               </div>
-            </div>
-          </header>
-
-          {/* 메시지 영역 */}
-          {message && (
-            <div style={{ margin: '16px 32px 0', padding: 16, background: message.includes('✗') ? '#FEF2F2' : '#F0F9FF', borderRadius: 8, border: `1px solid ${message.includes('✗') ? '#FECACA' : '#BAE6FD'}` }}>
-              <pre style={{ margin: 0, fontSize: 13, color: message.includes('✗') ? '#DC2626' : '#0369A1', whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{message}</pre>
-            </div>
-          )}
-
-          {/* 계정 목록 */}
-          <div style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
-              {/* 테이블 헤더 */}
-              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 180px', padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 13, fontWeight: 600, color: '#6B7684' }}>
-                <div></div>
-                <div>이름</div>
-                <div>이메일</div>
-                <div>역할</div>
-                <div>권한</div>
-                <div style={{ textAlign: 'center' }}>계정 관리</div>
-              </div>
-
-              {/* 계정 목록 */}
-              {teamMembers.map((member) => (
-                <div key={member.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 1fr 100px 100px 180px', padding: '16px 20px', borderBottom: '1px solid #F2F3F5', alignItems: 'center' }}>
-                  {/* 프로필 */}
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: member.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 14, fontWeight: 600 }}>
-                    {member.initial}
-                  </div>
-
-                  {/* 이름 */}
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#191F28' }}>{member.name}</div>
-
-                  {/* 이메일 */}
-                  <div style={{ fontSize: 13, color: '#6B7684' }}>{member.email}</div>
-
-                  {/* 역할 */}
-                  <div style={{ fontSize: 13, color: '#4E5968' }}>{member.role}</div>
-
-                  {/* 권한 */}
-                  <div>
-                    <span style={{
-                      padding: '4px 8px',
-                      borderRadius: 4,
-                      fontSize: 12,
-                      fontWeight: 500,
-                      background: member.isAdmin ? '#FEF3C7' : '#F2F3F5',
-                      color: member.isAdmin ? '#D97706' : '#6B7684'
-                    }}>
-                      {member.isAdmin ? '관리자' : '일반'}
-                    </span>
-                  </div>
-
-                  {/* 계정 관리 버튼 */}
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                    <button
-                      onClick={() => createAccount(member)}
-                      disabled={isLoading}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        border: '1px solid #E5E8EB',
-                        background: 'white',
-                        color: '#3182F6',
-                        fontSize: 12,
-                        fontWeight: 500,
-                        cursor: isLoading ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      생성
-                    </button>
-                    <button
-                      onClick={() => setShowResetModal(member)}
-                      disabled={isLoading}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        border: '1px solid #E5E8EB',
-                        background: 'white',
-                        color: '#6B7684',
-                        fontSize: 12,
-                        fontWeight: 500,
-                        cursor: isLoading ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      초기화
-                    </button>
-                    {!member.isAdmin && (
-                      <button
-                        onClick={() => deleteMember(member)}
-                        disabled={isLoading}
-                        style={{
-                          padding: '6px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #FECACA',
-                          background: '#FEF2F2',
-                          color: '#DC2626',
-                          fontSize: 12,
-                          fontWeight: 500,
-                          cursor: isLoading ? 'not-allowed' : 'pointer'
-                        }}
-                      >
-                        삭제
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* 안내 문구 */}
-            <div style={{ marginTop: 24, padding: 20, background: '#FFFBEB', borderRadius: 12, border: '1px solid #FCD34D' }}>
-              <h4 style={{ fontSize: 14, fontWeight: 600, color: '#D97706', marginBottom: 8 }}>💡 안내사항</h4>
-              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#92400E', lineHeight: 1.8 }}>
-                <li>기본 비밀번호는 <strong>netform2025</strong> 입니다.</li>
-                <li>계정이 이미 존재하면 "이미 존재" 메시지가 표시됩니다.</li>
-                <li>비밀번호 초기화 시 해당 이메일로 재설정 링크가 발송됩니다.</li>
-                <li>내부용 이메일(@workspace.local)은 비밀번호 재설정 이메일을 받을 수 없습니다.</li>
-              </ul>
+              <select value={filterType} onChange={e => setFilterType(e.target.value)}
+                style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
+                <option value="all">전체 유형</option>
+                {SITE_TYPES.map(t => <option key={t.id} value={t.id}>{t.emoji} {t.name}</option>)}
+              </select>
             </div>
           </div>
-
-          {/* 팀원 추가 모달 */}
-          {showAddModal && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 450 }}>
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 20 }}>👤 새 팀원 추가</h3>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {/* 이름 */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>이름 *</label>
-                    <input
-                      type="text"
-                      value={newMember.name}
-                      onChange={(e) => setNewMember(prev => ({ ...prev, name: e.target.value }))}
-                      placeholder="예: 홍길동"
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
-                    />
-                  </div>
-
-                  {/* 이메일 */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>이메일 *</label>
-                    <input
-                      type="email"
-                      value={newMember.email}
-                      onChange={(e) => setNewMember(prev => ({ ...prev, email: e.target.value }))}
-                      placeholder="예: gildong@workspace.local"
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
-                    />
-                  </div>
-
-                  {/* 역할 & 권한 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>역할</label>
-                      <select
-                        value={newMember.role}
-                        onChange={(e) => setNewMember(prev => ({ ...prev, role: e.target.value }))}
-                        style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, background: 'white' }}
-                      >
-                        <option value="팀장">팀장</option>
-                        <option value="매니저">매니저</option>
-                        <option value="인턴">인턴</option>
-                        <option value="외부">외부</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>권한</label>
-                      <select
-                        value={newMember.isAdmin ? 'admin' : 'normal'}
-                        onChange={(e) => setNewMember(prev => ({ ...prev, isAdmin: e.target.value === 'admin' }))}
-                        style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14, background: 'white' }}
-                      >
-                        <option value="normal">일반</option>
-                        <option value="admin">관리자</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* 비밀번호 */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#4E5968', marginBottom: 6 }}>초기 비밀번호</label>
-                    <input
-                      type="text"
-                      value={newMember.password}
-                      onChange={(e) => setNewMember(prev => ({ ...prev, password: e.target.value }))}
-                      placeholder="최소 6자 이상"
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 14 }}
-                    />
-                    <p style={{ fontSize: 11, color: '#8B95A1', marginTop: 4 }}>기본값: netform2025</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 }}>
-                  <button
-                    onClick={() => { setShowAddModal(false); setNewMember({ name: '', email: '', role: '매니저', isAdmin: false, password: 'netform2025' }); }}
-                    style={{ padding: '12px 24px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', color: '#6B7684', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
-                  >
-                    취소
-                  </button>
-                  <button
-                    onClick={addNewMember}
-                    disabled={isLoading || !newMember.name || !newMember.email}
-                    style={{ padding: '12px 24px', borderRadius: 8, border: 'none', background: (!newMember.name || !newMember.email) ? '#E5E8EB' : '#00C471', color: 'white', fontSize: 14, fontWeight: 600, cursor: (!newMember.name || !newMember.email) ? 'not-allowed' : 'pointer' }}
-                  >
-                    {isLoading ? '추가 중...' : '팀원 추가'}
-                  </button>
-                </div>
+          
+          {/* 콘텐츠 */}
+          <div style={{ flex: 1, padding: '0 32px 32px', overflow: 'auto' }}>
+            {accounts.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+                <div style={{ fontSize: 56, marginBottom: 16 }}>🔑</div>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 8 }}>등록된 계정이 없습니다</h2>
+                <p style={{ fontSize: 13, color: '#8B95A1', marginBottom: 20 }}>브랜드별 사이트 계정을 등록하고 팀과 공유하세요</p>
+                <button onClick={() => { resetForm(); setShowModal(true); }}
+                  style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  + 첫 번째 계정 등록
+                </button>
               </div>
-            </div>
-          )}
-
-          {/* 비밀번호 초기화 모달 */}
-          {showResetModal && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-              <div style={{ background: 'white', borderRadius: 16, padding: 24, width: 400 }}>
-                <h3 style={{ fontSize: 18, fontWeight: 600, color: '#191F28', marginBottom: 16 }}>비밀번호 초기화</h3>
-                <p style={{ fontSize: 14, color: '#4E5968', marginBottom: 20 }}>
-                  <strong>{showResetModal.name}</strong>({showResetModal.email})에게<br/>
-                  비밀번호 재설정 이메일을 발송하시겠습니까?
-                </p>
-                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => setShowResetModal(null)}
-                    style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', color: '#6B7684', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
-                  >
+            ) : getFiltered().length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#8B95A1', fontSize: 14 }}>검색 결과가 없습니다</div>
+            ) : (
+              ACCOUNT_CATEGORIES.map(cat => {
+                const items = grouped[cat.id];
+                if (!items || items.length === 0) return null;
+                
+                return (
+                  <div key={cat.id} style={{ marginBottom: 24 }}>
+                    {/* 브랜드 헤더 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: cat.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{cat.emoji}</div>
+                      <h2 style={{ fontSize: 15, fontWeight: 700, color: '#191F28' }}>{cat.name}</h2>
+                      <span style={{ padding: '2px 8px', borderRadius: 10, background: cat.color + '18', color: cat.color, fontSize: 11, fontWeight: 700 }}>{items.length}</span>
+                    </div>
+                    
+                    {/* 계정 카드 리스트 */}
+                    <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                      {/* 테이블 헤더 */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 90px 1.2fr 1fr 0.8fr 80px', gap: 8, padding: '10px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>
+                        <span>사이트명</span>
+                        <span>유형</span>
+                        <span>아이디</span>
+                        <span>비밀번호</span>
+                        <span>담당자</span>
+                        <span></span>
+                      </div>
+                      
+                      {items.map((acc, idx) => {
+                        const sType = SITE_TYPES.find(t => t.id === acc.siteType);
+                        const isRevealed = revealedPasswords[acc.id];
+                        const manager = teamMembers.find(m => String(m.id) === String(acc.manager));
+                        
+                        return (
+                          <div key={acc.id} className="task-row"
+                            style={{ display: 'grid', gridTemplateColumns: '1.6fr 90px 1.2fr 1fr 0.8fr 80px', gap: 8, padding: '12px 20px', borderBottom: idx < items.length - 1 ? '1px solid #F2F4F6' : 'none', alignItems: 'center' }}>
+                            {/* 사이트명 */}
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{acc.siteName}</span>
+                                {acc.siteUrl && (
+                                  <a href={acc.siteUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                                    style={{ fontSize: 11, color: '#3182F6', textDecoration: 'none' }} title={acc.siteUrl}>🔗</a>
+                                )}
+                              </div>
+                              {acc.memo && <div style={{ fontSize: 11, color: '#8B95A1', marginTop: 2 }}>{acc.memo.substring(0, 40)}{acc.memo.length > 40 ? '...' : ''}</div>}
+                            </div>
+                            
+                            {/* 유형 */}
+                            <div>
+                              <span style={{ padding: '3px 8px', borderRadius: 6, background: '#F2F4F6', fontSize: 11, fontWeight: 600, color: '#4E5968' }}>
+                                {sType?.emoji} {sType?.name || '기타'}
+                              </span>
+                            </div>
+                            
+                            {/* 아이디 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: '#333D4B', fontFamily: "'Pretendard', monospace" }}>{acc.loginId || '-'}</span>
+                              {acc.loginId && <CopyBtn text={acc.loginId} id={`id-${acc.id}`} label="아이디" />}
+                            </div>
+                            
+                            {/* 비밀번호 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 12, fontWeight: 500, color: '#333D4B', fontFamily: "'Pretendard', monospace", minWidth: 60 }}>
+                                {acc.password ? (isRevealed ? acc.password : maskPassword(acc.password)) : '-'}
+                              </span>
+                              {acc.password && (
+                                <>
+                                  <button onClick={(e) => { e.stopPropagation(); togglePassword(acc.id); }}
+                                    style={{ padding: '2px 4px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#8B95A1' }}
+                                    title={isRevealed ? '숨기기' : '보기'}>
+                                    {isRevealed ? '🙈' : '👁'}
+                                  </button>
+                                  <CopyBtn text={acc.password} id={`pw-${acc.id}`} label="비밀번호" />
+                                </>
+                              )}
+                            </div>
+                            
+                            {/* 담당자 */}
+                            <div>
+                              {manager ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: manager.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>{manager.initial}</div>
+                                  <span style={{ fontSize: 11, fontWeight: 500, color: '#4E5968' }}>{manager.name}</span>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: 11, color: '#B0B8C1' }}>-</span>
+                              )}
+                            </div>
+                            
+                            {/* 액션 */}
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                              <button onClick={(e) => { e.stopPropagation(); handleEdit(acc); }}
+                                style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12 }}
+                                onMouseEnter={e => e.currentTarget.style.background='#F2F4F6'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>✏️</button>
+                              <button onClick={(e) => { e.stopPropagation(); handleDelete(acc.id); }}
+                                style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12 }}
+                                onMouseEnter={e => { e.currentTarget.style.background='#FEF2F2'; }} onMouseLeave={e => { e.currentTarget.style.background='transparent'; }}>🗑</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          
+          {/* 등록/수정 모달 */}
+          {showModal && (
+            <div onClick={() => { setShowModal(false); resetForm(); }}
+              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+              <div onClick={e => e.stopPropagation()}
+                style={{ background: 'white', borderRadius: 20, padding: 28, width: 500, maxHeight: '85vh', overflow: 'auto' }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, color: '#191F28', marginBottom: 24 }}>
+                  {editingAccount ? '✏️ 계정 정보 수정' : '🔑 새 계정 등록'}
+                </h2>
+                
+                {/* 사이트명 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>사이트명 *</label>
+                  <input value={form.siteName} onChange={e => setForm({...form, siteName: e.target.value})}
+                    placeholder="예: 네이버 블로그, Cafe24, Adobe CC"
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                </div>
+                
+                {/* 브랜드 & 유형 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>브랜드</label>
+                    <select value={form.brandId} onChange={e => setForm({...form, brandId: e.target.value})}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      {ACCOUNT_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>사이트 유형</label>
+                    <select value={form.siteType} onChange={e => setForm({...form, siteType: e.target.value})}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      {SITE_TYPES.map(t => <option key={t.id} value={t.id}>{t.emoji} {t.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* URL */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>사이트 URL</label>
+                  <input value={form.siteUrl} onChange={e => setForm({...form, siteUrl: e.target.value})}
+                    placeholder="https://..."
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                </div>
+                
+                {/* 아이디 & 비밀번호 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>아이디</label>
+                    <input value={form.loginId} onChange={e => setForm({...form, loginId: e.target.value})}
+                      placeholder="로그인 아이디"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>비밀번호</label>
+                    <input value={form.password} onChange={e => setForm({...form, password: e.target.value})}
+                      placeholder="비밀번호"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                  </div>
+                </div>
+                
+                {/* 담당자 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>담당자</label>
+                  <select value={form.manager} onChange={e => setForm({...form, manager: e.target.value})}
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                    <option value="">선택 안함</option>
+                    {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name} ({m.role})</option>)}
+                  </select>
+                </div>
+                
+                {/* 메모 */}
+                <div style={{ marginBottom: 24 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>메모</label>
+                  <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})}
+                    placeholder="계정 관련 참고사항..."
+                    rows={2}
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13, resize: 'vertical' }} />
+                </div>
+                
+                {/* 버튼 */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => { setShowModal(false); resetForm(); }}
+                    style={{ flex: 1, padding: 14, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>
                     취소
                   </button>
-                  <button
-                    onClick={() => sendPasswordReset(showResetModal)}
-                    style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-                  >
-                    발송하기
+                  <button onClick={handleSave} disabled={!form.siteName.trim()}
+                    style={{ flex: 2, padding: 14, borderRadius: 10, border: 'none', background: form.siteName.trim() ? '#3182F6' : '#E5E8EB', fontSize: 14, fontWeight: 700, color: form.siteName.trim() ? 'white' : '#B0B8C1', cursor: form.siteName.trim() ? 'pointer' : 'default' }}>
+                    {editingAccount ? '수정 완료' : '등록'}
                   </button>
                 </div>
               </div>
@@ -2156,6 +2105,7 @@
         </div>
       );
     }
+
 
     // ============ 템플릿 관리 탭 ============
     function TemplateManageTab({ templates, onSave, lastModified, currentUser }) {
@@ -6376,6 +6326,651 @@
               />
             ) : null}
           </div>
+        </div>
+      );
+    }
+
+    // ============ 결제 주기 체크 탭 ============
+    function PaymentCycleTab({ currentUser }) {
+      const CATEGORIES = [
+        { id: 'saas', name: 'SaaS/클라우드', emoji: '☁️', color: '#3182F6' },
+        { id: 'design', name: '디자인/영상', emoji: '🎨', color: '#8B5CF6' },
+        { id: 'marketing', name: '마케팅/광고', emoji: '📢', color: '#F59E0B' },
+        { id: 'office', name: '사무/유틸리티', emoji: '🏢', color: '#059669' },
+        { id: 'hosting', name: '호스팅/도메인', emoji: '🌐', color: '#EC4899' },
+        { id: 'communication', name: '커뮤니케이션', emoji: '💬', color: '#06B6D4' },
+        { id: 'other', name: '기타', emoji: '📦', color: '#6B7684' }
+      ];
+      const CYCLE_OPTIONS = [
+        { id: 'monthly', name: '매월', shortName: '월', days: 30 },
+        { id: 'quarterly', name: '분기', shortName: '분기', days: 90 },
+        { id: 'semiannual', name: '반기', shortName: '반기', days: 180 },
+        { id: 'yearly', name: '연간', shortName: '연', days: 365 }
+      ];
+      const STATUS_OPTIONS = [
+        { id: 'active', name: '활성', color: '#059669', bg: '#ECFDF5' },
+        { id: 'paused', name: '일시중지', color: '#F59E0B', bg: '#FFFBEB' },
+        { id: 'cancelled', name: '해지', color: '#EF4444', bg: '#FEF2F2' }
+      ];
+      
+      const [payments, setPayments] = useState([]);
+      const [showModal, setShowModal] = useState(false);
+      const [editingPayment, setEditingPayment] = useState(null);
+      const [viewMode, setViewMode] = useState('list'); // list, calendar
+      const [filterCategory, setFilterCategory] = useState('all');
+      const [filterStatus, setFilterStatus] = useState('active');
+      const [sortBy, setSortBy] = useState('nextDate'); // nextDate, amount, name
+      const [calendarMonth, setCalendarMonth] = useState(new Date());
+      
+      // 폼 상태
+      const [form, setForm] = useState({
+        name: '', amount: '', cycle: 'monthly', category: 'saas',
+        paymentDay: '', startDate: '', memo: '', status: 'active', url: ''
+      });
+      
+      // Firebase 키
+      const storageKey = 'payment-cycles';
+      
+      // 데이터 로드
+      useEffect(() => {
+        const load = async () => {
+          const data = await FirebaseService.getDoc('settings', storageKey);
+          if (data?.items) setPayments(data.items);
+        };
+        load();
+        const unsub = FirebaseService.onDataChange(`settings/${storageKey}`, () => {});
+        return () => { if (unsub) unsub(); };
+      }, []);
+      
+      // 데이터 저장
+      const savePayments = async (items) => {
+        setPayments(items);
+        await FirebaseService.saveDoc('settings', storageKey, { items, updatedAt: new Date().toISOString() });
+      };
+      
+      // 다음 결제일 계산
+      const getNextPaymentDate = (payment) => {
+        if (payment.status !== 'active') return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const day = parseInt(payment.paymentDay) || 1;
+        const cycle = CYCLE_OPTIONS.find(c => c.id === payment.cycle);
+        
+        if (payment.cycle === 'monthly') {
+          let next = new Date(today.getFullYear(), today.getMonth(), day);
+          if (next <= today) next.setMonth(next.getMonth() + 1);
+          return next;
+        } else if (payment.cycle === 'quarterly') {
+          const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
+          for (let i = 0; i < 12; i++) {
+            const m = (startMonth + i * 3) % 12;
+            let next = new Date(today.getFullYear(), m, day);
+            if (next <= today) next = new Date(today.getFullYear() + 1, m, day);
+            if (next > today) return next;
+          }
+        } else if (payment.cycle === 'yearly') {
+          const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
+          let next = new Date(today.getFullYear(), startMonth, day);
+          if (next <= today) next = new Date(today.getFullYear() + 1, startMonth, day);
+          return next;
+        } else if (payment.cycle === 'semiannual') {
+          const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
+          for (let i = 0; i < 4; i++) {
+            const m = (startMonth + i * 6) % 12;
+            let next = new Date(today.getFullYear(), m, day);
+            if (next <= today) next = new Date(today.getFullYear() + 1, m, day);
+            if (next > today) return next;
+          }
+        }
+        return null;
+      };
+      
+      // D-day 계산
+      const getDday = (payment) => {
+        const next = getNextPaymentDate(payment);
+        if (!next) return null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const diff = Math.ceil((next - today) / (1000 * 60 * 60 * 24));
+        return diff;
+      };
+      
+      // 월별 결제 총액
+      const getMonthlyTotal = () => {
+        return payments.filter(p => p.status === 'active').reduce((sum, p) => {
+          const amt = parseInt(p.amount) || 0;
+          const cycle = CYCLE_OPTIONS.find(c => c.id === p.cycle);
+          if (p.cycle === 'monthly') return sum + amt;
+          if (p.cycle === 'quarterly') return sum + Math.round(amt / 3);
+          if (p.cycle === 'semiannual') return sum + Math.round(amt / 6);
+          if (p.cycle === 'yearly') return sum + Math.round(amt / 12);
+          return sum;
+        }, 0);
+      };
+      
+      // 연간 결제 총액
+      const getYearlyTotal = () => {
+        return payments.filter(p => p.status === 'active').reduce((sum, p) => {
+          const amt = parseInt(p.amount) || 0;
+          if (p.cycle === 'monthly') return sum + amt * 12;
+          if (p.cycle === 'quarterly') return sum + amt * 4;
+          if (p.cycle === 'semiannual') return sum + amt * 2;
+          if (p.cycle === 'yearly') return sum + amt;
+          return sum;
+        }, 0);
+      };
+      
+      // 다가오는 결제 (7일 이내)
+      const getUpcoming = () => {
+        return payments.filter(p => {
+          const d = getDday(p);
+          return d !== null && d >= 0 && d <= 7;
+        }).sort((a, b) => (getDday(a) || 99) - (getDday(b) || 99));
+      };
+      
+      // 필터링 & 정렬
+      const getFilteredPayments = () => {
+        let filtered = [...payments];
+        if (filterCategory !== 'all') filtered = filtered.filter(p => p.category === filterCategory);
+        if (filterStatus !== 'all') filtered = filtered.filter(p => p.status === filterStatus);
+        
+        filtered.sort((a, b) => {
+          if (sortBy === 'nextDate') {
+            const da = getDday(a), db = getDday(b);
+            if (da === null && db === null) return 0;
+            if (da === null) return 1;
+            if (db === null) return -1;
+            return da - db;
+          }
+          if (sortBy === 'amount') return (parseInt(b.amount) || 0) - (parseInt(a.amount) || 0);
+          if (sortBy === 'name') return (a.name || '').localeCompare(b.name || '');
+          return 0;
+        });
+        return filtered;
+      };
+      
+      // 폼 리셋
+      const resetForm = () => {
+        setForm({ name: '', amount: '', cycle: 'monthly', category: 'saas', paymentDay: '', startDate: '', memo: '', status: 'active', url: '' });
+        setEditingPayment(null);
+      };
+      
+      // 저장
+      const handleSave = () => {
+        if (!form.name.trim() || !form.amount) return;
+        const item = {
+          ...form,
+          id: editingPayment?.id || `pay-${Date.now()}`,
+          amount: parseInt(form.amount) || 0,
+          paymentDay: parseInt(form.paymentDay) || 1,
+          updatedAt: new Date().toISOString()
+        };
+        if (editingPayment) {
+          savePayments(payments.map(p => p.id === editingPayment.id ? item : p));
+        } else {
+          savePayments([...payments, item]);
+        }
+        setShowModal(false);
+        resetForm();
+      };
+      
+      // 삭제
+      const handleDelete = (id) => {
+        if (!confirm('이 결제 항목을 삭제하시겠습니까?')) return;
+        savePayments(payments.filter(p => p.id !== id));
+      };
+      
+      // 수정
+      const handleEdit = (payment) => {
+        setForm({ ...payment, amount: String(payment.amount), paymentDay: String(payment.paymentDay) });
+        setEditingPayment(payment);
+        setShowModal(true);
+      };
+      
+      // 금액 포맷
+      const formatMoney = (n) => {
+        if (!n) return '0';
+        return Number(n).toLocaleString('ko-KR');
+      };
+      
+      // 캘린더 데이터
+      const getCalendarDays = () => {
+        const year = calendarMonth.getFullYear();
+        const month = calendarMonth.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const days = [];
+        // 빈 칸
+        for (let i = 0; i < firstDay; i++) days.push(null);
+        // 날짜
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateObj = new Date(year, month, d);
+          const paymentsOnDay = payments.filter(p => {
+            if (p.status !== 'active') return false;
+            const next = getNextPaymentDate(p);
+            if (!next) return false;
+            return next.getFullYear() === year && next.getMonth() === month && next.getDate() === d;
+          });
+          days.push({ day: d, date: dateObj, isToday: dateObj.getTime() === today.getTime(), payments: paymentsOnDay });
+        }
+        return days;
+      };
+      
+      const upcoming = getUpcoming();
+      const activeCount = payments.filter(p => p.status === 'active').length;
+      
+      // D-day 배지
+      const DdayBadge = ({ payment }) => {
+        const d = getDday(payment);
+        if (d === null) return null;
+        let bg, color, text;
+        if (d === 0) { bg = '#FEE2E2'; color = '#DC2626'; text = 'D-DAY'; }
+        else if (d <= 3) { bg = '#FEF3C7'; color = '#D97706'; text = `D-${d}`; }
+        else if (d <= 7) { bg = '#DBEAFE'; color = '#2563EB'; text = `D-${d}`; }
+        else { bg = '#F3F4F6'; color = '#6B7684'; text = `D-${d}`; }
+        return (
+          <span style={{ padding: '2px 8px', borderRadius: 6, background: bg, color, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {text}
+          </span>
+        );
+      };
+      
+      return (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA', overflow: 'auto' }}>
+          {/* 헤더 */}
+          <div style={{ padding: '24px 32px 0', background: '#F7F8FA' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+              <div>
+                <h1 style={{ fontSize: 22, fontWeight: 800, color: '#191F28', margin: 0 }}>결제 주기 체크</h1>
+                <p style={{ fontSize: 13, color: '#8B95A1', marginTop: 4 }}>정기 결제 일정을 관리하고 놓치지 마세요</p>
+              </div>
+              <button onClick={() => { resetForm(); setShowModal(true); }}
+                style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 16 }}>+</span> 결제 항목 등록
+              </button>
+            </div>
+            
+            {/* 요약 카드 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+              {/* 활성 구독 */}
+              <div style={{ background: 'white', borderRadius: 14, padding: '18px 20px', border: '1px solid #E5E8EB' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: '#EBF4FF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>📊</span>
+                  활성 구독
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: '#191F28' }}>{activeCount}<span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>건</span></div>
+              </div>
+              
+              {/* 월 예상 비용 */}
+              <div style={{ background: 'white', borderRadius: 14, padding: '18px 20px', border: '1px solid #E5E8EB' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>💰</span>
+                  월 예상 비용
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#191F28' }}>₩{formatMoney(getMonthlyTotal())}</div>
+              </div>
+              
+              {/* 연간 예상 비용 */}
+              <div style={{ background: 'white', borderRadius: 14, padding: '18px 20px', border: '1px solid #E5E8EB' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>📅</span>
+                  연간 예상 비용
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#191F28' }}>₩{formatMoney(getYearlyTotal())}</div>
+              </div>
+              
+              {/* 다가오는 결제 */}
+              <div style={{ background: upcoming.length > 0 ? '#FFFBEB' : 'white', borderRadius: 14, padding: '18px 20px', border: upcoming.length > 0 ? '1px solid #FDE68A' : '1px solid #E5E8EB' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: upcoming.length > 0 ? '#FDE68A' : '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>🔔</span>
+                  7일 내 결제
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: upcoming.length > 0 ? '#D97706' : '#191F28' }}>{upcoming.length}<span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>건</span></div>
+              </div>
+            </div>
+            
+            {/* 다가오는 결제 알림 바 */}
+            {upcoming.length > 0 && (
+              <div style={{ background: 'white', borderRadius: 12, padding: '14px 20px', marginBottom: 20, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 12, overflowX: 'auto' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#D97706', whiteSpace: 'nowrap' }}>⚡ 곧 결제</span>
+                <div style={{ width: 1, height: 20, background: '#E5E8EB', flexShrink: 0 }} />
+                {upcoming.map(p => {
+                  const cat = CATEGORIES.find(c => c.id === p.category);
+                  const next = getNextPaymentDate(p);
+                  return (
+                    <div key={p.id} onClick={() => handleEdit(p)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#FFFBEB', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: 14 }}>{cat?.emoji}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: '#8B95A1' }}>₩{formatMoney(p.amount)}</span>
+                      <DdayBadge payment={p} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* 뷰 전환 & 필터 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 4, background: '#E5E8EB', borderRadius: 10, padding: 3 }}>
+                {[{ id: 'list', name: '목록', icon: '☰' }, { id: 'calendar', name: '캘린더', icon: '📅' }].map(v => (
+                  <button key={v.id} onClick={() => setViewMode(v.id)}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: viewMode === v.id ? 'white' : 'transparent', fontSize: 12, fontWeight: 600, color: viewMode === v.id ? '#191F28' : '#8B95A1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, boxShadow: viewMode === v.id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                    {v.icon} {v.name}
+                  </button>
+                ))}
+              </div>
+              
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* 카테고리 필터 */}
+                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
+                  <option value="all">전체 카테고리</option>
+                  {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                </select>
+                
+                {/* 상태 필터 */}
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
+                  <option value="all">전체 상태</option>
+                  {STATUS_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                
+                {/* 정렬 */}
+                {viewMode === 'list' && (
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
+                    <option value="nextDate">결제일순</option>
+                    <option value="amount">금액순</option>
+                    <option value="name">이름순</option>
+                  </select>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* 콘텐츠 영역 */}
+          <div style={{ flex: 1, padding: '0 32px 32px', overflow: 'auto' }}>
+            {payments.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+                <div style={{ fontSize: 56, marginBottom: 16 }}>💳</div>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', marginBottom: 8 }}>등록된 결제 항목이 없습니다</h2>
+                <p style={{ fontSize: 13, color: '#8B95A1', marginBottom: 20 }}>정기 결제 서비스를 등록하고 결제일을 놓치지 마세요</p>
+                <button onClick={() => { resetForm(); setShowModal(true); }}
+                  style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                  + 첫 번째 결제 항목 등록
+                </button>
+              </div>
+            ) : viewMode === 'list' ? (
+              /* ─── 리스트 뷰 ─── */
+              <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
+                {/* 테이블 헤더 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 100px 100px 90px 70px 60px', gap: 8, padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>
+                  <span>서비스명</span>
+                  <span>카테고리</span>
+                  <span style={{ textAlign: 'right' }}>결제 금액</span>
+                  <span style={{ textAlign: 'center' }}>결제 주기</span>
+                  <span style={{ textAlign: 'center' }}>다음 결제일</span>
+                  <span style={{ textAlign: 'center' }}>상태</span>
+                  <span></span>
+                </div>
+                
+                {getFilteredPayments().length === 0 ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#8B95A1', fontSize: 13 }}>조건에 맞는 항목이 없습니다</div>
+                ) : (
+                  getFilteredPayments().map((p, idx) => {
+                    const cat = CATEGORIES.find(c => c.id === p.category);
+                    const status = STATUS_OPTIONS.find(s => s.id === p.status);
+                    const cycle = CYCLE_OPTIONS.find(c => c.id === p.cycle);
+                    const next = getNextPaymentDate(p);
+                    const dday = getDday(p);
+                    
+                    return (
+                      <div key={p.id}
+                        onClick={() => handleEdit(p)}
+                        className="task-row"
+                        style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 100px 100px 90px 70px 60px', gap: 8, padding: '14px 20px', borderBottom: idx < getFilteredPayments().length - 1 ? '1px solid #F2F4F6' : 'none', alignItems: 'center', cursor: 'pointer' }}>
+                        {/* 서비스명 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 34, height: 34, borderRadius: 10, background: cat?.color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                            {cat?.emoji}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{p.name}</div>
+                            {p.memo && <div style={{ fontSize: 11, color: '#8B95A1', marginTop: 1 }}>{p.memo.substring(0, 30)}{p.memo.length > 30 ? '...' : ''}</div>}
+                          </div>
+                        </div>
+                        
+                        {/* 카테고리 */}
+                        <div>
+                          <span style={{ padding: '3px 8px', borderRadius: 6, background: cat?.color + '15', color: cat?.color, fontSize: 11, fontWeight: 600 }}>
+                            {cat?.name}
+                          </span>
+                        </div>
+                        
+                        {/* 금액 */}
+                        <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#191F28' }}>
+                          ₩{formatMoney(p.amount)}
+                        </div>
+                        
+                        {/* 주기 */}
+                        <div style={{ textAlign: 'center' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: 6, background: '#F2F4F6', fontSize: 11, fontWeight: 600, color: '#4E5968' }}>
+                            {cycle?.name}
+                          </span>
+                        </div>
+                        
+                        {/* 다음 결제일 */}
+                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          {next ? (
+                            <>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>
+                                {next.getMonth() + 1}/{next.getDate()}
+                              </span>
+                              <DdayBadge payment={p} />
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#B0B8C1' }}>-</span>
+                          )}
+                        </div>
+                        
+                        {/* 상태 */}
+                        <div style={{ textAlign: 'center' }}>
+                          <span style={{ padding: '3px 8px', borderRadius: 6, background: status?.bg, color: status?.color, fontSize: 11, fontWeight: 600 }}>
+                            {status?.name}
+                          </span>
+                        </div>
+                        
+                        {/* 삭제 */}
+                        <div style={{ textAlign: 'center' }}>
+                          <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
+                            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: '#B0B8C1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#EF4444'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#B0B8C1'; }}>
+                            🗑
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                
+                {/* 카테고리별 소계 */}
+                {filterCategory === 'all' && filterStatus === 'active' && payments.filter(p => p.status === 'active').length > 0 && (
+                  <div style={{ padding: '16px 20px', background: '#F7F8FA', borderTop: '1px solid #E5E8EB' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8B95A1', marginBottom: 10 }}>카테고리별 월 비용</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {CATEGORIES.map(cat => {
+                        const catPayments = payments.filter(p => p.status === 'active' && p.category === cat.id);
+                        if (catPayments.length === 0) return null;
+                        const catMonthly = catPayments.reduce((sum, p) => {
+                          const amt = parseInt(p.amount) || 0;
+                          if (p.cycle === 'monthly') return sum + amt;
+                          if (p.cycle === 'quarterly') return sum + Math.round(amt / 3);
+                          if (p.cycle === 'semiannual') return sum + Math.round(amt / 6);
+                          if (p.cycle === 'yearly') return sum + Math.round(amt / 12);
+                          return sum;
+                        }, 0);
+                        return (
+                          <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'white', border: '1px solid #E5E8EB' }}>
+                            <span style={{ fontSize: 12 }}>{cat.emoji}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: '#4E5968' }}>{cat.name}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: cat.color }}>₩{formatMoney(catMonthly)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* ─── 캘린더 뷰 ─── */
+              <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E5E8EB', padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                  <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1))}
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', cursor: 'pointer', fontSize: 14 }}>‹</button>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>
+                    {calendarMonth.getFullYear()}년 {calendarMonth.getMonth() + 1}월
+                  </h3>
+                  <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1))}
+                    style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', cursor: 'pointer', fontSize: 14 }}>›</button>
+                </div>
+                
+                {/* 요일 헤더 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+                  {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: i === 0 ? '#EF4444' : i === 6 ? '#3182F6' : '#8B95A1', padding: '8px 0' }}>{d}</div>
+                  ))}
+                </div>
+                
+                {/* 날짜 그리드 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                  {getCalendarDays().map((d, i) => (
+                    <div key={i} style={{ minHeight: 80, padding: 4, borderRadius: 8, background: d?.isToday ? '#EBF4FF' : d ? 'white' : 'transparent', border: d ? '1px solid #F2F4F6' : 'none' }}>
+                      {d && (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: d.isToday ? 700 : 500, color: d.isToday ? '#3182F6' : i % 7 === 0 ? '#EF4444' : i % 7 === 6 ? '#3182F6' : '#4E5968', marginBottom: 2, textAlign: 'right', paddingRight: 4 }}>
+                            {d.day}
+                          </div>
+                          {d.payments.map(p => {
+                            const cat = CATEGORIES.find(c => c.id === p.category);
+                            return (
+                              <div key={p.id} onClick={() => handleEdit(p)}
+                                style={{ padding: '3px 6px', marginBottom: 2, borderRadius: 5, background: cat?.color + '15', fontSize: 10, fontWeight: 600, color: cat?.color, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderLeft: `2px solid ${cat?.color}` }}>
+                                {p.name}
+                              </div>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* 등록/수정 모달 */}
+          {showModal && (
+            <div onClick={() => { setShowModal(false); resetForm(); }}
+              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
+              <div onClick={e => e.stopPropagation()}
+                style={{ background: 'white', borderRadius: 20, padding: 28, width: 480, maxHeight: '85vh', overflow: 'auto' }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, color: '#191F28', marginBottom: 24 }}>
+                  {editingPayment ? '✏️ 결제 항목 수정' : '💳 새 결제 항목 등록'}
+                </h2>
+                
+                {/* 서비스명 */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>서비스명 *</label>
+                  <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
+                    placeholder="예: Figma, Adobe CC, AWS" 
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                </div>
+                
+                {/* 카테고리 & 상태 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>카테고리</label>
+                    <select value={form.category} onChange={e => setForm({...form, category: e.target.value})}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>상태</label>
+                    <select value={form.status} onChange={e => setForm({...form, status: e.target.value})}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      {STATUS_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* 금액 & 주기 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제 금액 (원) *</label>
+                    <input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})}
+                      placeholder="예: 15000"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제 주기</label>
+                    <select value={form.cycle} onChange={e => setForm({...form, cycle: e.target.value})}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      {CYCLE_OPTIONS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* 결제일 & 시작일 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제일 (매월 몇 일)</label>
+                    <input type="number" min="1" max="31" value={form.paymentDay} onChange={e => setForm({...form, paymentDay: e.target.value})}
+                      placeholder="예: 15"
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>최초 결제일{form.cycle !== 'monthly' ? ' (분기/반기/연간 기준)' : ''}</label>
+                    <input type="date" value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                  </div>
+                </div>
+                
+                {/* URL */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>서비스 URL (선택)</label>
+                  <input value={form.url} onChange={e => setForm({...form, url: e.target.value})}
+                    placeholder="https://..." 
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                </div>
+                
+                {/* 메모 */}
+                <div style={{ marginBottom: 24 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>메모 (선택)</label>
+                  <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})}
+                    placeholder="결제 관련 메모..."
+                    rows={2}
+                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13, resize: 'vertical' }} />
+                </div>
+                
+                {/* 버튼 */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => { setShowModal(false); resetForm(); }}
+                    style={{ flex: 1, padding: 14, borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', fontSize: 14, fontWeight: 600, color: '#6B7684', cursor: 'pointer' }}>
+                    취소
+                  </button>
+                  <button onClick={handleSave} disabled={!form.name.trim() || !form.amount}
+                    style={{ flex: 2, padding: 14, borderRadius: 10, border: 'none', background: form.name.trim() && form.amount ? '#3182F6' : '#E5E8EB', fontSize: 14, fontWeight: 700, color: form.name.trim() && form.amount ? 'white' : '#B0B8C1', cursor: form.name.trim() && form.amount ? 'pointer' : 'default' }}>
+                    {editingPayment ? '수정 완료' : '등록'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
