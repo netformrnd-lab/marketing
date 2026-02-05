@@ -212,7 +212,7 @@
     ];
     
     // KPI 브랜드 표시 순서
-    const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'automation'];
+    const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'automation-system'];
     
     // 우선순위 옵션
     const PRIORITY_OPTIONS = [
@@ -3117,7 +3117,7 @@
     }
     
     // 새 회의록 모달
-    function MeetingModal({ meeting, projects, currentUser, onSave, onClose, defaultProject }) {
+    function MeetingModal({ meeting, projects, currentUser, onSave, onClose, defaultProject, hideTypeAndProject }) {
       const isEdit = !!meeting;
       const today = new Date().toISOString().split('T')[0];
       
@@ -3226,6 +3226,7 @@
               </div>
               
               {/* 회의 유형 */}
+              {!hideTypeAndProject && (
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>회의 유형</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -3247,6 +3248,7 @@
                   ))}
                 </div>
               </div>
+              )}
               
               {/* 일시 */}
               <div style={{ marginBottom: 20 }}>
@@ -3300,6 +3302,7 @@
               </div>
               
               {/* 연결할 프로젝트 */}
+              {!hideTypeAndProject && (
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
                   연결할 프로젝트 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택)</span>
@@ -3322,9 +3325,10 @@
                   ))}
                 </div>
               </div>
+              )}
               
-              {/* 템플릿 선택 (새 회의록일 때만) */}
-              {!isEdit && (
+              {/* 템플릿 선택 (새 회의록일 때만, 프로젝트 내에서는 숨김) */}
+              {!isEdit && !hideTypeAndProject && (
                 <div style={{ marginBottom: 20 }}>
                   <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>템플릿 사용</label>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -3355,7 +3359,7 @@
                 <textarea
                   value={form.content}
                   onChange={(e) => setForm({ ...form, content: e.target.value })}
-                  placeholder="회의 내용을 입력하세요...&#10;템플릿을 선택하면 자동으로 채워집니다."
+                  placeholder="회의 내용을 입력하세요..."
                   style={{ 
                     width: '100%', 
                     padding: '12px 16px', 
@@ -3363,7 +3367,7 @@
                     border: '1px solid #E5E8EB', 
                     fontSize: 14,
                     lineHeight: 1.6,
-                    minHeight: 120,
+                    minHeight: 300,
                     resize: 'vertical',
                     fontFamily: 'inherit'
                   }}
@@ -10738,20 +10742,29 @@
                       return hasMyTask;
                     });
                     
-                    // 브랜드별로 그룹핑 (다중 연동 시 각 브랜드에 중복 표시)
-                    const groupedByBrand = {};
+                    // 브랜드 > 후행지표 기준으로 그룹핑
+                    const groupedByItem = {};
                     kpiProjects.forEach(project => {
-                      const allLinks = getAllKpiLinks(project);
-                      allLinks.forEach(lk => {
-                        if (!groupedByBrand[lk.brandId]) {
-                          groupedByBrand[lk.brandId] = [];
-                        }
-                        // 중복 추가 방지
-                        if (!groupedByBrand[lk.brandId].some(p => p.id === project.id)) {
-                          groupedByBrand[lk.brandId].push(project);
-                        }
-                      });
+                      // linkedKpi 기준으로 그룹핑 (원본 연결 기준)
+                      const lk = project.linkedKpi;
+                      if (!lk) return;
+                      const key = `${lk.brandId}-${lk.kpiId}-${lk.itemId}`;
+                      if (!groupedByItem[key]) {
+                        groupedByItem[key] = { brandId: lk.brandId, kpiId: lk.kpiId, itemId: lk.itemId, projects: [] };
+                      }
+                      groupedByItem[key].projects.push(project);
                     });
+                    
+                    // 브랜드별로 정렬
+                    const groupedByBrand = {};
+                    Object.values(groupedByItem).forEach(group => {
+                      if (!groupedByBrand[group.brandId]) {
+                        groupedByBrand[group.brandId] = [];
+                      }
+                      groupedByBrand[group.brandId].push(group);
+                    });
+                    
+                    const totalItemCount = Object.values(groupedByItem).length;
                     
                     return (
                       <div style={{ marginBottom: 24, position: 'relative', zIndex: 40 }}>
@@ -10760,7 +10773,7 @@
                             <span style={{ fontSize: 14 }}>📊</span>
                           </div>
                           <h2 style={{ fontSize: 16, fontWeight: 700, color: '#191F28' }}>내 KPI 업무</h2>
-                          <span style={{ padding: '3px 10px', borderRadius: 12, background: '#F0FDF4', color: '#00C471', fontSize: 12, fontWeight: 600 }}>{kpiProjects.length}</span>
+                          <span style={{ padding: '3px 10px', borderRadius: 12, background: '#F0FDF4', color: '#00C471', fontSize: 12, fontWeight: 600 }}>{totalItemCount}</span>
                           <span style={{ fontSize: 13, color: '#8B95A1' }}>내가 담당하는 KPI 프로젝트</span>
                           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                             <button onClick={() => setShowKpiLinkModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, background: '#F0FDF4', border: '1px solid #00C471', color: '#00C471', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -10790,7 +10803,7 @@
                                 const orderB = KPI_BRAND_ORDER.indexOf(b[0]);
                                 return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
                               })
-                              .map(([brandId, brandProjects]) => {
+                              .map(([brandId, brandItems]) => {
                               const kpiBrand = kpiBrands[brandId];
                               if (!kpiBrand) return null;
                               
@@ -10800,25 +10813,26 @@
                                   <div style={{ padding: '12px 16px', background: `${kpiBrand.color}08`, borderBottom: '1px solid #E5E8EB', display: 'flex', alignItems: 'center', gap: 8 }}>
                                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: kpiBrand.color }} />
                                     <span style={{ fontSize: 14, fontWeight: 700, color: kpiBrand.color }}>{kpiBrand.name}</span>
-                                    <span style={{ fontSize: 12, color: '#8B95A1' }}>({brandProjects.length})</span>
+                                    <span style={{ fontSize: 12, color: '#8B95A1' }}>({brandItems.length})</span>
                                   </div>
                                   
-                                  {/* 프로젝트 목록 */}
-                                  {brandProjects.map((project, idx) => {
-                                    const st = getProjectStats(project.id);
-                                    const status = STATUS_OPTIONS.find(s => s.id === project.status);
-                                    const kpi = kpiBrand.kpis?.find(k => k.id === project.linkedKpi?.kpiId);
-                                    const item = kpi?.items?.find(i => i.id === project.linkedKpi?.itemId);
+                                  {/* 후행지표 목록 */}
+                                  {brandItems.map((group, idx) => {
+                                    const kpi = kpiBrand.kpis?.find(k => k.id == group.kpiId);
+                                    const item = kpi?.items?.find(i => i.id == group.itemId);
+                                    const itemProjects = group.projects;
+                                    const totalTasks = itemProjects.reduce((sum, p) => sum + (tasks.filter(t => t.projectId === p.id && !t.deletedAt).length), 0);
+                                    const doneTasks = itemProjects.reduce((sum, p) => sum + (tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length), 0);
+                                    const progress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
                                     
                                     return (
                                       <div 
-                                        key={project.id}
+                                        key={`${group.kpiId}-${group.itemId}`}
                                         onClick={() => {
-                                          // KPI 전체 화면 뷰 열기
                                           setSelectedKpiItem({
                                             brandId: brandId,
-                                            kpiId: project.linkedKpi?.kpiId,
-                                            itemId: project.linkedKpi?.itemId,
+                                            kpiId: group.kpiId,
+                                            itemId: group.itemId,
                                             itemName: item?.name || '후행지표',
                                             kpiName: kpi?.name || 'KPI',
                                             brandName: kpiBrand.name,
@@ -10827,7 +10841,7 @@
                                         }}
                                         style={{ 
                                           padding: '14px 16px', 
-                                          borderBottom: idx === brandProjects.length - 1 ? 'none' : '1px solid #F2F3F5',
+                                          borderBottom: idx === brandItems.length - 1 ? 'none' : '1px solid #F2F3F5',
                                           cursor: 'pointer',
                                           transition: 'background 0.15s'
                                         }}
@@ -10836,62 +10850,17 @@
                                       >
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                            {/* 담당자 선택 드롭다운 */}
-                                            <div 
-                                              onClick={(e) => e.stopPropagation()}
-                                              style={{ position: 'relative' }}
-                                            >
-                                              <select
-                                                value={(project.memberIds || [])[0] || ''}
-                                                onChange={(e) => {
-                                                  e.stopPropagation();
-                                                  const memberId = e.target.value ? Number(e.target.value) : null;
-                                                  const updatedProject = {
-                                                    ...project,
-                                                    memberIds: memberId ? [memberId] : [],
-                                                    creatorId: memberId || project.creatorId
-                                                  };
-                                                  setProjects(prev => prev.map(p => p.id === project.id ? updatedProject : p));
-                                                }}
-                                                style={{
-                                                  width: 32, height: 32, borderRadius: '50%',
-                                                  border: '2px dashed #E5E8EB',
-                                                  background: (project.memberIds || []).length > 0 
-                                                    ? TEAM_MEMBERS.find(m => m.id === project.memberIds[0])?.color || '#E5E8EB'
-                                                    : '#F7F8FA',
-                                                  color: (project.memberIds || []).length > 0 ? 'white' : '#8B95A1',
-                                                  fontSize: 11, fontWeight: 600,
-                                                  cursor: 'pointer',
-                                                  appearance: 'none',
-                                                  textAlign: 'center',
-                                                  paddingLeft: 8
-                                                }}
-                                                title="담당자 설정"
-                                              >
-                                                <option value="">+</option>
-                                                {TEAM_MEMBERS.map(m => (
-                                                  <option key={m.id} value={m.id}>{m.name}</option>
-                                                ))}
-                                              </select>
-                                              {(project.memberIds || []).length > 0 && (() => {
-                                                const member = TEAM_MEMBERS.find(m => m.id === project.memberIds[0]);
-                                                return member ? (
-                                                  <div style={{
-                                                    position: 'absolute', top: 0, left: 0,
-                                                    width: 32, height: 32, borderRadius: '50%',
-                                                    background: member.color, color: 'white',
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    fontSize: 12, fontWeight: 600,
-                                                    pointerEvents: 'none'
-                                                  }}>{member.initial}</div>
-                                                ) : null;
-                                              })()}
+                                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: `${kpiBrand.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                              <span style={{ fontSize: 14 }}>📊</span>
                                             </div>
                                             <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{item?.name || '후행지표'}</span>
                                           </div>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            <span style={{ padding: '3px 8px', borderRadius: 6, background: `${status?.color}15`, color: status?.color, fontSize: 11, fontWeight: 600 }}>{status?.label}</span>
-                                            <span style={{ fontSize: 12, color: '#8B95A1' }}>{st.done}/{st.total}</span>
+                                            <span style={{ fontSize: 12, color: '#8B95A1' }}>{itemProjects.length}개 프로젝트</span>
+                                            <div style={{ width: 60, height: 6, background: '#E5E8EB', borderRadius: 3, overflow: 'hidden' }}>
+                                              <div style={{ width: `${progress}%`, height: '100%', background: progress === 100 ? '#00C471' : kpiBrand.color, borderRadius: 3 }} />
+                                            </div>
+                                            <span style={{ fontSize: 12, color: '#8B95A1' }}>{doneTasks}/{totalTasks}</span>
                                           </div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 42 }}>
@@ -11463,6 +11432,7 @@
               setTasks={setTasks}
               currentUser={currentUser}
               meetings={meetings}
+              setMeetings={setMeetings}
               onClose={() => setSelectedKpiItem(null)}
               onOpenProject={openProject}
             />
@@ -11489,9 +11459,13 @@
     }
 
     // KPI 전체 화면 뷰 컴포넌트
-    function KpiFullScreenView({ kpiItem, kpiBrands, projects, tasks, setProjects, setTasks, currentUser, meetings, onClose, onOpenProject }) {
+    function KpiFullScreenView({ kpiItem, kpiBrands, projects, tasks, setProjects, setTasks, currentUser, meetings, setMeetings, onClose, onOpenProject }) {
       const [selectedProjectId, setSelectedProjectId] = useState(null);
       const [detailTab, setDetailTab] = useState('tasks');
+      const [showMeetingModal, setShowMeetingModal] = useState(false);
+      const [expandedMeetingId, setExpandedMeetingId] = useState(null);
+      const [editingMeetingId, setEditingMeetingId] = useState(null);
+      const [editingMeetingContent, setEditingMeetingContent] = useState('');
       
       const brand = kpiBrands[kpiItem.brandId];
       const kpi = brand?.kpis?.find(k => k.id === kpiItem.kpiId);
@@ -11736,6 +11710,31 @@
                   <>
                     {/* 프로젝트 헤더 */}
                     <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB', background: 'white' }}>
+                      {/* 프로젝트의 KPI 연동 경로 표시 */}
+                      {(() => {
+                        const allLinks = getAllKpiLinks(selectedProjectData);
+                        if (allLinks.length <= 1) return null;
+                        return (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                            {allLinks.map((lk, i) => {
+                              const lkBrand = kpiBrands[lk.brandId];
+                              const lkKpi = lkBrand?.kpis?.find(k2 => k2.id == lk.kpiId);
+                              const lkItem = lkKpi?.items?.find(it => it.id == lk.itemId);
+                              const isCurrent = lk.brandId === kpiItem.brandId && lk.kpiId == kpiItem.kpiId && lk.itemId == kpiItem.itemId;
+                              return (
+                                <span key={i} style={{ 
+                                  padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 500,
+                                  background: isCurrent ? `${lkBrand?.color || '#8B95A1'}15` : '#F2F4F6',
+                                  color: isCurrent ? (lkBrand?.color || '#8B95A1') : '#6B7684',
+                                  border: isCurrent ? `1px solid ${lkBrand?.color || '#8B95A1'}30` : '1px solid #E5E8EB'
+                                }}>
+                                  {lkBrand?.name || ''} › {lkItem?.name || ''}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
                           <h2 
@@ -11940,7 +11939,27 @@
                                       )}
                                     </div>
                                     {task.date && (
-                                      <span style={{ fontSize: 12, color: '#8B95A1' }}>{task.date}</span>
+                                      <input 
+                                        type="date" 
+                                        value={task.date}
+                                        onChange={(e) => {
+                                          setTasks(prev => prev.map(t => t.id === task.id ? { ...t, date: e.target.value } : t));
+                                        }}
+                                        style={{ fontSize: 12, color: '#8B95A1', border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px 4px', borderRadius: 4 }}
+                                        onFocus={(e) => { e.target.style.background = '#F2F4F6'; e.target.style.border = '1px solid #E5E8EB'; }}
+                                        onBlur={(e) => { e.target.style.background = 'transparent'; e.target.style.border = 'none'; }}
+                                      />
+                                    )}
+                                    {!task.date && (
+                                      <input 
+                                        type="date" 
+                                        value=""
+                                        onChange={(e) => {
+                                          setTasks(prev => prev.map(t => t.id === task.id ? { ...t, date: e.target.value } : t));
+                                        }}
+                                        style={{ fontSize: 12, color: '#B0B8C1', border: '1px dashed #D1D5DB', background: 'transparent', cursor: 'pointer', padding: '2px 4px', borderRadius: 4, width: 28, height: 24 }}
+                                        title="날짜 설정"
+                                      />
                                     )}
                                     {/* 편집/삭제 버튼 */}
                                     <div style={{ display: 'flex', gap: 4 }}>
@@ -12065,9 +12084,289 @@
                       )}
                       
                       {detailTab === 'meetings' && (
-                        <div style={{ padding: 20, textAlign: 'center', color: '#8B95A1' }}>
-                          <p>회의록 {(meetings || []).filter(m => (m.linkedProjects || []).includes(selectedProjectData.id)).length}개</p>
-                          <p style={{ fontSize: 13, marginTop: 8 }}>회의록 기능은 프로젝트 상세에서 이용해주세요</p>
+                        <div style={{ padding: 20, flex: 1, overflow: 'auto' }}>
+                          {(() => {
+                            const projectMeetings = (meetings || []).filter(m => 
+                              (m.linkedProjects || []).includes(selectedProjectData.id) && !m.deletedAt
+                            ).sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+                            
+                            // 날짜별 그룹핑
+                            const groupedByDate = {};
+                            projectMeetings.forEach(m => {
+                              const d = m.date || '날짜 없음';
+                              if (!groupedByDate[d]) groupedByDate[d] = [];
+                              groupedByDate[d].push(m);
+                            });
+                            const today = new Date().toISOString().split('T')[0];
+                            
+                            return (
+                              <div>
+                                {/* 빠른 추가 - 제목만 입력하면 바로 생성 */}
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                                  <input
+                                    type="text"
+                                    placeholder="회의록 제목을 입력하고 Enter..."
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' && e.target.value.trim()) {
+                                        const newMeeting = {
+                                          id: Date.now(),
+                                          title: e.target.value.trim(),
+                                          date: today,
+                                          startTime: '',
+                                          endTime: '',
+                                          content: '',
+                                          attendees: [currentUser.id],
+                                          linkedProjects: [selectedProjectData.id],
+                                          creatorId: currentUser.id,
+                                          createdAt: new Date().toISOString()
+                                        };
+                                        setMeetings(prev => [...prev, newMeeting]);
+                                        setExpandedMeetingId(newMeeting.id);
+                                        setEditingMeetingId(newMeeting.id);
+                                        e.target.value = '';
+                                      }
+                                    }}
+                                    style={{ 
+                                      flex: 1, padding: '12px 16px', borderRadius: 10, 
+                                      border: '2px dashed #D1D5DB', fontSize: 14,
+                                      outline: 'none', transition: 'border 0.2s'
+                                    }}
+                                    onFocus={(e) => e.target.style.borderColor = '#3182F6'}
+                                    onBlur={(e) => e.target.style.borderColor = '#D1D5DB'}
+                                  />
+                                </div>
+                                
+                                {projectMeetings.length === 0 ? (
+                                  <div style={{ textAlign: 'center', color: '#8B95A1', padding: 40 }}>
+                                    <div style={{ fontSize: 40, marginBottom: 12 }}>📝</div>
+                                    <p style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>아직 회의록이 없습니다</p>
+                                    <p style={{ fontSize: 13 }}>위 입력란에 제목을 입력해 빠르게 만들어보세요</p>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                    {Object.entries(groupedByDate).map(([date, dateMeetings]) => (
+                                      <div key={date}>
+                                        {/* 날짜 구분 헤더 */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                          <span style={{ fontSize: 12, fontWeight: 600, color: date === today ? '#3182F6' : '#8B95A1' }}>
+                                            {date === today ? '📅 오늘' : `📅 ${date}`}
+                                          </span>
+                                          <div style={{ flex: 1, height: 1, background: '#E5E8EB' }} />
+                                          <span style={{ fontSize: 11, color: '#B0B8C1' }}>{dateMeetings.length}개</span>
+                                        </div>
+                                        
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                          {dateMeetings.map(meeting => {
+                                            const isExpanded = expandedMeetingId === meeting.id;
+                                            const isNew = (Date.now() - new Date(meeting.createdAt).getTime()) < 86400000;
+                                            
+                                            return (
+                                              <div 
+                                                key={meeting.id} 
+                                                style={{ 
+                                                  background: 'white', borderRadius: 12, 
+                                                  border: isExpanded ? '2px solid #3182F6' : '1px solid #E5E8EB', 
+                                                  overflow: 'hidden',
+                                                  transition: 'border 0.15s'
+                                                }}
+                                              >
+                                                {/* 헤더 */}
+                                                <div 
+                                                  onClick={() => setExpandedMeetingId(isExpanded ? null : meeting.id)}
+                                                  style={{ 
+                                                    padding: '12px 16px', cursor: 'pointer', 
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                    background: isExpanded ? '#F0F7FF' : 'white'
+                                                  }}
+                                                  onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = '#F7F8FA'; }}
+                                                  onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = 'white'; }}
+                                                >
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <span style={{ fontSize: 10, color: isExpanded ? '#3182F6' : '#B0B8C1', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'none' }}>▶</span>
+                                                    <span style={{ fontSize: 14, fontWeight: 600, color: '#191F28' }}>{meeting.title}</span>
+                                                    {isNew && <span style={{ padding: '1px 6px', borderRadius: 4, background: '#DBEAFE', color: '#3182F6', fontSize: 9, fontWeight: 700 }}>NEW</span>}
+                                                    {meeting.startTime && (
+                                                      <span style={{ fontSize: 11, color: '#B0B8C1' }}>{meeting.startTime}{meeting.endTime ? `~${meeting.endTime}` : ''}</span>
+                                                    )}
+                                                  </div>
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                    {(meeting.attendees || []).slice(0, 3).map((aId, ai) => {
+                                                      const mem = TEAM_MEMBERS.find(tm => tm.id === aId);
+                                                      return mem ? (
+                                                        <div key={aId} style={{ width: 20, height: 20, borderRadius: '50%', background: mem.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 600, border: '2px solid white', marginLeft: ai > 0 ? -6 : 0 }}>{mem.initial}</div>
+                                                      ) : null;
+                                                    })}
+                                                    {!(meeting.content || '').trim() && (
+                                                      <span style={{ fontSize: 10, color: '#F59E0B', fontWeight: 500 }}>미작성</span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                
+                                                {/* 펼쳐진 영역 */}
+                                                {isExpanded && (
+                                                  <div style={{ borderTop: '1px solid #E5E8EB' }}>
+                                                    {(() => {
+                                                      const isLocked = editingMeetingId !== meeting.id;
+                                                      return (
+                                                        <>
+                                                    {/* 메타 정보 바 */}
+                                                    <div style={{ padding: '10px 20px', background: '#FAFBFC', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid #F2F4F6' }}>
+                                                      {/* 잠금 토글 */}
+                                                      <button
+                                                        onClick={() => setEditingMeetingId(isLocked ? meeting.id : null)}
+                                                        style={{ 
+                                                          display: 'flex', alignItems: 'center', gap: 4,
+                                                          padding: '4px 10px', borderRadius: 6,
+                                                          border: isLocked ? '1px solid #E5E8EB' : '1px solid #3182F6',
+                                                          background: isLocked ? '#F2F4F6' : '#EBF4FF',
+                                                          color: isLocked ? '#8B95A1' : '#3182F6',
+                                                          fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                                                        }}
+                                                      >
+                                                        {isLocked ? '🔒 잠금' : '🔓 편집중'}
+                                                      </button>
+                                                      
+                                                      {!isLocked && (
+                                                        <>
+                                                      {/* 제목 인라인 편집 */}
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <span style={{ fontSize: 11, color: '#8B95A1' }}>제목</span>
+                                                        <input
+                                                          type="text"
+                                                          value={meeting.title}
+                                                          onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, title: e.target.value } : m))}
+                                                          style={{ padding: '4px 8px', border: '1px solid #D1D5DB', borderRadius: 6, fontSize: 13, fontWeight: 600, background: 'white', outline: 'none', minWidth: 120 }}
+                                                          onFocus={(e) => e.target.style.borderColor = '#3182F6'}
+                                                          onBlur={(e) => e.target.style.borderColor = '#D1D5DB'}
+                                                        />
+                                                      </div>
+                                                      <div style={{ width: 1, height: 16, background: '#E5E8EB' }} />
+                                                      {/* 날짜 */}
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <span style={{ fontSize: 11, color: '#8B95A1' }}>📅</span>
+                                                        <input type="date" value={meeting.date || ''} onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, date: e.target.value } : m))} style={{ padding: '3px 6px', border: '1px solid #D1D5DB', borderRadius: 4, fontSize: 12, background: 'white', cursor: 'pointer' }} />
+                                                      </div>
+                                                      <div style={{ width: 1, height: 16, background: '#E5E8EB' }} />
+                                                      {/* 시간 */}
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <span style={{ fontSize: 11, color: '#8B95A1' }}>🕐</span>
+                                                        <input type="time" value={meeting.startTime || ''} onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, startTime: e.target.value } : m))} style={{ padding: '3px 6px', border: '1px solid #D1D5DB', borderRadius: 4, fontSize: 12, background: 'white', cursor: 'pointer' }} />
+                                                        <span style={{ color: '#B0B8C1', fontSize: 11 }}>~</span>
+                                                        <input type="time" value={meeting.endTime || ''} onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, endTime: e.target.value } : m))} style={{ padding: '3px 6px', border: '1px solid #D1D5DB', borderRadius: 4, fontSize: 12, background: 'white', cursor: 'pointer' }} />
+                                                      </div>
+                                                      <div style={{ width: 1, height: 16, background: '#E5E8EB' }} />
+                                                      {/* 참석자 */}
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <span style={{ fontSize: 11, color: '#8B95A1' }}>👥</span>
+                                                        {TEAM_MEMBERS.map(mem => {
+                                                          const isAttending = (meeting.attendees || []).includes(mem.id);
+                                                          return (
+                                                            <div 
+                                                              key={mem.id}
+                                                              onClick={() => {
+                                                                const attendees = meeting.attendees || [];
+                                                                const updated = isAttending ? attendees.filter(id => id !== mem.id) : [...attendees, mem.id];
+                                                                setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, attendees: updated } : m));
+                                                              }}
+                                                              style={{ 
+                                                                width: 24, height: 24, borderRadius: '50%', cursor: 'pointer',
+                                                                background: isAttending ? mem.color : '#F2F4F6',
+                                                                color: isAttending ? 'white' : '#B0B8C1',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                fontSize: 9, fontWeight: 600,
+                                                                border: isAttending ? 'none' : '1px dashed #D1D5DB',
+                                                                opacity: isAttending ? 1 : 0.5
+                                                              }}
+                                                              title={mem.name}
+                                                            >{mem.initial}</div>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                        </>
+                                                      )}
+                                                      
+                                                      {/* 잠금 상태 - 메타 요약 표시 */}
+                                                      {isLocked && (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                          <span style={{ fontSize: 12, color: '#8B95A1' }}>📅 {meeting.date || '날짜 없음'}</span>
+                                                          {meeting.startTime && <span style={{ fontSize: 12, color: '#8B95A1' }}>🕐 {meeting.startTime}{meeting.endTime ? `~${meeting.endTime}` : ''}</span>}
+                                                          {(meeting.attendees || []).length > 0 && (
+                                                            <div style={{ display: 'flex', marginLeft: 4 }}>
+                                                              {meeting.attendees.slice(0, 4).map((aId, ai) => {
+                                                                const mem = TEAM_MEMBERS.find(tm => tm.id === aId);
+                                                                return mem ? (
+                                                                  <div key={aId} style={{ width: 20, height: 20, borderRadius: '50%', background: mem.color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 600, border: '2px solid #FAFBFC', marginLeft: ai > 0 ? -4 : 0 }}>{mem.initial}</div>
+                                                                ) : null;
+                                                              })}
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      )}
+                                                      
+                                                      {/* 삭제 - 잠금 해제 시에만 */}
+                                                      {!isLocked && (
+                                                        <div style={{ marginLeft: 'auto' }}>
+                                                          <button
+                                                            onClick={() => { 
+                                                              if (confirm('이 회의록을 삭제하시겠습니까?')) {
+                                                                setMeetings(prev => prev.filter(m => m.id !== meeting.id));
+                                                                setExpandedMeetingId(null);
+                                                                setEditingMeetingId(null);
+                                                              }
+                                                            }}
+                                                            style={{ padding: '4px 10px', background: '#FEF2F2', border: 'none', borderRadius: 6, fontSize: 11, color: '#DC2626', cursor: 'pointer' }}
+                                                          >🗑 삭제</button>
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                    
+                                                    {/* 회의 내용 */}
+                                                    <div style={{ padding: '16px 20px' }}>
+                                                      {isLocked ? (
+                                                        /* 잠금 상태 - 읽기 전용 */
+                                                        (meeting.content || '').trim() ? (
+                                                          <div style={{ fontSize: 14, color: '#333', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: 60 }}>
+                                                            {meeting.content}
+                                                          </div>
+                                                        ) : (
+                                                          <div style={{ textAlign: 'center', padding: 24, color: '#B0B8C1' }}>
+                                                            <p style={{ fontSize: 13 }}>작성된 내용이 없습니다</p>
+                                                            <p style={{ fontSize: 12, marginTop: 4 }}>🔒 잠금을 해제하고 내용을 작성하세요</p>
+                                                          </div>
+                                                        )
+                                                      ) : (
+                                                        /* 편집 상태 - textarea */
+                                                        <textarea
+                                                          value={meeting.content || ''}
+                                                          onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, content: e.target.value } : m))}
+                                                          placeholder="회의 내용을 자유롭게 작성하세요...&#10;&#10;줄바꿈, 빈 줄 모두 그대로 저장됩니다."
+                                                          style={{ 
+                                                            width: '100%', minHeight: 300, padding: '16px', 
+                                                            borderRadius: 10, border: '2px solid #3182F6', 
+                                                            fontSize: 14, lineHeight: 1.8, resize: 'vertical',
+                                                            fontFamily: 'inherit', outline: 'none',
+                                                            background: '#FAFEFF'
+                                                          }}
+                                                          autoFocus
+                                                        />
+                                                      )}
+                                                    </div>
+                                                        </>
+                                                      );
+                                                    })()}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -12198,6 +12497,32 @@
             </div>
             );
           })()}
+          
+          {/* 회의록 추가 모달 (기존 MeetingModal 재사용) */}
+          {showMeetingModal && selectedProjectData && (
+            <div onClick={(e) => e.stopPropagation()} style={{ position: 'relative', zIndex: 10200 }}>
+              <MeetingModal
+                meeting={null}
+                projects={projects}
+                currentUser={currentUser}
+                defaultProject={selectedProjectData}
+                hideTypeAndProject={true}
+                onSave={(newMeeting) => {
+                  const meeting = {
+                    ...newMeeting,
+                    id: Date.now(),
+                    createdAt: new Date().toISOString(),
+                    linkedProjects: newMeeting.linkedProjects?.length > 0 
+                      ? newMeeting.linkedProjects 
+                      : [selectedProjectData.id]
+                  };
+                  setMeetings(prev => [...prev, meeting]);
+                  setShowMeetingModal(false);
+                }}
+                onClose={() => setShowMeetingModal(false)}
+              />
+            </div>
+          )}
         </div>
       );
     }
@@ -12866,6 +13191,7 @@
                 projects={projects}
                 currentUser={currentUser}
                 defaultProject={project}
+                hideTypeAndProject={true}
                 onSave={(newMeeting) => {
                   const meetingWithId = {
                     ...newMeeting,
