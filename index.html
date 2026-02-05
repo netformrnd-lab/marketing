@@ -1615,7 +1615,7 @@
               <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} fixedTasks={fixedTasks.filter(t => !t.deletedAt)} teamRequests={teamRequests.filter(r => !r.deletedAt)} meetings={meetings} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'kpi' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} onOpenProject={openProjectFromKpi} kpiBrands={kpiBrands} setKpiBrands={setKpiBrands} />
+              <KPIDashboardTab currentUser={currentUser} initialPage="main" projects={projects.filter(p => !p.deletedAt)} tasks={tasks.filter(t => !t.deletedAt)} setProjects={setProjects} setTasks={setTasks} meetings={meetings} setMeetings={setMeetings} onOpenProject={openProjectFromKpi} kpiBrands={kpiBrands} setKpiBrands={setKpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'onboarding' ? 'flex' : 'none', flexDirection: 'column' }}>
               <ManualTab currentUser={currentUser} />
@@ -4352,16 +4352,16 @@
     // 프로젝트가 특정 후행지표에 연동되어 있는지 확인 (linkedKpi 단일 + linkedKpis 배열 모두 지원)
     const isProjectLinkedTo = (project, brandId, kpiId, itemId) => {
       if (!project) return false;
-      // 기존 linkedKpi (단일) 체크
+      // 기존 linkedKpi (단일) 체크 - 타입 변환으로 유연하게 비교
       if (project.linkedKpi) {
-        if (project.linkedKpi.brandId === brandId && 
-            project.linkedKpi.kpiId == kpiId && 
-            project.linkedKpi.itemId == itemId) return true;
+        if (String(project.linkedKpi.brandId) === String(brandId) && 
+            String(project.linkedKpi.kpiId) == String(kpiId) && 
+            String(project.linkedKpi.itemId) == String(itemId)) return true;
       }
       // 새 linkedKpis (배열) 체크
       if (project.linkedKpis && Array.isArray(project.linkedKpis)) {
         return project.linkedKpis.some(lk => 
-          lk.brandId === brandId && lk.kpiId == kpiId && lk.itemId == itemId
+          String(lk.brandId) === String(brandId) && String(lk.kpiId) == String(kpiId) && String(lk.itemId) == String(itemId)
         );
       }
       return false;
@@ -4370,16 +4370,16 @@
     // 프로젝트가 특정 브랜드에 연동되어 있는지 확인
     const isProjectLinkedToBrand = (project, brandId) => {
       if (!project) return false;
-      if (project.linkedKpi?.brandId === brandId) return true;
-      if (project.linkedKpis?.some(lk => lk.brandId === brandId)) return true;
+      if (project.linkedKpi?.brandId && String(project.linkedKpi.brandId) === String(brandId)) return true;
+      if (project.linkedKpis?.some(lk => lk.brandId && String(lk.brandId) === String(brandId))) return true;
       return false;
     };
     
     // 프로젝트가 특정 KPI에 연동되어 있는지 확인
     const isProjectLinkedToKpi = (project, kpiId) => {
       if (!project) return false;
-      if (project.linkedKpi?.kpiId == kpiId) return true;
-      if (project.linkedKpis?.some(lk => lk.kpiId == kpiId)) return true;
+      if (project.linkedKpi?.kpiId && String(project.linkedKpi.kpiId) == String(kpiId)) return true;
+      if (project.linkedKpis?.some(lk => lk.kpiId && String(lk.kpiId) == String(kpiId))) return true;
       return false;
     };
     
@@ -5909,7 +5909,7 @@
     };
 
     // ============ KPI 대시보드 탭 컴포넌트 ============
-    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null, projects = [], tasks = [], onOpenProject, kpiBrands = {}, setKpiBrands }) {
+    function KPIDashboardTab({ currentUser, initialPage = 'main', initialBrandId = null, projects = [], tasks = [], setProjects, setTasks, meetings = [], setMeetings, onOpenProject, kpiBrands = {}, setKpiBrands }) {
       const [companyGoal, setCompanyGoal] = useState('');
       const [teamGoal, setTeamGoal] = useState('');
       // props로 받은 kpiBrands를 사용, 내부 brands state는 백업용
@@ -11595,11 +11595,12 @@
                                           e.stopPropagation();
                                           const title = prompt('새 프로젝트명:');
                                           if (title && title.trim()) {
+                                            const matchedBrand = getBrandByKpiId(brandId);
                                             const newProject = {
                                               id: Date.now(),
                                               title: title.trim(),
                                               description: '',
-                                              brandId: brandId === 'pour-solution' ? 2 : brandId === 'pour-method' ? 1 : brandId === 'apartment-square' ? 3 : 4,
+                                              brandId: matchedBrand?.id || 1,
                                               status: 'progress',
                                               creatorId: currentUser.id,
                                               memberIds: [currentUser.id],
@@ -12032,11 +12033,12 @@
       const handleAddProject = () => {
         const title = prompt('새 프로젝트명:');
         if (title && title.trim()) {
+          const matchedBrand = getBrandByKpiId(kpiItem.brandId);
           const newProject = {
             id: Date.now(),
             title: title.trim(),
             description: '',
-            brandId: brand?.id === 'pour-solution' ? 2 : brand?.id === 'pour-method' ? 1 : brand?.id === 'apartment-square' ? 3 : 4,
+            brandId: matchedBrand?.id || 1,
             status: 'progress',
             creatorId: currentUser.id,
             memberIds: [currentUser.id],
