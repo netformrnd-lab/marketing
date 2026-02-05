@@ -4392,6 +4392,83 @@
     }
 
     // ============ Placeholder 탭 (준비중) ============
+    // ============ 다중 KPI 연동 헬퍼 함수 ============
+    // 프로젝트가 특정 후행지표에 연동되어 있는지 확인 (linkedKpi 단일 + linkedKpis 배열 모두 지원)
+    const isProjectLinkedTo = (project, brandId, kpiId, itemId) => {
+      if (!project) return false;
+      // 기존 linkedKpi (단일) 체크
+      if (project.linkedKpi) {
+        if (project.linkedKpi.brandId === brandId && 
+            project.linkedKpi.kpiId == kpiId && 
+            project.linkedKpi.itemId == itemId) return true;
+      }
+      // 새 linkedKpis (배열) 체크
+      if (project.linkedKpis && Array.isArray(project.linkedKpis)) {
+        return project.linkedKpis.some(lk => 
+          lk.brandId === brandId && lk.kpiId == kpiId && lk.itemId == itemId
+        );
+      }
+      return false;
+    };
+    
+    // 프로젝트가 특정 브랜드에 연동되어 있는지 확인
+    const isProjectLinkedToBrand = (project, brandId) => {
+      if (!project) return false;
+      if (project.linkedKpi?.brandId === brandId) return true;
+      if (project.linkedKpis?.some(lk => lk.brandId === brandId)) return true;
+      return false;
+    };
+    
+    // 프로젝트가 특정 KPI에 연동되어 있는지 확인
+    const isProjectLinkedToKpi = (project, kpiId) => {
+      if (!project) return false;
+      if (project.linkedKpi?.kpiId == kpiId) return true;
+      if (project.linkedKpis?.some(lk => lk.kpiId == kpiId)) return true;
+      return false;
+    };
+    
+    // 프로젝트가 KPI 연동이 하나라도 있는지 확인
+    const hasAnyKpiLink = (project) => {
+      if (!project) return false;
+      if (project.linkedKpi) return true;
+      if (project.linkedKpis && project.linkedKpis.length > 0) return true;
+      return false;
+    };
+    
+    // 프로젝트의 모든 KPI 연동 목록 가져오기
+    const getAllKpiLinks = (project) => {
+      if (!project) return [];
+      const links = [];
+      if (project.linkedKpi) links.push(project.linkedKpi);
+      if (project.linkedKpis) links.push(...project.linkedKpis);
+      // 중복 제거
+      const unique = [];
+      const seen = new Set();
+      links.forEach(lk => {
+        const key = `${lk.brandId}-${lk.kpiId}-${lk.itemId}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(lk);
+        }
+      });
+      return unique;
+    };
+    
+    // 프로젝트에 KPI 연동 추가
+    const addKpiLinkToProject = (project, brandId, kpiId, itemId) => {
+      const existingLinks = getAllKpiLinks(project);
+      const alreadyLinked = existingLinks.some(lk => 
+        lk.brandId === brandId && lk.kpiId == kpiId && lk.itemId == itemId
+      );
+      if (alreadyLinked) return project; // 이미 연결됨
+      
+      const newLink = { brandId, kpiId, itemId };
+      return {
+        ...project,
+        linkedKpis: [...existingLinks, newLink]
+      };
+    };
+
     // ============ KPI 대시보드 StorageService ============
     const KPIStorageService = {
       async saveCompanyGoal(goal) {
@@ -6238,7 +6315,7 @@
                       {['pour-method', 'pour-solution', 'apartment-square', 'automation-system'].map(brandId => {
                         const brand = brands[brandId];
                         const brandLinkedProjects = projects.filter(p => 
-                          p.linkedKpi?.brandId === brandId && !p.deletedAt
+                          isProjectLinkedToBrand(p, brandId) && !p.deletedAt
                         ).map(p => ({
                           ...p,
                           tasks: tasks.filter(t => t.projectId === p.id)
@@ -6255,7 +6332,7 @@
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
                       {Object.values(kpiTeamMembers).map(member => {
                         // 모든 KPI 연동 프로젝트 (tasks 포함)
-                        const allLinkedProjects = projects.filter(p => p.linkedKpi && !p.deletedAt).map(p => ({
+                        const allLinkedProjects = projects.filter(p => hasAnyKpiLink(p) && !p.deletedAt).map(p => ({
                           ...p,
                           tasks: tasks.filter(t => t.projectId === p.id && !t.deletedAt)
                         }));
@@ -6283,7 +6360,7 @@
                 hideBackButton={!!initialBrandId}
                 onQuarterPlansUpdate={handleQuarterPlansUpdate}
                 linkedProjects={projects.filter(p => 
-                  p.linkedKpi?.brandId === (selectedBrand.id || selectedBrand) && 
+                  isProjectLinkedToBrand(p, selectedBrand.id || selectedBrand) && 
                   !p.deletedAt
                 ).map(p => ({
                   ...p,
@@ -10185,7 +10262,7 @@
       // 내 프로젝트: 내가 담당자(memberIds)로 지정되어 있고 나 혼자인 프로젝트 (KPI 연동 프로젝트 제외)
       const myProjects = filteredProjects.filter(p => {
         // KPI 연동된 프로젝트는 "내 KPI 업무"에서 표시하므로 제외
-        if (p.linkedKpi) return false;
+        if (hasAnyKpiLink(p)) return false;
         
         const memberIds = p.memberIds || [];
         if (!memberIds.includes(currentUser.id)) return false;
@@ -10195,7 +10272,7 @@
       // 협력 프로젝트: 내가 담당자이고 다른 사람도 담당자인 프로젝트 (KPI 연동 프로젝트 제외)
       const collabProjects = filteredProjects.filter(p => {
         // KPI 연동된 프로젝트는 "내 KPI 업무"에서 표시하므로 제외
-        if (p.linkedKpi) return false;
+        if (hasAnyKpiLink(p)) return false;
         
         const memberIds = p.memberIds || [];
         if (!memberIds.includes(currentUser.id)) return false;
@@ -10643,7 +10720,7 @@
                   {(() => {
                     // KPI 연동된 프로젝트 중 본인이 담당자이거나 하위업무 담당자인 것 필터링
                     const kpiProjects = filteredProjects.filter(p => {
-                      if (!p.linkedKpi || p.deletedAt) return false;
+                      if (!hasAnyKpiLink(p) || p.deletedAt) return false;
                       
                       // 1. 프로젝트 담당자인 경우
                       if (p.creatorId === currentUser.id || (p.memberIds || []).includes(currentUser.id)) {
@@ -10661,14 +10738,19 @@
                       return hasMyTask;
                     });
                     
-                    // 브랜드별로 그룹핑
+                    // 브랜드별로 그룹핑 (다중 연동 시 각 브랜드에 중복 표시)
                     const groupedByBrand = {};
                     kpiProjects.forEach(project => {
-                      const brandId = project.linkedKpi?.brandId;
-                      if (!groupedByBrand[brandId]) {
-                        groupedByBrand[brandId] = [];
-                      }
-                      groupedByBrand[brandId].push(project);
+                      const allLinks = getAllKpiLinks(project);
+                      allLinks.forEach(lk => {
+                        if (!groupedByBrand[lk.brandId]) {
+                          groupedByBrand[lk.brandId] = [];
+                        }
+                        // 중복 추가 방지
+                        if (!groupedByBrand[lk.brandId].some(p => p.id === project.id)) {
+                          groupedByBrand[lk.brandId].push(project);
+                        }
+                      });
                     });
                     
                     return (
@@ -10924,15 +11006,15 @@
                   const brand = kpiBrands[brandId];
                   if (!brand) return null;
                   
-                  // 해당 브랜드의 KPI 연동 프로젝트
-                  const brandProjects = projects.filter(p => p.linkedKpi?.brandId === brandId && !p.deletedAt);
+                  // 해당 브랜드의 KPI 연동 프로젝트 (linkedKpi + linkedKpis 모두)
+                  const brandProjects = projects.filter(p => isProjectLinkedToBrand(p, brandId) && !p.deletedAt);
                   
                   // 전체 진행률 계산
                   const allItems = brand.kpis?.flatMap(kpi => kpi.items || []) || [];
                   const totalProgress = allItems.length > 0 ? Math.round(
                     allItems.reduce((sum, item) => {
                       const kpi = brand.kpis?.find(k => k.items?.some(i => i.id === item.id));
-                      const itemProjects = brandProjects.filter(p => p.linkedKpi?.kpiId === kpi?.id && p.linkedKpi?.itemId === item.id);
+                      const itemProjects = brandProjects.filter(p => isProjectLinkedTo(p, brandId, kpi?.id, item.id));
                       const totalTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                       const completedTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
                       return sum + (totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0);
@@ -10965,7 +11047,7 @@
                         {brand.kpis && brand.kpis.length > 0 ? (
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, alignItems: 'start' }}>
                             {brand.kpis.map(kpi => {
-                              const kpiProjects = brandProjects.filter(p => p.linkedKpi?.kpiId === kpi.id);
+                              const kpiProjects = brandProjects.filter(p => isProjectLinkedToKpi(p, kpi.id));
                               
                               return (
                                 <div key={kpi.id} style={{ background: '#F9FAFB', borderRadius: 12, padding: 14, border: '1px solid #E5E8EB' }}>
@@ -10979,7 +11061,13 @@
                                   {kpi.items && kpi.items.length > 0 && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       {kpi.items.map(item => {
-                                        const itemProjects = brandProjects.filter(p => p.linkedKpi?.kpiId === kpi.id && p.linkedKpi?.itemId === item.id);
+                                        const itemProjects = brandProjects.filter(p => {
+                                          // 팀 KPI 메인에서는 linkedKpi(원본 연결) 기준으로만 표시
+                                          if (p.linkedKpi) {
+                                            if (p.linkedKpi.brandId === brandId && p.linkedKpi.kpiId == kpi.id && p.linkedKpi.itemId == item.id) return true;
+                                          }
+                                          return false;
+                                        });
                                         const totalTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                                         const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
                                         const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -11409,11 +11497,9 @@
       const kpi = brand?.kpis?.find(k => k.id === kpiItem.kpiId);
       const item = kpi?.items?.find(i => i.id === kpiItem.itemId);
       
-      // 해당 후행지표에 연동된 모든 프로젝트
+      // 해당 후행지표에 연동된 모든 프로젝트 (linkedKpi + linkedKpis 모두 지원)
       const linkedProjects = projects.filter(p => 
-        p.linkedKpi?.brandId === kpiItem.brandId &&
-        p.linkedKpi?.kpiId === kpiItem.kpiId &&
-        p.linkedKpi?.itemId === kpiItem.itemId &&
+        isProjectLinkedTo(p, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId) &&
         !p.deletedAt
       ).map(p => ({
         ...p,
@@ -11457,6 +11543,52 @@
           setSelectedProjectId(newProject.id);
         }
       };
+      
+      // 기존 프로젝트 연결 상태
+      const [showLinkModal, setShowLinkModal] = useState(false);
+      
+      // 기존 프로젝트 연결 함수
+      const handleLinkExistingProject = (projectId) => {
+        setProjects(prev => prev.map(p => {
+          if (p.id === projectId) {
+            return addKpiLinkToProject(p, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId);
+          }
+          return p;
+        }));
+        setShowLinkModal(false);
+        setSelectedProjectId(projectId);
+      };
+      
+      // 프로젝트 연결 해제 함수
+      const handleUnlinkProject = (projectId) => {
+        if (!confirm('이 후행지표에서 프로젝트 연결을 해제하시겠습니까?\n(프로젝트 자체는 삭제되지 않습니다)')) return;
+        setProjects(prev => prev.map(p => {
+          if (p.id === projectId) {
+            const allLinks = getAllKpiLinks(p);
+            const remainingLinks = allLinks.filter(lk => 
+              !(lk.brandId === kpiItem.brandId && lk.kpiId == kpiItem.kpiId && lk.itemId == kpiItem.itemId)
+            );
+            // linkedKpi도 같은 것이면 제거
+            const newLinkedKpi = p.linkedKpi && 
+              p.linkedKpi.brandId === kpiItem.brandId && 
+              p.linkedKpi.kpiId == kpiItem.kpiId && 
+              p.linkedKpi.itemId == kpiItem.itemId 
+                ? null : p.linkedKpi;
+            return { ...p, linkedKpi: newLinkedKpi, linkedKpis: remainingLinks };
+          }
+          return p;
+        }));
+        if (selectedProjectId === projectId) {
+          const other = linkedProjects.find(lp => lp.id !== projectId);
+          setSelectedProjectId(other?.id || null);
+        }
+      };
+      
+      // 연결 가능한 프로젝트 (이미 이 후행지표에 연결되지 않은 프로젝트)
+      const linkableProjects = projects.filter(p => 
+        !p.deletedAt && 
+        !isProjectLinkedTo(p, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId)
+      );
       
       const handleAddTask = (projectId) => {
         const title = prompt('새 업무:');
@@ -11511,7 +11643,10 @@
                   <span style={{ fontSize: 14, fontWeight: 700, color: overallProgress === 100 ? '#00C471' : kpiItem.brandColor }}>{overallProgress}%</span>
                 </div>
                 <button onClick={handleAddProject} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', background: kpiItem.brandColor, border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, color: 'white', cursor: 'pointer' }}>
-                  <Icon name="plus" size={16} color="white" /> 프로젝트 추가
+                  <Icon name="plus" size={16} color="white" /> 새 프로젝트
+                </button>
+                <button onClick={() => setShowLinkModal(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', background: 'white', border: `2px solid ${kpiItem.brandColor}`, borderRadius: 10, fontSize: 14, fontWeight: 600, color: kpiItem.brandColor, cursor: 'pointer' }}>
+                  🔗 기존 프로젝트 연결
                 </button>
               </div>
             </div>
@@ -11948,6 +12083,121 @@
               </div>
             </div>
           </div>
+          
+          {/* KPI 연동 추가 모달 */}
+          {showLinkModal && (() => {
+            const KPI_BRAND_ORDER_MODAL = ['pour-method', 'pour-solution', 'apartment-square', 'automation-system'];
+            
+            return (
+            <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10100 }}>
+              <div style={{ background: 'white', borderRadius: 16, width: 520, maxHeight: '75vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E8EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, color: '#191F28', margin: 0 }}>🔗 KPI 연동 추가</h3>
+                    <p style={{ fontSize: 13, color: '#8B95A1', margin: '4px 0 0' }}>연결할 후행지표를 선택하면 현재 프로젝트들이 해당 후행지표에도 연결됩니다</p>
+                  </div>
+                  <button onClick={() => setShowLinkModal(false)} style={{ width: 32, height: 32, border: 'none', background: '#F2F4F6', borderRadius: 8, fontSize: 16, cursor: 'pointer' }}>✕</button>
+                </div>
+                
+                {/* 현재 연결된 프로젝트 표시 */}
+                {linkedProjects.length > 0 && (
+                  <div style={{ padding: '12px 24px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7684', marginBottom: 6 }}>현재 프로젝트 ({linkedProjects.length}개)</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {linkedProjects.map(p => (
+                        <span key={p.id} style={{ padding: '4px 10px', background: 'white', border: '1px solid #E5E8EB', borderRadius: 6, fontSize: 12, color: '#191F28' }}>{p.title}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {KPI_BRAND_ORDER_MODAL.map(bId => {
+                      const b = kpiBrands[bId];
+                      if (!b || !b.kpis || b.kpis.length === 0) return null;
+                      return (
+                        <div key={bId}>
+                          {/* 브랜드 헤더 */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: b.color }} />
+                            <span style={{ fontSize: 14, fontWeight: 700, color: b.color }}>{b.name}</span>
+                          </div>
+                          {/* KPI별 후행지표 */}
+                          {b.kpis.map(k => (
+                            <div key={k.id} style={{ marginBottom: 8, marginLeft: 16 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7684', marginBottom: 6 }}>{k.name}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginLeft: 8 }}>
+                                {(k.items || []).map(it => {
+                                  const isCurrentItem = bId === kpiItem.brandId && k.id == kpiItem.kpiId && it.id == kpiItem.itemId;
+                                  // 현재 프로젝트들 중 이 후행지표에 이미 연결된 것이 있는지 확인
+                                  const alreadyLinkedProjects = linkedProjects.filter(p => isProjectLinkedTo(p, bId, k.id, it.id));
+                                  const isAllLinked = linkedProjects.length > 0 && alreadyLinkedProjects.length === linkedProjects.length;
+                                  
+                                  return (
+                                    <div 
+                                      key={it.id}
+                                      onClick={() => {
+                                        if (isCurrentItem) return;
+                                        if (isAllLinked) return;
+                                        
+                                        // 현재 프로젝트들 중 아직 이 후행지표에 연결 안 된 것들을 연결
+                                        const projectsToLink = linkedProjects.filter(p => !isProjectLinkedTo(p, bId, k.id, it.id));
+                                        if (projectsToLink.length === 0) return;
+                                        
+                                        const names = projectsToLink.map(p => p.title).join(', ');
+                                        if (confirm(`"${names}" 프로젝트를\n"${it.name}" 후행지표에 연결하시겠습니까?`)) {
+                                          setProjects(prev => prev.map(p => {
+                                            if (projectsToLink.some(lp => lp.id === p.id)) {
+                                              return addKpiLinkToProject(p, bId, k.id, it.id);
+                                            }
+                                            return p;
+                                          }));
+                                          setShowLinkModal(false);
+                                        }
+                                      }}
+                                      style={{ 
+                                        padding: '8px 12px', 
+                                        borderRadius: 8, 
+                                        border: `1px solid ${isCurrentItem ? b.color + '60' : isAllLinked ? '#00C47140' : '#E5E8EB'}`,
+                                        background: isCurrentItem ? `${b.color}10` : isAllLinked ? '#F0FDF4' : 'white',
+                                        cursor: (isCurrentItem || isAllLinked) ? 'default' : 'pointer',
+                                        transition: 'all 0.15s',
+                                        opacity: isCurrentItem ? 0.7 : 1,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between'
+                                      }}
+                                      onMouseEnter={(e) => { if (!isCurrentItem && !isAllLinked) { e.currentTarget.style.borderColor = b.color; e.currentTarget.style.background = `${b.color}05`; }}}
+                                      onMouseLeave={(e) => { if (!isCurrentItem && !isAllLinked) { e.currentTarget.style.borderColor = '#E5E8EB'; e.currentTarget.style.background = 'white'; }}}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ fontSize: 13, color: isCurrentItem ? b.color : '#191F28', fontWeight: isCurrentItem ? 600 : 400 }}>{it.name}</span>
+                                      </div>
+                                      {isCurrentItem && (
+                                        <span style={{ fontSize: 10, padding: '2px 8px', background: `${b.color}20`, color: b.color, borderRadius: 4, fontWeight: 600 }}>현재 위치</span>
+                                      )}
+                                      {isAllLinked && !isCurrentItem && (
+                                        <span style={{ fontSize: 10, padding: '2px 8px', background: '#DCFCE7', color: '#16A34A', borderRadius: 4, fontWeight: 500 }}>✓ 연결됨</span>
+                                      )}
+                                      {!isCurrentItem && !isAllLinked && alreadyLinkedProjects.length > 0 && (
+                                        <span style={{ fontSize: 10, padding: '2px 8px', background: '#FFF7ED', color: '#EA580C', borderRadius: 4, fontWeight: 500 }}>{alreadyLinkedProjects.length}/{linkedProjects.length} 연결</span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+            );
+          })()}
         </div>
       );
     }
@@ -15633,8 +15883,8 @@
                         </div>
                         {/* KPI 연동된 프로젝트 수 */}
                         {(() => {
-                          const linkedCount = projects.filter(p => p.linkedKpi?.brandId === brand.id).length;
-                          const completedCount = projects.filter(p => p.linkedKpi?.brandId === brand.id && p.status === 'complete').length;
+                          const linkedCount = projects.filter(p => isProjectLinkedToBrand(p, brand.id)).length;
+                          const completedCount = projects.filter(p => isProjectLinkedToBrand(p, brand.id) && p.status === 'complete').length;
                           return linkedCount > 0 ? (
                             <div style={{ marginTop: 6, fontSize: 10, color: '#6B7684' }}>
                               연동 프로젝트: {completedCount}/{linkedCount} 완료
