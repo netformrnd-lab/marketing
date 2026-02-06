@@ -1060,27 +1060,32 @@
       // 프로젝트 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.projects) {
           isRemoteUpdate.current.projects = false;
+          if (isFirstSave.current.projects) {
+            initialDataCount.current.projects = projects.length;
+            isFirstSave.current.projects = false;
+            console.log('[Firebase] 프로젝트 초기 개수 (리모트):', projects.length);
+          }
           return;
         }
-        
-        // 첫 저장 시 초기 개수 기록
+
+        // 첫 저장 시 초기 개수 기록 (리모트 업데이트가 아닌 경우에도 저장 진행)
         if (isFirstSave.current.projects) {
           initialDataCount.current.projects = projects.length;
           isFirstSave.current.projects = false;
           console.log('[Firebase] 프로젝트 초기 개수:', projects.length);
-          return; // 첫 번째는 저장하지 않음
+          // return 제거 - 사용자가 만든 변경사항이 저장되도록 함
         }
-        
+
         // 데이터가 비어있으면 저장 안 함
         if (projects.length === 0) {
           console.warn('[Firebase] 프로젝트 저장 차단: 빈 배열');
           return;
         }
-        
+
         console.log('[Firebase] 프로젝트 저장:', projects.length, '개');
         FirebaseService.syncCollection('projects', projects);
       }, [projects, isLoading, dataLoaded, currentUser]);
@@ -1088,25 +1093,29 @@
       // 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.tasks) {
           isRemoteUpdate.current.tasks = false;
+          if (isFirstSave.current.tasks) {
+            initialDataCount.current.tasks = tasks.length;
+            isFirstSave.current.tasks = false;
+            console.log('[Firebase] 업무 초기 개수 (리모트):', tasks.length);
+          }
           return;
         }
-        
+
         if (isFirstSave.current.tasks) {
           initialDataCount.current.tasks = tasks.length;
           isFirstSave.current.tasks = false;
           console.log('[Firebase] 업무 초기 개수:', tasks.length);
-          return;
         }
-        
+
         if (tasks.length === 0) {
           console.warn('[Firebase] 업무 저장 차단: 빈 배열');
           return;
         }
-        
+
         console.log('[Firebase] 업무 저장:', tasks.length, '개');
         FirebaseService.syncCollection('tasks', tasks);
       }, [tasks, isLoading, dataLoaded, currentUser]);
@@ -1114,25 +1123,29 @@
       // 루틴 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.fixedTasks) {
           isRemoteUpdate.current.fixedTasks = false;
+          if (isFirstSave.current.fixedTasks) {
+            initialDataCount.current.fixedTasks = fixedTasks.length;
+            isFirstSave.current.fixedTasks = false;
+            console.log('[Firebase] 루틴 초기 개수 (리모트):', fixedTasks.length);
+          }
           return;
         }
-        
+
         if (isFirstSave.current.fixedTasks) {
           initialDataCount.current.fixedTasks = fixedTasks.length;
           isFirstSave.current.fixedTasks = false;
           console.log('[Firebase] 루틴 초기 개수:', fixedTasks.length);
-          return;
         }
-        
+
         if (fixedTasks.length === 0) {
           console.warn('[Firebase] 루틴 저장 차단: 빈 배열');
           return;
         }
-        
+
         console.log('[Firebase] 루틴 저장:', fixedTasks.length, '개');
         FirebaseService.syncCollection('fixedTasks', fixedTasks);
       }, [fixedTasks, isLoading, dataLoaded, currentUser]);
@@ -1140,21 +1153,24 @@
       // 타팀 요청 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.teamRequests) {
           isRemoteUpdate.current.teamRequests = false;
+          if (isFirstSave.current.teamRequests) {
+            initialDataCount.current.teamRequests = teamRequests.length;
+            isFirstSave.current.teamRequests = false;
+            console.log('[Firebase] 타팀요청 초기 개수 (리모트):', teamRequests.length);
+          }
           return;
         }
-        
+
         if (isFirstSave.current.teamRequests) {
           initialDataCount.current.teamRequests = teamRequests.length;
           isFirstSave.current.teamRequests = false;
           console.log('[Firebase] 타팀요청 초기 개수:', teamRequests.length);
-          return;
         }
-        
-        // 타팀요청은 0개일 수 있으므로 다른 조건 (초기값보다 작아지면 주의)
+
         console.log('[Firebase] 타팀요청 저장:', teamRequests.length, '개');
         FirebaseService.syncCollection('teamRequests', teamRequests);
       }, [teamRequests, isLoading, dataLoaded, currentUser]);
