@@ -4892,7 +4892,7 @@
       const taskList = assignedTasks || [];
       
       // 담당 프로젝트 (프로젝트 담당자로 지정된 것)
-      const myProjects = assignedProjects.filter(p => p.memberIds?.includes(member.id) || p.creatorId === member.id);
+      const myProjects = assignedProjects.filter(p => p.memberIds?.includes(member.id));
 
       useEffect(() => {
         setEditData(member);
@@ -11312,8 +11312,8 @@
                     const kpiProjects = filteredProjects.filter(p => {
                       if (!hasAnyKpiLink(p) || p.deletedAt) return false;
                       
-                      // 1. 프로젝트 담당자인 경우
-                      if (p.creatorId === currentUser.id || (p.memberIds || []).includes(currentUser.id)) {
+                      // 1. 프로젝트 담당자(memberIds)인 경우
+                      if ((p.memberIds || []).includes(currentUser.id)) {
                         return true;
                       }
                       
@@ -11535,7 +11535,12 @@
                   const totalProgress = allItems.length > 0 ? Math.round(
                     allItems.reduce((sum, item) => {
                       const kpi = brand.kpis?.find(k => k.items?.some(i => i.id === item.id));
-                      const itemProjects = brandProjects.filter(p => isProjectLinkedTo(p, brandId, kpi?.id, item.id));
+                      const itemProjects = brandProjects.filter(p => 
+                        p.linkedKpi && 
+                        String(p.linkedKpi.brandId) === String(brandId) && 
+                        String(p.linkedKpi.kpiId) == String(kpi?.id) && 
+                        String(p.linkedKpi.itemId) == String(item.id)
+                      );
                       const totalTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                       const completedTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
                       return sum + (totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0);
@@ -11582,10 +11587,13 @@
                                   {kpi.items && kpi.items.length > 0 && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       {kpi.items.map(item => {
-                                        const itemProjects = brandProjects.filter(p => {
-                                          // linkedKpi(원본) 또는 linkedKpis(추가 연동) 모두 표시
-                                          return isProjectLinkedTo(p, brandId, kpi.id, item.id);
-                                        });
+                                        // 메인 대시보드: linkedKpi(원본 연동)만 표시 (추가 연동은 상세 뷰에서 확인)
+                                        const itemProjects = brandProjects.filter(p => 
+                                          p.linkedKpi && 
+                                          String(p.linkedKpi.brandId) === String(brandId) && 
+                                          String(p.linkedKpi.kpiId) == String(kpi.id) && 
+                                          String(p.linkedKpi.itemId) == String(item.id)
+                                        );
                                         const totalTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                                         const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
                                         const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -11653,7 +11661,6 @@
                                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                                 {itemProjects.map(proj => {
                                                   const projMembers = (proj.memberIds || []).map(mid => TEAM_MEMBERS.find(m => m.id === mid)).filter(Boolean);
-                                                  const isLinkedCopy = !(proj.linkedKpi?.brandId === brandId && proj.linkedKpi?.kpiId == kpi.id && proj.linkedKpi?.itemId == item.id);
                                                   return (
                                                     <div key={proj.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
                                                       {/* 담당자들 (여러명) */}
@@ -11681,8 +11688,7 @@
                                                           <span style={{ fontSize: 9, color: '#8B95A1', marginLeft: 2 }}>+{projMembers.length - 3}</span>
                                                         )}
                                                       </div>
-                                                      {isLinkedCopy && <span style={{ fontSize: 10, color: '#8B95A1' }} title="다른 KPI에서 연동됨">🔗</span>}
-                                                      <span style={{ fontSize: 13, color: isLinkedCopy ? '#8B95A1' : '#4B5563', flex: 1, fontStyle: isLinkedCopy ? 'italic' : 'normal' }}>{proj.title}</span>
+                                                      <span style={{ fontSize: 13, color: '#4B5563', flex: 1 }}>{proj.title}</span>
                                                       <span style={{ fontSize: 12, color: '#9CA3AF' }}>
                                                         {tasks.filter(t => t.projectId === proj.id && t.completed && !t.deletedAt).length}/
                                                         {tasks.filter(t => t.projectId === proj.id && !t.deletedAt).length}
@@ -12002,19 +12008,64 @@
       const [editingMeetingId, setEditingMeetingId] = useState(null);
       const [editingMeetingContent, setEditingMeetingContent] = useState('');
       const [lightboxImage, setLightboxImage] = useState(null);
+      const [editingItemName, setEditingItemName] = useState(false);
+      const [editItemNameValue, setEditItemNameValue] = useState('');
       
       const brand = kpiBrands[kpiItem.brandId];
       const kpi = brand?.kpis?.find(k => k.id === kpiItem.kpiId);
       const item = kpi?.items?.find(i => i.id === kpiItem.itemId);
       
-      // 해당 후행지표에 연동된 모든 프로젝트 (linkedKpi + linkedKpis 모두 지원)
-      const linkedProjects = projects.filter(p => 
-        isProjectLinkedTo(p, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId) &&
-        !p.deletedAt
-      ).map(p => ({
-        ...p,
-        projectTasks: tasks.filter(t => t.projectId === p.id && !t.deletedAt)
-      }));
+      // 해당 후행지표에 연동된 모든 프로젝트 + 연쇄적으로 연결된 프로젝트까지 탐색
+      const linkedProjects = useMemo(() => {
+        const activeProjects = projects.filter(p => !p.deletedAt);
+        
+        // 1단계: 현재 후행지표에 직접 연동된 프로젝트
+        let foundIds = new Set();
+        let collectedLinks = []; // { brandId, kpiId, itemId } 모음
+        
+        activeProjects.forEach(p => {
+          if (isProjectLinkedTo(p, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId)) {
+            foundIds.add(p.id);
+          }
+        });
+        
+        // 2단계: 발견된 프로젝트들의 다른 KPI 연동을 통해 연쇄 탐색
+        let prevSize = 0;
+        while (foundIds.size > prevSize) {
+          prevSize = foundIds.size;
+          // 현재까지 발견된 프로젝트들의 모든 KPI 링크 수집
+          collectedLinks = [];
+          activeProjects.forEach(p => {
+            if (foundIds.has(p.id)) {
+              getAllKpiLinks(p).forEach(link => {
+                if (!collectedLinks.some(cl => 
+                  String(cl.brandId) === String(link.brandId) && 
+                  String(cl.kpiId) == String(link.kpiId) && 
+                  String(cl.itemId) == String(link.itemId)
+                )) {
+                  collectedLinks.push(link);
+                }
+              });
+            }
+          });
+          // 수집된 링크에 연동된 다른 프로젝트도 추가
+          activeProjects.forEach(p => {
+            if (!foundIds.has(p.id)) {
+              const isRelated = collectedLinks.some(link => 
+                isProjectLinkedTo(p, link.brandId, link.kpiId, link.itemId)
+              );
+              if (isRelated) foundIds.add(p.id);
+            }
+          });
+        }
+        
+        return activeProjects
+          .filter(p => foundIds.has(p.id))
+          .map(p => ({
+            ...p,
+            projectTasks: tasks.filter(t => t.projectId === p.id && !t.deletedAt)
+          }));
+      }, [projects, tasks, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId]);
       
       // 첫 번째 프로젝트 자동 선택
       useEffect(() => {
@@ -12095,11 +12146,41 @@
         }
       };
       
-      // 연결 가능한 프로젝트 (이미 이 후행지표에 연결되지 않은 프로젝트)
+      // 연결 가능한 프로젝트 (이미 이 뷰에 표시되는 프로젝트 제외)
+      const linkedProjectIds = new Set(linkedProjects.map(p => p.id));
       const linkableProjects = projects.filter(p => 
         !p.deletedAt && 
-        !isProjectLinkedTo(p, kpiItem.brandId, kpiItem.kpiId, kpiItem.itemId)
+        !linkedProjectIds.has(p.id)
       );
+      
+      // 후행지표 이름 변경 함수
+      const handleSaveItemName = async () => {
+        const currentName = item?.name || kpiItem.itemName;
+        const newName = editItemNameValue.trim();
+        if (!newName || newName === currentName) {
+          setEditingItemName(false);
+          return;
+        }
+        try {
+          const allBrands = await KPIStorageService.getBrands();
+          const currentBrand = allBrands[kpiItem.brandId];
+          if (!currentBrand) return;
+          const updatedKpis = currentBrand.kpis?.map(k => {
+            if (k.id === kpiItem.kpiId) {
+              return { ...k, items: k.items?.map(i => 
+                i.id === kpiItem.itemId ? { ...i, name: newName } : i
+              )};
+            }
+            return k;
+          });
+          await KPIStorageService.saveBrand(kpiItem.brandId, { ...currentBrand, kpis: updatedKpis });
+          setEditingItemName(false);
+          // subscribeToBrands가 자동으로 kpiBrands를 업데이트 → item?.name이 자동 반영됨
+        } catch (error) {
+          console.error('후행지표 이름 변경 오류:', error);
+          alert('이름 변경에 실패했습니다.');
+        }
+      };
       
       const handleAddTask = (projectId) => {
         const title = prompt('새 업무:');
@@ -12143,7 +12224,27 @@
                   <span style={{ color: '#B0B8C1' }}>›</span>
                   <span style={{ fontSize: 14, color: '#6B7684' }}>{kpiItem.kpiName}</span>
                   <span style={{ color: '#B0B8C1' }}>›</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: '#191F28' }}>{kpiItem.itemName}</span>
+                  {editingItemName ? (
+                    <input
+                      autoFocus
+                      value={editItemNameValue}
+                      onChange={(e) => setEditItemNameValue(e.target.value)}
+                      onBlur={handleSaveItemName}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveItemName();
+                        if (e.key === 'Escape') { setEditingItemName(false); }
+                      }}
+                      style={{ fontSize: 14, fontWeight: 700, color: '#191F28', padding: '2px 8px', borderRadius: 6, border: '2px solid #3182F6', background: '#F7F8FA', minWidth: 120, maxWidth: 300 }}
+                    />
+                  ) : (
+                    <span 
+                      onDoubleClick={() => { setEditingItemName(true); setEditItemNameValue(item?.name || kpiItem.itemName || ''); }}
+                      title="더블클릭으로 이름 변경"
+                      style={{ fontSize: 14, fontWeight: 700, color: '#191F28', padding: '2px 6px', borderRadius: 4, cursor: 'text', transition: 'background 0.15s' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#F2F4F6'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >{item?.name || kpiItem.itemName}</span>
+                  )}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -12233,6 +12334,26 @@
                                 {project.projectTasks.filter(t => t.completed).length}/{project.projectTasks.length}
                               </span>
                             </div>
+                            {/* 연동된 후행지표 태그 */}
+                            {(() => {
+                              const pLinks = getAllKpiLinks(project);
+                              if (pLinks.length === 0) return null;
+                              return (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 6 }}>
+                                  {pLinks.map((link, li) => {
+                                    const lb = kpiBrands[link.brandId];
+                                    const lk = lb?.kpis?.find(k => k.id == link.kpiId);
+                                    const litm = lk?.items?.find(i => i.id == link.itemId);
+                                    const isCurrent = String(link.brandId) === String(kpiItem.brandId) && String(link.kpiId) == String(kpiItem.kpiId) && String(link.itemId) == String(kpiItem.itemId);
+                                    return (
+                                      <span key={li} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: isCurrent ? `${kpiItem.brandColor}15` : '#F2F4F6', color: isCurrent ? kpiItem.brandColor : '#8B95A1', fontWeight: isCurrent ? 600 : 400 }}>
+                                        {litm?.name || '후행지표'}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -13329,7 +13450,29 @@
                                       key={it.id}
                                       onClick={() => {
                                         if (isCurrentItem) return;
-                                        if (isAllLinked) return;
+                                        
+                                        // 이미 모두 연결됨 → 클릭 시 연동 해지
+                                        if (isAllLinked) {
+                                          const names = alreadyLinkedProjects.map(p => p.title).join(', ');
+                                          if (confirm(`"${names}" 프로젝트의\n"${it.name}" 후행지표 연동을 해지하시겠습니까?\n(프로젝트 자체는 삭제되지 않습니다)`)) {
+                                            setProjects(prev => prev.map(p => {
+                                              if (alreadyLinkedProjects.some(lp => lp.id === p.id)) {
+                                                const allLinks = getAllKpiLinks(p);
+                                                const remainingLinks = allLinks.filter(lk => 
+                                                  !(String(lk.brandId) === String(bId) && String(lk.kpiId) == String(k.id) && String(lk.itemId) == String(it.id))
+                                                );
+                                                const newLinkedKpi = p.linkedKpi && 
+                                                  String(p.linkedKpi.brandId) === String(bId) && 
+                                                  String(p.linkedKpi.kpiId) == String(k.id) && 
+                                                  String(p.linkedKpi.itemId) == String(it.id)
+                                                    ? null : p.linkedKpi;
+                                                return { ...p, linkedKpi: newLinkedKpi, linkedKpis: remainingLinks };
+                                              }
+                                              return p;
+                                            }));
+                                          }
+                                          return;
+                                        }
                                         
                                         // 현재 프로젝트들 중 아직 이 후행지표에 연결 안 된 것들을 연결
                                         const projectsToLink = linkedProjects.filter(p => !isProjectLinkedTo(p, bId, k.id, it.id));
@@ -13351,15 +13494,15 @@
                                         borderRadius: 8, 
                                         border: `1px solid ${isCurrentItem ? b.color + '60' : isAllLinked ? '#00C47140' : '#E5E8EB'}`,
                                         background: isCurrentItem ? `${b.color}10` : isAllLinked ? '#F0FDF4' : 'white',
-                                        cursor: (isCurrentItem || isAllLinked) ? 'default' : 'pointer',
+                                        cursor: isCurrentItem ? 'default' : 'pointer',
                                         transition: 'all 0.15s',
                                         opacity: isCurrentItem ? 0.7 : 1,
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'space-between'
                                       }}
-                                      onMouseEnter={(e) => { if (!isCurrentItem && !isAllLinked) { e.currentTarget.style.borderColor = b.color; e.currentTarget.style.background = `${b.color}05`; }}}
-                                      onMouseLeave={(e) => { if (!isCurrentItem && !isAllLinked) { e.currentTarget.style.borderColor = '#E5E8EB'; e.currentTarget.style.background = 'white'; }}}
+                                      onMouseEnter={(e) => { if (!isCurrentItem) { e.currentTarget.style.borderColor = isAllLinked ? '#EF4444' : b.color; e.currentTarget.style.background = isAllLinked ? '#FEF2F2' : `${b.color}05`; }}}
+                                      onMouseLeave={(e) => { if (!isCurrentItem) { e.currentTarget.style.borderColor = isAllLinked ? '#00C47140' : '#E5E8EB'; e.currentTarget.style.background = isAllLinked ? '#F0FDF4' : 'white'; }}}
                                     >
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                         <span style={{ fontSize: 13, color: isCurrentItem ? b.color : '#191F28', fontWeight: isCurrentItem ? 600 : 400 }}>{it.name}</span>
@@ -13368,7 +13511,10 @@
                                         <span style={{ fontSize: 10, padding: '2px 8px', background: `${b.color}20`, color: b.color, borderRadius: 4, fontWeight: 600 }}>현재 위치</span>
                                       )}
                                       {isAllLinked && !isCurrentItem && (
-                                        <span style={{ fontSize: 10, padding: '2px 8px', background: '#DCFCE7', color: '#16A34A', borderRadius: 4, fontWeight: 500 }}>✓ 연결됨</span>
+                                        <span className="kpi-unlink-badge" style={{ fontSize: 10, padding: '2px 8px', background: '#DCFCE7', color: '#16A34A', borderRadius: 4, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' }}
+                                          onMouseEnter={(e) => { e.currentTarget.textContent = '✕ 해지'; e.currentTarget.style.background = '#FEE2E2'; e.currentTarget.style.color = '#EF4444'; }}
+                                          onMouseLeave={(e) => { e.currentTarget.textContent = '✓ 연결됨'; e.currentTarget.style.background = '#DCFCE7'; e.currentTarget.style.color = '#16A34A'; }}
+                                        >✓ 연결됨</span>
                                       )}
                                       {!isCurrentItem && !isAllLinked && alreadyLinkedProjects.length > 0 && (
                                         <span style={{ fontSize: 10, padding: '2px 8px', background: '#FFF7ED', color: '#EA580C', borderRadius: 4, fontWeight: 500 }}>{alreadyLinkedProjects.length}/{linkedProjects.length} 연결</span>
