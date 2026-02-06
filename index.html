@@ -11535,11 +11535,8 @@
                   const totalProgress = allItems.length > 0 ? Math.round(
                     allItems.reduce((sum, item) => {
                       const kpi = brand.kpis?.find(k => k.items?.some(i => i.id === item.id));
-                      const itemProjects = brandProjects.filter(p => 
-                        p.linkedKpi && 
-                        String(p.linkedKpi.brandId) === String(brandId) && 
-                        String(p.linkedKpi.kpiId) == String(kpi?.id) && 
-                        String(p.linkedKpi.itemId) == String(item.id)
+                      const itemProjects = brandProjects.filter(p =>
+                        isProjectLinkedTo(p, brandId, kpi?.id, item.id)
                       );
                       const totalTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                       const completedTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
@@ -11587,12 +11584,8 @@
                                   {kpi.items && kpi.items.length > 0 && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       {kpi.items.map(item => {
-                                        // 메인 대시보드: linkedKpi(원본 연동)만 표시 (추가 연동은 상세 뷰에서 확인)
-                                        const itemProjects = brandProjects.filter(p => 
-                                          p.linkedKpi && 
-                                          String(p.linkedKpi.brandId) === String(brandId) && 
-                                          String(p.linkedKpi.kpiId) == String(kpi.id) && 
-                                          String(p.linkedKpi.itemId) == String(item.id)
+                                        const itemProjects = brandProjects.filter(p =>
+                                          isProjectLinkedTo(p, brandId, kpi.id, item.id)
                                         );
                                         const totalTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                                         const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
