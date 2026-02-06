@@ -1060,27 +1060,32 @@
       // 프로젝트 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.projects) {
           isRemoteUpdate.current.projects = false;
+          if (isFirstSave.current.projects) {
+            initialDataCount.current.projects = projects.length;
+            isFirstSave.current.projects = false;
+            console.log('[Firebase] 프로젝트 초기 개수 (리모트):', projects.length);
+          }
           return;
         }
-        
-        // 첫 저장 시 초기 개수 기록
+
+        // 첫 저장 시 초기 개수 기록 (리모트 업데이트가 아닌 경우에도 저장 진행)
         if (isFirstSave.current.projects) {
           initialDataCount.current.projects = projects.length;
           isFirstSave.current.projects = false;
           console.log('[Firebase] 프로젝트 초기 개수:', projects.length);
-          return; // 첫 번째는 저장하지 않음
+          // return 제거 - 사용자가 만든 변경사항이 저장되도록 함
         }
-        
+
         // 데이터가 비어있으면 저장 안 함
         if (projects.length === 0) {
           console.warn('[Firebase] 프로젝트 저장 차단: 빈 배열');
           return;
         }
-        
+
         console.log('[Firebase] 프로젝트 저장:', projects.length, '개');
         FirebaseService.syncCollection('projects', projects);
       }, [projects, isLoading, dataLoaded, currentUser]);
@@ -1088,25 +1093,29 @@
       // 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.tasks) {
           isRemoteUpdate.current.tasks = false;
+          if (isFirstSave.current.tasks) {
+            initialDataCount.current.tasks = tasks.length;
+            isFirstSave.current.tasks = false;
+            console.log('[Firebase] 업무 초기 개수 (리모트):', tasks.length);
+          }
           return;
         }
-        
+
         if (isFirstSave.current.tasks) {
           initialDataCount.current.tasks = tasks.length;
           isFirstSave.current.tasks = false;
           console.log('[Firebase] 업무 초기 개수:', tasks.length);
-          return;
         }
-        
+
         if (tasks.length === 0) {
           console.warn('[Firebase] 업무 저장 차단: 빈 배열');
           return;
         }
-        
+
         console.log('[Firebase] 업무 저장:', tasks.length, '개');
         FirebaseService.syncCollection('tasks', tasks);
       }, [tasks, isLoading, dataLoaded, currentUser]);
@@ -1114,25 +1123,29 @@
       // 루틴 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.fixedTasks) {
           isRemoteUpdate.current.fixedTasks = false;
+          if (isFirstSave.current.fixedTasks) {
+            initialDataCount.current.fixedTasks = fixedTasks.length;
+            isFirstSave.current.fixedTasks = false;
+            console.log('[Firebase] 루틴 초기 개수 (리모트):', fixedTasks.length);
+          }
           return;
         }
-        
+
         if (isFirstSave.current.fixedTasks) {
           initialDataCount.current.fixedTasks = fixedTasks.length;
           isFirstSave.current.fixedTasks = false;
           console.log('[Firebase] 루틴 초기 개수:', fixedTasks.length);
-          return;
         }
-        
+
         if (fixedTasks.length === 0) {
           console.warn('[Firebase] 루틴 저장 차단: 빈 배열');
           return;
         }
-        
+
         console.log('[Firebase] 루틴 저장:', fixedTasks.length, '개');
         FirebaseService.syncCollection('fixedTasks', fixedTasks);
       }, [fixedTasks, isLoading, dataLoaded, currentUser]);
@@ -1140,21 +1153,24 @@
       // 타팀 요청 업무 변경 시 Firebase에 저장
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
-        
-        // 리모트 업데이트면 저장 스킵
+
+        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
         if (isRemoteUpdate.current.teamRequests) {
           isRemoteUpdate.current.teamRequests = false;
+          if (isFirstSave.current.teamRequests) {
+            initialDataCount.current.teamRequests = teamRequests.length;
+            isFirstSave.current.teamRequests = false;
+            console.log('[Firebase] 타팀요청 초기 개수 (리모트):', teamRequests.length);
+          }
           return;
         }
-        
+
         if (isFirstSave.current.teamRequests) {
           initialDataCount.current.teamRequests = teamRequests.length;
           isFirstSave.current.teamRequests = false;
           console.log('[Firebase] 타팀요청 초기 개수:', teamRequests.length);
-          return;
         }
-        
-        // 타팀요청은 0개일 수 있으므로 다른 조건 (초기값보다 작아지면 주의)
+
         console.log('[Firebase] 타팀요청 저장:', teamRequests.length, '개');
         FirebaseService.syncCollection('teamRequests', teamRequests);
       }, [teamRequests, isLoading, dataLoaded, currentUser]);
@@ -4349,58 +4365,20 @@
 
     // ============ Placeholder 탭 (준비중) ============
     // ============ 다중 KPI 연동 헬퍼 함수 ============
-    // 프로젝트가 특정 후행지표에 연동되어 있는지 확인 (linkedKpi 단일 + linkedKpis 배열 모두 지원)
-    const isProjectLinkedTo = (project, brandId, kpiId, itemId) => {
-      if (!project) return false;
-      // 기존 linkedKpi (단일) 체크 - 타입 변환으로 유연하게 비교
-      if (project.linkedKpi) {
-        if (String(project.linkedKpi.brandId) === String(brandId) && 
-            String(project.linkedKpi.kpiId) == String(kpiId) && 
-            String(project.linkedKpi.itemId) == String(itemId)) return true;
-      }
-      // 새 linkedKpis (배열) 체크
-      if (project.linkedKpis && Array.isArray(project.linkedKpis)) {
-        return project.linkedKpis.some(lk => 
-          String(lk.brandId) === String(brandId) && String(lk.kpiId) == String(kpiId) && String(lk.itemId) == String(itemId)
-        );
-      }
-      return false;
-    };
-    
-    // 프로젝트가 특정 브랜드에 연동되어 있는지 확인
-    const isProjectLinkedToBrand = (project, brandId) => {
-      if (!project) return false;
-      if (project.linkedKpi?.brandId && String(project.linkedKpi.brandId) === String(brandId)) return true;
-      if (project.linkedKpis?.some(lk => lk.brandId && String(lk.brandId) === String(brandId))) return true;
-      return false;
-    };
-    
-    // 프로젝트가 특정 KPI에 연동되어 있는지 확인
-    const isProjectLinkedToKpi = (project, kpiId) => {
-      if (!project) return false;
-      if (project.linkedKpi?.kpiId && String(project.linkedKpi.kpiId) == String(kpiId)) return true;
-      if (project.linkedKpis?.some(lk => lk.kpiId && String(lk.kpiId) == String(kpiId))) return true;
-      return false;
-    };
-    
-    // 프로젝트가 KPI 연동이 하나라도 있는지 확인
-    const hasAnyKpiLink = (project) => {
-      if (!project) return false;
-      if (project.linkedKpi) return true;
-      if (project.linkedKpis && project.linkedKpis.length > 0) return true;
-      return false;
-    };
-    
-    // 프로젝트의 모든 KPI 연동 목록 가져오기
+    // 프로젝트의 모든 KPI 연동 목록 가져오기 (Firebase에서 배열이 객체로 변환될 수 있으므로 안전하게 처리)
     const getAllKpiLinks = (project) => {
       if (!project) return [];
       const links = [];
       if (project.linkedKpi) links.push(project.linkedKpi);
-      if (project.linkedKpis) links.push(...project.linkedKpis);
+      if (project.linkedKpis) {
+        const kpisArr = Array.isArray(project.linkedKpis) ? project.linkedKpis : Object.values(project.linkedKpis);
+        kpisArr.forEach(lk => { if (lk) links.push(lk); });
+      }
       // 중복 제거
       const unique = [];
       const seen = new Set();
       links.forEach(lk => {
+        if (!lk) return;
         const key = `${lk.brandId}-${lk.kpiId}-${lk.itemId}`;
         if (!seen.has(key)) {
           seen.add(key);
@@ -4408,6 +4386,28 @@
         }
       });
       return unique;
+    };
+
+    // 프로젝트가 특정 후행지표에 연동되어 있는지 확인 (linkedKpi 단일 + linkedKpis 배열/객체 모두 지원)
+    const isProjectLinkedTo = (project, brandId, kpiId, itemId) => {
+      return getAllKpiLinks(project).some(lk =>
+        String(lk.brandId) === String(brandId) && String(lk.kpiId) == String(kpiId) && String(lk.itemId) == String(itemId)
+      );
+    };
+
+    // 프로젝트가 특정 브랜드에 연동되어 있는지 확인
+    const isProjectLinkedToBrand = (project, brandId) => {
+      return getAllKpiLinks(project).some(lk => String(lk.brandId) === String(brandId));
+    };
+
+    // 프로젝트가 특정 KPI에 연동되어 있는지 확인
+    const isProjectLinkedToKpi = (project, kpiId) => {
+      return getAllKpiLinks(project).some(lk => String(lk.kpiId) == String(kpiId));
+    };
+
+    // 프로젝트가 KPI 연동이 하나라도 있는지 확인
+    const hasAnyKpiLink = (project) => {
+      return getAllKpiLinks(project).length > 0;
     };
     
     // 프로젝트에 KPI 연동 추가
@@ -11328,17 +11328,19 @@
                       return hasMyTask;
                     });
                     
-                    // 브랜드 > 후행지표 기준으로 그룹핑
+                    // 브랜드 > 후행지표 기준으로 그룹핑 (linkedKpi + linkedKpis 모두 포함)
                     const groupedByItem = {};
                     kpiProjects.forEach(project => {
-                      // linkedKpi 기준으로 그룹핑 (원본 연결 기준)
-                      const lk = project.linkedKpi;
-                      if (!lk) return;
-                      const key = `${lk.brandId}-${lk.kpiId}-${lk.itemId}`;
-                      if (!groupedByItem[key]) {
-                        groupedByItem[key] = { brandId: lk.brandId, kpiId: lk.kpiId, itemId: lk.itemId, projects: [] };
-                      }
-                      groupedByItem[key].projects.push(project);
+                      const allLinks = getAllKpiLinks(project);
+                      allLinks.forEach(lk => {
+                        const key = `${lk.brandId}-${lk.kpiId}-${lk.itemId}`;
+                        if (!groupedByItem[key]) {
+                          groupedByItem[key] = { brandId: lk.brandId, kpiId: lk.kpiId, itemId: lk.itemId, projects: [] };
+                        }
+                        if (!groupedByItem[key].projects.some(p => p.id === project.id)) {
+                          groupedByItem[key].projects.push(project);
+                        }
+                      });
                     });
                     
                     // 브랜드별로 정렬
@@ -11529,17 +11531,20 @@
                   
                   // 해당 브랜드의 KPI 연동 프로젝트 (linkedKpi + linkedKpis 모두)
                   const brandProjects = projects.filter(p => isProjectLinkedToBrand(p, brandId) && !p.deletedAt);
+
+                  // 디버깅: 브랜드별 연동 프로젝트 확인
+                  if (brandId === 'pour-method') {
+                    console.log('[팀KPI 디버그] pour-method brandProjects:', brandProjects.length, brandProjects.map(p => ({ id: p.id, title: p.title, linkedKpi: p.linkedKpi, linkedKpis: p.linkedKpis })));
+                    console.log('[팀KPI 디버그] brand.kpis:', brand.kpis?.map(k => ({ id: k.id, name: k.name, items: k.items?.map(i => ({ id: i.id, name: i.name })) })));
+                  }
                   
                   // 전체 진행률 계산
                   const allItems = brand.kpis?.flatMap(kpi => kpi.items || []) || [];
                   const totalProgress = allItems.length > 0 ? Math.round(
                     allItems.reduce((sum, item) => {
                       const kpi = brand.kpis?.find(k => k.items?.some(i => i.id === item.id));
-                      const itemProjects = brandProjects.filter(p => 
-                        p.linkedKpi && 
-                        String(p.linkedKpi.brandId) === String(brandId) && 
-                        String(p.linkedKpi.kpiId) == String(kpi?.id) && 
-                        String(p.linkedKpi.itemId) == String(item.id)
+                      const itemProjects = brandProjects.filter(p =>
+                        isProjectLinkedTo(p, brandId, kpi?.id, item.id)
                       );
                       const totalTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                       const completedTasks = itemProjects.reduce((s, p) => s + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
@@ -11587,12 +11592,8 @@
                                   {kpi.items && kpi.items.length > 0 && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       {kpi.items.map(item => {
-                                        // 메인 대시보드: linkedKpi(원본 연동)만 표시 (추가 연동은 상세 뷰에서 확인)
-                                        const itemProjects = brandProjects.filter(p => 
-                                          p.linkedKpi && 
-                                          String(p.linkedKpi.brandId) === String(brandId) && 
-                                          String(p.linkedKpi.kpiId) == String(kpi.id) && 
-                                          String(p.linkedKpi.itemId) == String(item.id)
+                                        const itemProjects = brandProjects.filter(p =>
+                                          isProjectLinkedTo(p, brandId, kpi.id, item.id)
                                         );
                                         const totalTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && !t.deletedAt).length, 0);
                                         const completedTasks = itemProjects.reduce((sum, p) => sum + tasks.filter(t => t.projectId === p.id && t.completed && !t.deletedAt).length, 0);
