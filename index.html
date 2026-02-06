@@ -4699,17 +4699,41 @@
           const allBrands = await KPIStorageService.getBrands();
           const currentBrand = allBrands[brand.id];
           if (!currentBrand) return;
-          
+
           const updatedKpis = currentBrand.kpis?.map(kpi => {
             if (kpi.id == kpiId) {
               return { ...kpi, items: kpi.items?.filter(item => item.id != itemId) };
             }
             return kpi;
           });
-          
+
           await KPIStorageService.saveBrand(brand.id, { ...currentBrand, kpis: updatedKpis });
         } catch (error) {
           console.error('후행지표 삭제 오류:', error);
+        }
+      };
+
+      // KPI(선행지표) 추가
+      const addKpi = async () => {
+        const kpiName = prompt('새 KPI(선행지표) 이름:');
+        if (!kpiName || !kpiName.trim()) return;
+        try {
+          const allBrands = await KPIStorageService.getBrands();
+          const currentBrand = allBrands[brand.id];
+          if (!currentBrand) return;
+
+          const newKpi = {
+            id: Date.now(),
+            name: kpiName.trim(),
+            items: [],
+            progress: 0,
+            target: 100,
+            unit: '%'
+          };
+          const updatedKpis = [...(currentBrand.kpis || []), newKpi];
+          await KPIStorageService.saveBrand(brand.id, { ...currentBrand, kpis: updatedKpis });
+        } catch (error) {
+          console.error('KPI 추가 오류:', error);
         }
       };
 
@@ -4751,7 +4775,7 @@
             </div>
           </div>
 
-          {expanded && brand.kpis && brand.kpis.length > 0 && (
+          {expanded && (
             <div style={{ padding: '0 20px 20px 20px', background: '#F9FAFB', borderTop: '1px solid #E5E8EB' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16 }}>
                 {brand.kpis.map(kpi => {
@@ -4876,6 +4900,20 @@
                   </div>
                   );
                 })}
+
+                {/* KPI 추가 버튼 */}
+                <button
+                  onClick={addKpi}
+                  style={{
+                    width: '100%', padding: '10px 12px', background: 'white',
+                    border: `1px dashed ${brand.color}60`, borderRadius: 8,
+                    color: brand.color, fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', gap: 6, transition: 'all 0.15s'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = `${brand.color}08`; e.currentTarget.style.borderColor = brand.color; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = `${brand.color}60`; }}
+                >+ KPI 추가</button>
               </div>
             </div>
           )}
@@ -5172,6 +5210,23 @@
         }
       };
 
+      // KPI(선행지표) 추가
+      const addNewKpi = async () => {
+        const kpiName = prompt('새 KPI(선행지표) 이름:');
+        if (!kpiName || !kpiName.trim()) return;
+        const newKpi = {
+          id: Date.now(),
+          name: kpiName.trim(),
+          items: [],
+          progress: 0,
+          target: 100,
+          unit: '%'
+        };
+        const updatedKpis = [...(brand.kpis || []), newKpi];
+        const updatedBrand = { ...brand, kpis: updatedKpis };
+        await KPIStorageService.saveBrand(brand.id, updatedBrand);
+      };
+
       const addKpiItem = async (kpiId) => {
         const itemName = prompt('새 후행지표 이름:');
         if (!itemName || !itemName.trim()) return;
@@ -5401,6 +5456,20 @@
                   </div>
                 );
                 })}
+
+                {/* KPI 추가 카드 */}
+                <div
+                  onClick={addNewKpi}
+                  style={{
+                    background: 'white', borderRadius: 12, border: `2px dashed ${brand.color}40`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', minHeight: 80, transition: 'all 0.15s'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = `${brand.color}05`; e.currentTarget.style.borderColor = brand.color; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; e.currentTarget.style.borderColor = `${brand.color}40`; }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 600, color: brand.color }}>+ KPI 추가</span>
+                </div>
               </div>
             )}
           </div>
