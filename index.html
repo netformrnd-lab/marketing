@@ -16424,10 +16424,10 @@
         
         const NODE_HEIGHTS = { center: 42, category: 40, kpi: 32, indicator: 34, project: 34, task: 26, subtask: 24 };
         const getNodeH = (n) => NODE_HEIGHTS[n.type] || 28;
-        const GAPS = { 0: 36, 1: 32, 2: 28, 3: 22, 4: 18 };
-        const LEVEL_X = [0, 220, 440, 660, 880, 1100, 1300];
-        const LEAF_GAP = 6; // 말단 노드 세로 간격
-        const LEAF_INDENT = 18; // 말단 노드 들여쓰기
+        const GAPS = { 0: 44, 1: 40, 2: 36, 3: 30, 4: 24 };
+        const LEVEL_X = [0, 240, 480, 720, 960, 1200, 1440];
+        const LEAF_GAP = 8; // 말단 노드 세로 간격
+        const LEAF_INDENT = 20; // 말단 노드 들여쓰기
         
         // 말단(leaf) 판정: task/subtask이면서 자식이 없는 노드의 부모
         const isLeafParent = (node) => {
@@ -16454,7 +16454,7 @@
           
           // 말단 부모: 자기 높이 + 아래 말단 그룹 높이
           if (isLeafParent(node)) {
-            return selfH + 10 + getLeafGroupH(node);
+            return selfH + 14 + getLeafGroupH(node);
           }
           
           const gap = GAPS[Math.min(level, 4)];
@@ -16472,7 +16472,7 @@
           
           // 말단 부모: 자식들을 부모 아래에 세로 배치
           if (isLeafParent(parent)) {
-            let leafY = parent.y + getNodeH(parent) / 2 + 14;
+            let leafY = parent.y + getNodeH(parent) / 2 + 18;
             children.forEach((child) => {
               child.level = level + 1;
               child.isLeaf = true;
@@ -16713,7 +16713,7 @@
         return `rgba(${parseInt(h.substring(0,2),16)},${parseInt(h.substring(2,4),16)},${parseInt(h.substring(4,6),16)},${a})`;
       };
       const getNodeStyle = (node) => {
-        const base = { display: 'inline-flex', alignItems: 'center', padding: '8px 16px', borderRadius: 10, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'default' };
+        const base = { display: 'inline-flex', alignItems: 'center', padding: '8px 16px', borderRadius: 10, fontWeight: 600, cursor: 'default' };
         const c = node.color || '#6B7684';
         switch (node.type) {
           case 'center':
@@ -16721,16 +16721,16 @@
           case 'category':
             return { ...base, background: 'white', color: c, fontSize: 13, fontWeight: 700, border: `2px solid ${c}`, borderRadius: 10, padding: '8px 18px' };
           case 'kpi':
-            return { ...base, background: lightenColor(c, 0.93), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.25)}`, borderRadius: 8, padding: '6px 14px' };
+            return { ...base, background: lightenColor(c, 0.93), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.25)}`, borderRadius: 8, padding: '6px 14px', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
           case 'indicator':
-            return { ...base, background: lightenColor(c, 0.88), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.3)}`, borderRadius: 8, padding: '6px 14px' };
+            return { ...base, background: lightenColor(c, 0.88), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.3)}`, borderRadius: 8, padding: '6px 14px', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
           case 'project':
-            return { ...base, background: lightenColor(c, 0.9), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1px solid ${bdrColor(c, 0.2)}`, padding: '6px 14px' };
+            return { ...base, background: lightenColor(c, 0.9), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1px solid ${bdrColor(c, 0.2)}`, padding: '6px 14px', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
           case 'task':
             if (node.isLeaf) {
-              return { ...base, background: 'transparent', color: '#4E5968', fontSize: 11, fontWeight: 500, border: 'none', padding: '3px 0', borderRadius: 0 };
+              return { ...base, background: 'transparent', color: '#4E5968', fontSize: 11, fontWeight: 500, border: 'none', padding: '3px 0', borderRadius: 0, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
             }
-            return { ...base, background: 'white', color: '#333D4B', fontSize: 11, fontWeight: 500, border: '1px solid #E5E8EB', padding: '5px 12px', borderRadius: 8 };
+            return { ...base, background: 'white', color: '#333D4B', fontSize: 11, fontWeight: 500, border: '1px solid #E5E8EB', padding: '5px 12px', borderRadius: 8, maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
           case 'subtask':
             if (node.isLeaf) {
               return { ...base, background: 'transparent', color: '#8B95A1', fontSize: 10, fontWeight: 400, border: 'none', padding: '2px 0', borderRadius: 0 };
