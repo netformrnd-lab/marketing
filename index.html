@@ -12920,8 +12920,30 @@
                                         }
                                       }
                                     }}
+                                    onKeyDown={(e) => {
+                                      if (e.ctrlKey && e.key === 'b') {
+                                        e.preventDefault();
+                                        const ta = e.target;
+                                        const start = ta.selectionStart;
+                                        const end = ta.selectionEnd;
+                                        if (start === end) return;
+                                        const selected = ta.value.substring(start, end);
+                                        const before = ta.value.substring(0, start);
+                                        const after = ta.value.substring(end);
+                                        // Toggle: if already bold, remove markers
+                                        if (selected.startsWith('**') && selected.endsWith('**')) {
+                                          ta.value = before + selected.slice(2, -2) + after;
+                                          ta.selectionStart = start;
+                                          ta.selectionEnd = end - 4;
+                                        } else {
+                                          ta.value = before + '**' + selected + '**' + after;
+                                          ta.selectionStart = start;
+                                          ta.selectionEnd = end + 4;
+                                        }
+                                      }
+                                    }}
                                     style={{
-                                      width: '100%', minHeight: 80, padding: '12px 16px',
+                                      width: '100%', minHeight: 160, padding: '12px 16px',
                                       border: 'none', fontSize: 14, lineHeight: 1.7,
                                       fontFamily: 'inherit', outline: 'none', resize: 'vertical'
                                     }}
@@ -12932,7 +12954,48 @@
                                     data-images="[]"
                                     style={{ padding: '0 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}
                                   />
-                                  <div style={{ padding: '8px 16px', borderTop: '1px solid #F2F4F6', display: 'flex', justifyContent: 'flex-end' }}>
+                                  <div style={{ padding: '8px 16px', borderTop: '1px solid #F2F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                      <button
+                                        onClick={() => {
+                                          const ta = document.getElementById('note-input');
+                                          if (!ta) return;
+                                          ta.focus();
+                                          const start = ta.selectionStart;
+                                          const end = ta.selectionEnd;
+                                          if (start === end) {
+                                            // No selection: insert bold markers and place cursor between them
+                                            const before = ta.value.substring(0, start);
+                                            const after = ta.value.substring(end);
+                                            ta.value = before + '****' + after;
+                                            ta.selectionStart = ta.selectionEnd = start + 2;
+                                            return;
+                                          }
+                                          const selected = ta.value.substring(start, end);
+                                          const before = ta.value.substring(0, start);
+                                          const after = ta.value.substring(end);
+                                          if (selected.startsWith('**') && selected.endsWith('**')) {
+                                            ta.value = before + selected.slice(2, -2) + after;
+                                            ta.selectionStart = start;
+                                            ta.selectionEnd = end - 4;
+                                          } else {
+                                            ta.value = before + '**' + selected + '**' + after;
+                                            ta.selectionStart = start;
+                                            ta.selectionEnd = end + 4;
+                                          }
+                                        }}
+                                        title="굵게 (Ctrl+B)"
+                                        style={{
+                                          width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          background: '#F2F4F6', border: '1px solid #E5E8EB', borderRadius: 6,
+                                          fontSize: 14, fontWeight: 800, cursor: 'pointer', color: '#333',
+                                          fontFamily: 'Georgia, serif'
+                                        }}
+                                        onMouseEnter={(e) => { e.target.style.background = '#E5E8EB'; }}
+                                        onMouseLeave={(e) => { e.target.style.background = '#F2F4F6'; }}
+                                      >B</button>
+                                      <span style={{ fontSize: 11, color: '#B0B8C1', alignSelf: 'center', marginLeft: 4 }}>Ctrl+B</span>
+                                    </div>
                                     <button
                                       onClick={() => {
                                         const textarea = document.getElementById('note-input');
@@ -13000,17 +13063,42 @@
                                               
                                               // URL 감지
                                               const renderContent = (text) => {
+                                                // Split by bold markers **text** first, then handle URLs within each segment
+                                                const boldRegex = /\*\*(.+?)\*\*/g;
                                                 const urlRegex = /(https?:\/\/[^\s]+)/g;
-                                                const parts = text.split(urlRegex);
-                                                return parts.map((part, i) => {
-                                                  if (part.match(urlRegex)) {
-                                                    return React.createElement('a', {
-                                                      key: i, href: part, target: '_blank', rel: 'noopener noreferrer',
-                                                      style: { color: '#3182F6', textDecoration: 'underline', wordBreak: 'break-all' }
-                                                    }, part.length > 60 ? part.slice(0, 60) + '...' : part);
+
+                                                const renderWithUrls = (str, keyPrefix) => {
+                                                  const parts = str.split(urlRegex);
+                                                  return parts.map((part, i) => {
+                                                    if (part.match(urlRegex)) {
+                                                      return React.createElement('a', {
+                                                        key: `${keyPrefix}-${i}`, href: part, target: '_blank', rel: 'noopener noreferrer',
+                                                        style: { color: '#3182F6', textDecoration: 'underline', wordBreak: 'break-all' }
+                                                      }, part.length > 60 ? part.slice(0, 60) + '...' : part);
+                                                    }
+                                                    return part;
+                                                  });
+                                                };
+
+                                                const result = [];
+                                                let lastIndex = 0;
+                                                let match;
+                                                let idx = 0;
+                                                while ((match = boldRegex.exec(text)) !== null) {
+                                                  // Text before bold
+                                                  if (match.index > lastIndex) {
+                                                    result.push(...renderWithUrls(text.substring(lastIndex, match.index), `t${idx}`));
                                                   }
-                                                  return part;
-                                                });
+                                                  // Bold text
+                                                  result.push(React.createElement('strong', { key: `b${idx}`, style: { fontWeight: 700 } }, ...renderWithUrls(match[1], `b${idx}`)));
+                                                  lastIndex = match.index + match[0].length;
+                                                  idx++;
+                                                }
+                                                // Remaining text after last bold
+                                                if (lastIndex < text.length) {
+                                                  result.push(...renderWithUrls(text.substring(lastIndex), `e${idx}`));
+                                                }
+                                                return result.length > 0 ? result : text;
                                               };
                                               
                                               return (
@@ -13055,14 +13143,75 @@
                                                         <textarea
                                                           defaultValue={note.content}
                                                           id={`edit-note-${note.id}`}
+                                                          onKeyDown={(e) => {
+                                                            if (e.ctrlKey && e.key === 'b') {
+                                                              e.preventDefault();
+                                                              const ta = e.target;
+                                                              const start = ta.selectionStart;
+                                                              const end = ta.selectionEnd;
+                                                              if (start === end) return;
+                                                              const selected = ta.value.substring(start, end);
+                                                              const before = ta.value.substring(0, start);
+                                                              const after = ta.value.substring(end);
+                                                              if (selected.startsWith('**') && selected.endsWith('**')) {
+                                                                ta.value = before + selected.slice(2, -2) + after;
+                                                                ta.selectionStart = start;
+                                                                ta.selectionEnd = end - 4;
+                                                              } else {
+                                                                ta.value = before + '**' + selected + '**' + after;
+                                                                ta.selectionStart = start;
+                                                                ta.selectionEnd = end + 4;
+                                                              }
+                                                            }
+                                                          }}
                                                           style={{
-                                                            width: '100%', minHeight: 120, padding: 12,
+                                                            width: '100%', minHeight: 160, padding: 12,
                                                             borderRadius: 8, border: '2px solid ' + kpiItem.brandColor,
                                                             fontSize: 14, lineHeight: 1.7, fontFamily: 'inherit',
                                                             outline: 'none', resize: 'vertical'
                                                           }}
                                                           autoFocus
                                                         />
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                                                          <button
+                                                            onClick={() => {
+                                                              const ta = document.getElementById(`edit-note-${note.id}`);
+                                                              if (!ta) return;
+                                                              ta.focus();
+                                                              const start = ta.selectionStart;
+                                                              const end = ta.selectionEnd;
+                                                              if (start === end) {
+                                                                const before = ta.value.substring(0, start);
+                                                                const after = ta.value.substring(end);
+                                                                ta.value = before + '****' + after;
+                                                                ta.selectionStart = ta.selectionEnd = start + 2;
+                                                                return;
+                                                              }
+                                                              const selected = ta.value.substring(start, end);
+                                                              const before = ta.value.substring(0, start);
+                                                              const after = ta.value.substring(end);
+                                                              if (selected.startsWith('**') && selected.endsWith('**')) {
+                                                                ta.value = before + selected.slice(2, -2) + after;
+                                                                ta.selectionStart = start;
+                                                                ta.selectionEnd = end - 4;
+                                                              } else {
+                                                                ta.value = before + '**' + selected + '**' + after;
+                                                                ta.selectionStart = start;
+                                                                ta.selectionEnd = end + 4;
+                                                              }
+                                                            }}
+                                                            title="굵게 (Ctrl+B)"
+                                                            style={{
+                                                              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                              background: '#F2F4F6', border: '1px solid #E5E8EB', borderRadius: 5,
+                                                              fontSize: 13, fontWeight: 800, cursor: 'pointer', color: '#333',
+                                                              fontFamily: 'Georgia, serif'
+                                                            }}
+                                                            onMouseEnter={(e) => { e.target.style.background = '#E5E8EB'; }}
+                                                            onMouseLeave={(e) => { e.target.style.background = '#F2F4F6'; }}
+                                                          >B</button>
+                                                          <span style={{ fontSize: 10, color: '#B0B8C1' }}>Ctrl+B</span>
+                                                        </div>
                                                         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
                                                           <button
                                                             onClick={() => setExpandedMeetingId(null)}
