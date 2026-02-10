@@ -215,7 +215,7 @@
     ];
     
     // KPI 브랜드 표시 순서
-    const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'automation-system', 'seokmin-enc'];
+    const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'seokmin-enc', 'automation-system'];
     
     // 우선순위 옵션
     const PRIORITY_OPTIONS = [
@@ -6605,7 +6605,7 @@
                   <div style={{ marginBottom: 24 }}>
                     <h2 style={{ fontSize: 20, fontWeight: 700, color: '#191F28', marginBottom: 16 }}>브랜드 KPI</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-                      {['pour-method', 'pour-solution', 'apartment-square', 'automation-system', 'seokmin-enc'].map(brandId => {
+                      {['pour-method', 'pour-solution', 'apartment-square', 'seokmin-enc', 'automation-system'].map(brandId => {
                         const brand = brands[brandId];
                         const brandLinkedProjects = projects.filter(p => 
                           isProjectLinkedToBrand(p, brandId) && !p.deletedAt
@@ -13967,7 +13967,7 @@
           
           {/* KPI 연동 추가 모달 */}
           {showLinkModal && (() => {
-            const KPI_BRAND_ORDER_MODAL = ['pour-method', 'pour-solution', 'apartment-square', 'automation-system', 'seokmin-enc'];
+            const KPI_BRAND_ORDER_MODAL = ['pour-method', 'pour-solution', 'apartment-square', 'seokmin-enc', 'automation-system'];
             
             return (
             <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10100 }}>
@@ -16609,7 +16609,7 @@
 
     // ============ 그로스보드 탭 (자동 연동 마인드맵) ============
     function GrowthBoardTab({ tasks, projects, currentUser, kpiBrands = {}, fixedTasks = [], teamRequests = [], meetings = [] }) {
-      const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'automation-system', 'seokmin-enc'];
+      const KPI_BRAND_ORDER = ['pour-method', 'pour-solution', 'apartment-square', 'seokmin-enc', 'automation-system'];
       const BRAND_DISPLAY = {
         'pour-method': { name: 'POUR 공법', color: '#2563EB' },
         'pour-solution': { name: 'POUR 솔루션', color: '#059669' },
