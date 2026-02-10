@@ -8904,9 +8904,8 @@
                     const ROW_H = 32;
                     const DAY_HEADER_H = 36;
                     const COL_DATE = 110;
-                    const COL_STATUS = 60;
-                    const COL_BRAND = 100;
-                    const COL_TASK = W - PAD * 2 - COL_DATE - COL_STATUS - COL_BRAND;
+                    const COL_BRAND = 120;
+                    const COL_TASK = W - PAD * 2 - COL_DATE - COL_BRAND;
 
                     // 루틴 데이터 수집
                     const weekCompKey = weekDates[0]; // 주간 루틴 완료 키 = 월요일 날짜
@@ -8925,8 +8924,7 @@
                     const ROUTINE_SECTION_H = routineTypes.length > 0 ? 44 + totalRoutineRows * ROW_H + routineTypes.length * 28 : 0;
                     const TABLE_TOP = HEADER_H + 16;
                     const TH_H = 36;
-                    const SUMMARY_H = 50;
-                    const H = TABLE_TOP + TH_H + dayData.length * DAY_HEADER_H + totalRows * ROW_H + ROUTINE_SECTION_H + SUMMARY_H + PAD;
+                    const H = TABLE_TOP + TH_H + dayData.length * DAY_HEADER_H + totalRows * ROW_H + ROUTINE_SECTION_H + PAD;
 
                     canvas.width = W * 2;
                     canvas.height = H * 2;
@@ -8948,21 +8946,6 @@
                     ctx.fillStyle = '#B0C4DE';
                     ctx.fillText(`${startD.getFullYear()}년 ${startD.getMonth()+1}/${startD.getDate()} ~ ${endD.getMonth()+1}/${endD.getDate()}  |  ${currentUser.name}`, PAD, 60);
 
-                    // 완료율 배지
-                    const totalT = weekTasks.length;
-                    const compT = weekTasks.filter(t => t.completed).length;
-                    const rate = totalT > 0 ? Math.round(compT / totalT * 100) : 0;
-                    ctx.fillStyle = rate >= 80 ? '#10B981' : rate >= 50 ? '#F59E0B' : '#EF4444';
-                    const badgeX = W - PAD - 80;
-                    ctx.beginPath();
-                    ctx.roundRect(badgeX, 20, 80, 40, 8);
-                    ctx.fill();
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.font = 'bold 18px -apple-system, Pretendard, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`${rate}%`, badgeX + 40, 46);
-                    ctx.textAlign = 'left';
-
                     // 테이블 헤더
                     let y = TABLE_TOP;
                     ctx.fillStyle = '#F1F5F9';
@@ -8976,8 +8959,7 @@
                     const thY = y + 23;
                     ctx.fillText('날짜', PAD + 12, thY);
                     ctx.fillText('업무', PAD + COL_DATE + 12, thY);
-                    ctx.fillText('상태', PAD + COL_DATE + COL_TASK + 12, thY);
-                    ctx.fillText('브랜드', PAD + COL_DATE + COL_TASK + COL_STATUS + 12, thY);
+                    ctx.fillText('브랜드', PAD + COL_DATE + COL_TASK + 12, thY);
                     y += TH_H;
 
                     // 날짜별 행 그리기
@@ -9028,21 +9010,9 @@
                           }
                           ctx.fillText(titleText, titleX, rowY + ROW_H / 2 + 5);
 
-                          // 상태
-                          const statusX = PAD + COL_DATE + COL_TASK + 12;
-                          if (item.completed) {
-                            ctx.fillStyle = '#10B981';
-                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
-                            ctx.fillText('✓ 완료', statusX, rowY + ROW_H / 2 + 5);
-                          } else {
-                            ctx.fillStyle = '#94A3B8';
-                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
-                            ctx.fillText('미완료', statusX, rowY + ROW_H / 2 + 5);
-                          }
-
                           // 브랜드
                           if (item.brand) {
-                            const bx = PAD + COL_DATE + COL_TASK + COL_STATUS + 8;
+                            const bx = PAD + COL_DATE + COL_TASK + 8;
                             const bColor = brandColors[item.brand] || '#6B7280';
                             ctx.fillStyle = bColor + '20';
                             const bw = Math.min(ctx.measureText(item.brand).width + 16, COL_BRAND - 8);
@@ -9090,13 +9060,6 @@
                         y += 28;
 
                         rt.items.forEach(item => {
-                          // 완료 여부 판단
-                          let compKey;
-                          if (rt.type === 'daily') compKey = selectedDate;
-                          else if (rt.type === 'weekly') compKey = weekCompKey;
-                          else compKey = monthCompKey;
-                          const isDone = (item.completedDates || []).includes(compKey);
-
                           ctx.fillStyle = '#FFFFFF';
                           ctx.fillRect(PAD, y, W - PAD * 2, ROW_H);
                           ctx.strokeStyle = '#F1F5F9';
@@ -9109,36 +9072,15 @@
                           ctx.fillStyle = '#1E293B';
                           ctx.font = '13px -apple-system, Pretendard, sans-serif';
                           let rTitle = item.title;
-                          const maxW = COL_TASK + COL_DATE - 24;
+                          const maxW = W - PAD * 2 - 48;
                           while (ctx.measureText(rTitle).width > maxW && rTitle.length > 3) {
                             rTitle = rTitle.slice(0, -4) + '...';
                           }
                           ctx.fillText(rTitle, PAD + 24, y + ROW_H / 2 + 5);
-
-                          // 상태
-                          const sx = PAD + COL_DATE + COL_TASK + 12;
-                          if (isDone) {
-                            ctx.fillStyle = '#10B981';
-                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
-                            ctx.fillText('✓ 완료', sx, y + ROW_H / 2 + 5);
-                          } else {
-                            ctx.fillStyle = '#94A3B8';
-                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
-                            ctx.fillText('미완료', sx, y + ROW_H / 2 + 5);
-                          }
                           y += ROW_H;
                         });
                       });
                     }
-
-                    // 요약 바
-                    ctx.fillStyle = '#1E3A5F';
-                    ctx.fillRect(PAD, y + 8, W - PAD * 2, 36);
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.font = 'bold 13px -apple-system, Pretendard, sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`전체 ${totalT}건  |  완료 ${compT}건  |  완료율 ${rate}%`, W / 2, y + 31);
-                    ctx.textAlign = 'left';
 
                     // PNG 다운로드
                     canvas.toBlob((blob) => {
