@@ -4992,7 +4992,7 @@
           {expanded && (
             <div style={{ padding: '0 20px 20px 20px', background: '#F9FAFB', borderTop: '1px solid #E5E8EB' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 16 }}>
-                {brand.kpis.map(kpi => {
+                {(brand.kpis || []).map(kpi => {
                   const kpiProgress = getKpiProgress(kpi);
                   const isExpanded = expandedKpiId === kpi.id;
                   return (
@@ -5595,7 +5595,7 @@
             {/* KPI 요약 카드 */}
             {brand.kpis && brand.kpis.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-                {brand.kpis.map(kpi => {
+                {(brand.kpis || []).map(kpi => {
                   const kpiProgress = getKpiProgress(kpi);
                   return (
                   <div key={kpi.id} style={{ background: 'white', borderRadius: 12, border: `2px solid ${brand.color}20`, overflow: 'hidden' }}>
@@ -11871,7 +11871,7 @@
                       <div style={{ padding: 16 }}>
                         {brand.kpis && brand.kpis.length > 0 ? (
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, alignItems: 'start' }}>
-                            {brand.kpis.map(kpi => {
+                            {(brand.kpis || []).map(kpi => {
                               const kpiProjects = brandProjects.filter(p => isProjectLinkedToKpi(p, kpi.id));
                               
                               return (
