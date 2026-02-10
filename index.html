@@ -8870,71 +8870,208 @@
                     }
                     const weekStart = weekDates[0];
                     const weekEnd = weekDates[4];
+                    const startD = new Date(weekStart);
+                    const endD = new Date(weekEnd);
 
                     // 해당 주의 모든 업무 수집
                     const weekTasks = myTasks.filter(t => !t.parentTaskId && weekDates.includes(t.date));
-
-                    // 날짜별로 그룹핑
                     const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-                    let rows = [];
 
-                    weekDates.forEach(dateStr => {
+                    // 날짜별 데이터 구성
+                    const dayData = weekDates.map(dateStr => {
                       const d = new Date(dateStr);
-                      const dayLabel = `${d.getMonth() + 1}/${d.getDate()}(${dayNames[d.getDay()]})`;
+                      const label = `${d.getMonth()+1}/${d.getDate()}(${dayNames[d.getDay()]})`;
                       const dayTasks = weekTasks.filter(t => t.date === dateStr);
-
-                      if (dayTasks.length === 0) {
-                        rows.push({ date: dayLabel, title: '(등록된 업무 없음)', status: '', brand: '' });
-                      } else {
-                        dayTasks.forEach((task, idx) => {
-                          const project = projects.find(p => p.id === task.projectId);
-                          const brand = project ? BRANDS.find(b => b.id === project.brandId) : null;
-                          const subtasks = myTasks.filter(t => t.parentTaskId === task.id && t.date === dateStr);
-
-                          rows.push({
-                            date: idx === 0 ? dayLabel : '',
-                            title: task.title,
-                            status: task.completed ? '✅ 완료' : '⬜ 미완료',
-                            brand: brand?.name || project?.name || ''
-                          });
-
-                          subtasks.forEach(st => {
-                            rows.push({
-                              date: '',
-                              title: '  ↳ ' + st.title,
-                              status: st.completed ? '✅ 완료' : '⬜ 미완료',
-                              brand: ''
-                            });
-                          });
+                      const items = [];
+                      dayTasks.forEach(task => {
+                        const project = projects.find(p => p.id === task.projectId);
+                        const brand = project ? BRANDS.find(b => b.id === project.brandId) : null;
+                        items.push({ title: task.title, completed: task.completed, brand: brand?.name || '', isSub: false });
+                        const subtasks = myTasks.filter(t => t.parentTaskId === task.id && t.date === dateStr);
+                        subtasks.forEach(st => {
+                          items.push({ title: st.title, completed: st.completed, brand: '', isSub: true });
                         });
+                      });
+                      return { label, items };
+                    });
+
+                    // Canvas 그리기
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const W = 900;
+                    const PAD = 32;
+                    const HEADER_H = 80;
+                    const ROW_H = 32;
+                    const DAY_HEADER_H = 36;
+                    const COL_DATE = 110;
+                    const COL_STATUS = 60;
+                    const COL_BRAND = 100;
+                    const COL_TASK = W - PAD * 2 - COL_DATE - COL_STATUS - COL_BRAND;
+
+                    // 전체 높이 계산
+                    let totalRows = 0;
+                    dayData.forEach(dd => { totalRows += Math.max(dd.items.length, 1); });
+                    const TABLE_TOP = HEADER_H + 16;
+                    const TH_H = 36;
+                    const SUMMARY_H = 50;
+                    const H = TABLE_TOP + TH_H + dayData.length * DAY_HEADER_H + totalRows * ROW_H + SUMMARY_H + PAD;
+
+                    canvas.width = W * 2;
+                    canvas.height = H * 2;
+                    ctx.scale(2, 2);
+
+                    // 배경
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, W, H);
+
+                    // 헤더 배경
+                    ctx.fillStyle = '#1E3A5F';
+                    ctx.fillRect(0, 0, W, HEADER_H);
+
+                    // 헤더 텍스트
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 22px -apple-system, Pretendard, sans-serif';
+                    ctx.fillText('주간 업무일지', PAD, 36);
+                    ctx.font = '14px -apple-system, Pretendard, sans-serif';
+                    ctx.fillStyle = '#B0C4DE';
+                    ctx.fillText(`${startD.getFullYear()}년 ${startD.getMonth()+1}/${startD.getDate()} ~ ${endD.getMonth()+1}/${endD.getDate()}  |  ${currentUser.name}`, PAD, 60);
+
+                    // 완료율 배지
+                    const totalT = weekTasks.length;
+                    const compT = weekTasks.filter(t => t.completed).length;
+                    const rate = totalT > 0 ? Math.round(compT / totalT * 100) : 0;
+                    ctx.fillStyle = rate >= 80 ? '#10B981' : rate >= 50 ? '#F59E0B' : '#EF4444';
+                    const badgeX = W - PAD - 80;
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, 20, 80, 40, 8);
+                    ctx.fill();
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 18px -apple-system, Pretendard, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${rate}%`, badgeX + 40, 46);
+                    ctx.textAlign = 'left';
+
+                    // 테이블 헤더
+                    let y = TABLE_TOP;
+                    ctx.fillStyle = '#F1F5F9';
+                    ctx.fillRect(PAD, y, W - PAD * 2, TH_H);
+                    ctx.strokeStyle = '#CBD5E1';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(PAD, y, W - PAD * 2, TH_H);
+
+                    ctx.fillStyle = '#475569';
+                    ctx.font = 'bold 13px -apple-system, Pretendard, sans-serif';
+                    const thY = y + 23;
+                    ctx.fillText('날짜', PAD + 12, thY);
+                    ctx.fillText('업무', PAD + COL_DATE + 12, thY);
+                    ctx.fillText('상태', PAD + COL_DATE + COL_TASK + 12, thY);
+                    ctx.fillText('브랜드', PAD + COL_DATE + COL_TASK + COL_STATUS + 12, thY);
+                    y += TH_H;
+
+                    // 날짜별 행 그리기
+                    const brandColors = {};
+                    BRANDS.forEach(b => { brandColors[b.name] = b.color; });
+
+                    dayData.forEach((dd, di) => {
+                      // 날짜 헤더 행
+                      ctx.fillStyle = di % 2 === 0 ? '#F8FAFC' : '#FFFFFF';
+                      const dayRowCount = Math.max(dd.items.length, 1);
+                      const dayBlockH = dayRowCount * ROW_H;
+                      ctx.fillRect(PAD, y, W - PAD * 2, dayBlockH);
+
+                      // 날짜 셀 배경
+                      ctx.fillStyle = '#EFF6FF';
+                      ctx.fillRect(PAD, y, COL_DATE, dayBlockH);
+
+                      // 날짜 텍스트 (세로 중앙)
+                      ctx.fillStyle = '#1E40AF';
+                      ctx.font = 'bold 13px -apple-system, Pretendard, sans-serif';
+                      ctx.fillText(dd.label, PAD + 12, y + dayBlockH / 2 + 5);
+
+                      if (dd.items.length === 0) {
+                        ctx.fillStyle = '#94A3B8';
+                        ctx.font = '12px -apple-system, Pretendard, sans-serif';
+                        ctx.fillText('등록된 업무 없음', PAD + COL_DATE + 12, y + ROW_H / 2 + 5);
+                        y += ROW_H;
+                      } else {
+                        dd.items.forEach((item, ii) => {
+                          const rowY = y + ii * ROW_H;
+                          // 구분선
+                          if (ii > 0) {
+                            ctx.strokeStyle = '#F1F5F9';
+                            ctx.beginPath();
+                            ctx.moveTo(PAD + COL_DATE, rowY);
+                            ctx.lineTo(W - PAD, rowY);
+                            ctx.stroke();
+                          }
+                          // 업무명
+                          ctx.fillStyle = item.isSub ? '#64748B' : '#1E293B';
+                          ctx.font = item.isSub ? '12px -apple-system, Pretendard, sans-serif' : '13px -apple-system, Pretendard, sans-serif';
+                          const titleX = PAD + COL_DATE + (item.isSub ? 24 : 12);
+                          let titleText = item.isSub ? '↳ ' + item.title : item.title;
+                          // 텍스트 길이 제한
+                          const maxTitleW = COL_TASK - 24;
+                          while (ctx.measureText(titleText).width > maxTitleW && titleText.length > 3) {
+                            titleText = titleText.slice(0, -4) + '...';
+                          }
+                          ctx.fillText(titleText, titleX, rowY + ROW_H / 2 + 5);
+
+                          // 상태
+                          const statusX = PAD + COL_DATE + COL_TASK + 12;
+                          if (item.completed) {
+                            ctx.fillStyle = '#10B981';
+                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
+                            ctx.fillText('✓ 완료', statusX, rowY + ROW_H / 2 + 5);
+                          } else {
+                            ctx.fillStyle = '#94A3B8';
+                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
+                            ctx.fillText('미완료', statusX, rowY + ROW_H / 2 + 5);
+                          }
+
+                          // 브랜드
+                          if (item.brand) {
+                            const bx = PAD + COL_DATE + COL_TASK + COL_STATUS + 8;
+                            const bColor = brandColors[item.brand] || '#6B7280';
+                            ctx.fillStyle = bColor + '20';
+                            const bw = Math.min(ctx.measureText(item.brand).width + 16, COL_BRAND - 8);
+                            ctx.beginPath();
+                            ctx.roundRect(bx, rowY + 7, bw, 18, 4);
+                            ctx.fill();
+                            ctx.fillStyle = bColor;
+                            ctx.font = 'bold 10px -apple-system, Pretendard, sans-serif';
+                            ctx.fillText(item.brand, bx + 8, rowY + ROW_H / 2 + 4);
+                          }
+                        });
+                        y += dd.items.length * ROW_H;
                       }
+
+                      // 날짜 블록 하단 구분선
+                      ctx.strokeStyle = '#E2E8F0';
+                      ctx.lineWidth = 1;
+                      ctx.beginPath();
+                      ctx.moveTo(PAD, y);
+                      ctx.lineTo(W - PAD, y);
+                      ctx.stroke();
                     });
 
-                    // CSV 생성 (BOM 포함하여 한글 깨짐 방지)
-                    const startD = new Date(weekStart);
-                    const endD = new Date(weekEnd);
-                    const header = `주간 업무일지 (${startD.getMonth()+1}/${startD.getDate()} ~ ${endD.getMonth()+1}/${endD.getDate()}) - ${currentUser.name}`;
+                    // 요약 바
+                    ctx.fillStyle = '#1E3A5F';
+                    ctx.fillRect(PAD, y + 8, W - PAD * 2, 36);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 13px -apple-system, Pretendard, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`전체 ${totalT}건  |  완료 ${compT}건  |  완료율 ${rate}%`, W / 2, y + 31);
+                    ctx.textAlign = 'left';
 
-                    let csv = '\uFEFF'; // BOM
-                    csv += header + '\n\n';
-                    csv += '날짜,업무,상태,브랜드\n';
-                    rows.forEach(r => {
-                      csv += `"${r.date}","${r.title}","${r.status}","${r.brand}"\n`;
-                    });
-
-                    // 요약 통계
-                    const totalTasks = weekTasks.length;
-                    const completedTasks = weekTasks.filter(t => t.completed).length;
-                    csv += `\n요약,전체 ${totalTasks}건 / 완료 ${completedTasks}건 / 완료율 ${totalTasks > 0 ? Math.round(completedTasks/totalTasks*100) : 0}%,,\n`;
-
-                    // 다운로드
-                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `주간업무일지_${currentUser.name}_${weekStart}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
+                    // PNG 다운로드
+                    canvas.toBlob((blob) => {
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `주간업무일지_${currentUser.name}_${weekStart}.png`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }, 'image/png');
                   }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
