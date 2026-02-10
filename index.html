@@ -2882,15 +2882,76 @@
                 📝 회의 내용
               </h3>
               {isEditing ? (
-                <textarea
-                  value={editForm.content || ''}
-                  onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
-                  placeholder="회의 내용을 작성하세요..."
-                  style={{ width: '100%', minHeight: 300, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 14, lineHeight: 1.8, resize: 'vertical', fontFamily: 'inherit' }}
-                />
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ta = document.getElementById('meeting-detail-content');
+                        if (!ta) return;
+                        ta.focus();
+                        const start = ta.selectionStart;
+                        const end = ta.selectionEnd;
+                        if (start === end) {
+                          const before = ta.value.substring(0, start);
+                          const after = ta.value.substring(end);
+                          setEditForm(f => ({ ...f, content: before + '****' + after }));
+                          setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
+                          return;
+                        }
+                        const selected = ta.value.substring(start, end);
+                        const before = ta.value.substring(0, start);
+                        const after = ta.value.substring(end);
+                        if (selected.startsWith('**') && selected.endsWith('**')) {
+                          setEditForm(f => ({ ...f, content: before + selected.slice(2, -2) + after }));
+                          setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end - 4; }, 0);
+                        } else {
+                          setEditForm(f => ({ ...f, content: before + '**' + selected + '**' + after }));
+                          setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end + 4; }, 0);
+                        }
+                      }}
+                      title="굵게 (Ctrl+B)"
+                      style={{
+                        width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: '#F2F4F6', border: '1px solid #E5E8EB', borderRadius: 6,
+                        fontSize: 14, fontWeight: 800, cursor: 'pointer', color: '#333',
+                        fontFamily: 'Georgia, serif'
+                      }}
+                      onMouseEnter={(e) => { e.target.style.background = '#E5E8EB'; }}
+                      onMouseLeave={(e) => { e.target.style.background = '#F2F4F6'; }}
+                    >B</button>
+                    <span style={{ fontSize: 11, color: '#B0B8C1' }}>Ctrl+B</span>
+                  </div>
+                  <textarea
+                    id="meeting-detail-content"
+                    value={editForm.content || ''}
+                    onChange={(e) => setEditForm({ ...editForm, content: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.ctrlKey && e.key === 'b') {
+                        e.preventDefault();
+                        const ta = e.target;
+                        const start = ta.selectionStart;
+                        const end = ta.selectionEnd;
+                        if (start === end) return;
+                        const selected = ta.value.substring(start, end);
+                        const before = ta.value.substring(0, start);
+                        const after = ta.value.substring(end);
+                        if (selected.startsWith('**') && selected.endsWith('**')) {
+                          setEditForm(f => ({ ...f, content: before + selected.slice(2, -2) + after }));
+                          setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end - 4; }, 0);
+                        } else {
+                          setEditForm(f => ({ ...f, content: before + '**' + selected + '**' + after }));
+                          setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end + 4; }, 0);
+                        }
+                      }
+                    }}
+                    placeholder="회의 내용을 작성하세요...&#10;텍스트 선택 후 B버튼 또는 Ctrl+B로 굵게 표시"
+                    style={{ width: '100%', minHeight: 300, padding: 16, borderRadius: 12, border: '1px solid #E5E8EB', fontSize: 14, lineHeight: 1.8, resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                </div>
               ) : (
                 <div style={{ fontSize: 14, color: '#4E5968', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                  {meeting.content || '작성된 내용이 없습니다.'}
+                  {meeting.content ? renderBoldText(meeting.content) : '작성된 내용이 없습니다.'}
                 </div>
               )}
             </div>
@@ -3324,15 +3385,74 @@
                 <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
                   📝 회의 내용 <span style={{ fontSize: 12, fontWeight: 400, color: '#8B95A1' }}>(선택)</span>
                 </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ta = document.getElementById('meeting-form-content');
+                      if (!ta) return;
+                      ta.focus();
+                      const start = ta.selectionStart;
+                      const end = ta.selectionEnd;
+                      if (start === end) {
+                        const before = ta.value.substring(0, start);
+                        const after = ta.value.substring(end);
+                        setForm(f => ({ ...f, content: before + '****' + after }));
+                        setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
+                        return;
+                      }
+                      const selected = ta.value.substring(start, end);
+                      const before = ta.value.substring(0, start);
+                      const after = ta.value.substring(end);
+                      if (selected.startsWith('**') && selected.endsWith('**')) {
+                        setForm(f => ({ ...f, content: before + selected.slice(2, -2) + after }));
+                        setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end - 4; }, 0);
+                      } else {
+                        setForm(f => ({ ...f, content: before + '**' + selected + '**' + after }));
+                        setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end + 4; }, 0);
+                      }
+                    }}
+                    title="굵게 (Ctrl+B)"
+                    style={{
+                      width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: '#F2F4F6', border: '1px solid #E5E8EB', borderRadius: 6,
+                      fontSize: 14, fontWeight: 800, cursor: 'pointer', color: '#333',
+                      fontFamily: 'Georgia, serif'
+                    }}
+                    onMouseEnter={(e) => { e.target.style.background = '#E5E8EB'; }}
+                    onMouseLeave={(e) => { e.target.style.background = '#F2F4F6'; }}
+                  >B</button>
+                  <span style={{ fontSize: 11, color: '#B0B8C1' }}>Ctrl+B</span>
+                </div>
                 <textarea
+                  id="meeting-form-content"
                   value={form.content}
                   onChange={(e) => setForm({ ...form, content: e.target.value })}
-                  placeholder="회의 내용을 입력하세요..."
-                  style={{ 
-                    width: '100%', 
-                    padding: '12px 16px', 
-                    borderRadius: 10, 
-                    border: '1px solid #E5E8EB', 
+                  onKeyDown={(e) => {
+                    if (e.ctrlKey && e.key === 'b') {
+                      e.preventDefault();
+                      const ta = e.target;
+                      const start = ta.selectionStart;
+                      const end = ta.selectionEnd;
+                      if (start === end) return;
+                      const selected = ta.value.substring(start, end);
+                      const before = ta.value.substring(0, start);
+                      const after = ta.value.substring(end);
+                      if (selected.startsWith('**') && selected.endsWith('**')) {
+                        setForm(f => ({ ...f, content: before + selected.slice(2, -2) + after }));
+                        setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end - 4; }, 0);
+                      } else {
+                        setForm(f => ({ ...f, content: before + '**' + selected + '**' + after }));
+                        setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = end + 4; }, 0);
+                      }
+                    }
+                  }}
+                  placeholder="회의 내용을 입력하세요...&#10;텍스트 선택 후 B버튼 또는 Ctrl+B로 굵게 표시"
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: 10,
+                    border: '1px solid #E5E8EB',
                     fontSize: 14,
                     lineHeight: 1.6,
                     minHeight: 300,
@@ -4362,6 +4482,41 @@
         </div>
       );
     }
+
+    // ============ 볼드 텍스트 렌더링 헬퍼 ============
+    const renderBoldText = (text) => {
+      if (!text) return text;
+      const boldRegex = /\*\*(.+?)\*\*/g;
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const renderWithUrls = (str, keyPrefix) => {
+        const parts = str.split(urlRegex);
+        return parts.map((part, i) => {
+          if (part.match(urlRegex)) {
+            return React.createElement('a', {
+              key: `${keyPrefix}-${i}`, href: part, target: '_blank', rel: 'noopener noreferrer',
+              style: { color: '#3182F6', textDecoration: 'underline', wordBreak: 'break-all' }
+            }, part.length > 60 ? part.slice(0, 60) + '...' : part);
+          }
+          return part;
+        });
+      };
+      const result = [];
+      let lastIndex = 0;
+      let match;
+      let idx = 0;
+      while ((match = boldRegex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          result.push(...renderWithUrls(text.substring(lastIndex, match.index), `t${idx}`));
+        }
+        result.push(React.createElement('strong', { key: `b${idx}`, style: { fontWeight: 700 } }, ...renderWithUrls(match[1], `b${idx}`)));
+        lastIndex = match.index + match[0].length;
+        idx++;
+      }
+      if (lastIndex < text.length) {
+        result.push(...renderWithUrls(text.substring(lastIndex), `e${idx}`));
+      }
+      return result.length > 0 ? result : text;
+    };
 
     // ============ Placeholder 탭 (준비중) ============
     // ============ 다중 KPI 연동 헬퍼 함수 ============
@@ -13520,7 +13675,7 @@
                                                         /* 잠금 상태 - 읽기 전용 */
                                                         (meeting.content || '').trim() ? (
                                                           <div style={{ fontSize: 14, color: '#333', lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: 60 }}>
-                                                            {meeting.content}
+                                                            {renderBoldText(meeting.content)}
                                                           </div>
                                                         ) : (
                                                           <div style={{ textAlign: 'center', padding: 24, color: '#B0B8C1' }}>
@@ -13530,19 +13685,86 @@
                                                         )
                                                       ) : (
                                                         /* 편집 상태 - textarea */
-                                                        <textarea
-                                                          value={meeting.content || ''}
-                                                          onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, content: e.target.value } : m))}
-                                                          placeholder="회의 내용을 자유롭게 작성하세요...&#10;&#10;줄바꿈, 빈 줄 모두 그대로 저장됩니다."
-                                                          style={{ 
-                                                            width: '100%', minHeight: 300, padding: '16px', 
-                                                            borderRadius: 10, border: '2px solid #3182F6', 
-                                                            fontSize: 14, lineHeight: 1.8, resize: 'vertical',
-                                                            fontFamily: 'inherit', outline: 'none',
-                                                            background: '#FAFEFF'
-                                                          }}
-                                                          autoFocus
-                                                        />
+                                                        <div>
+                                                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                                                            <button
+                                                              onClick={() => {
+                                                                const ta = document.getElementById(`meeting-content-${meeting.id}`);
+                                                                if (!ta) return;
+                                                                ta.focus();
+                                                                const start = ta.selectionStart;
+                                                                const end = ta.selectionEnd;
+                                                                if (start === end) {
+                                                                  const before = ta.value.substring(0, start);
+                                                                  const after = ta.value.substring(end);
+                                                                  const newVal = before + '****' + after;
+                                                                  setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, content: newVal } : m));
+                                                                  setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
+                                                                  return;
+                                                                }
+                                                                const selected = ta.value.substring(start, end);
+                                                                const before = ta.value.substring(0, start);
+                                                                const after = ta.value.substring(end);
+                                                                let newVal, newStart, newEnd;
+                                                                if (selected.startsWith('**') && selected.endsWith('**')) {
+                                                                  newVal = before + selected.slice(2, -2) + after;
+                                                                  newStart = start; newEnd = end - 4;
+                                                                } else {
+                                                                  newVal = before + '**' + selected + '**' + after;
+                                                                  newStart = start; newEnd = end + 4;
+                                                                }
+                                                                setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, content: newVal } : m));
+                                                                setTimeout(() => { ta.selectionStart = newStart; ta.selectionEnd = newEnd; }, 0);
+                                                              }}
+                                                              title="굵게 (Ctrl+B)"
+                                                              style={{
+                                                                width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                background: '#F2F4F6', border: '1px solid #E5E8EB', borderRadius: 6,
+                                                                fontSize: 14, fontWeight: 800, cursor: 'pointer', color: '#333',
+                                                                fontFamily: 'Georgia, serif'
+                                                              }}
+                                                              onMouseEnter={(e) => { e.target.style.background = '#E5E8EB'; }}
+                                                              onMouseLeave={(e) => { e.target.style.background = '#F2F4F6'; }}
+                                                            >B</button>
+                                                            <span style={{ fontSize: 11, color: '#B0B8C1' }}>Ctrl+B</span>
+                                                          </div>
+                                                          <textarea
+                                                            id={`meeting-content-${meeting.id}`}
+                                                            value={meeting.content || ''}
+                                                            onChange={(e) => setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, content: e.target.value } : m))}
+                                                            onKeyDown={(e) => {
+                                                              if (e.ctrlKey && e.key === 'b') {
+                                                                e.preventDefault();
+                                                                const ta = e.target;
+                                                                const start = ta.selectionStart;
+                                                                const end = ta.selectionEnd;
+                                                                if (start === end) return;
+                                                                const selected = ta.value.substring(start, end);
+                                                                const before = ta.value.substring(0, start);
+                                                                const after = ta.value.substring(end);
+                                                                let newVal, newStart, newEnd;
+                                                                if (selected.startsWith('**') && selected.endsWith('**')) {
+                                                                  newVal = before + selected.slice(2, -2) + after;
+                                                                  newStart = start; newEnd = end - 4;
+                                                                } else {
+                                                                  newVal = before + '**' + selected + '**' + after;
+                                                                  newStart = start; newEnd = end + 4;
+                                                                }
+                                                                setMeetings(prev => prev.map(m => m.id === meeting.id ? { ...m, content: newVal } : m));
+                                                                setTimeout(() => { ta.selectionStart = newStart; ta.selectionEnd = newEnd; }, 0);
+                                                              }
+                                                            }}
+                                                            placeholder="회의 내용을 자유롭게 작성하세요...&#10;&#10;줄바꿈, 빈 줄 모두 그대로 저장됩니다.&#10;텍스트 선택 후 B버튼 또는 Ctrl+B로 굵게 표시"
+                                                            style={{
+                                                              width: '100%', minHeight: 300, padding: '16px',
+                                                              borderRadius: 10, border: '2px solid #3182F6',
+                                                              fontSize: 14, lineHeight: 1.8, resize: 'vertical',
+                                                              fontFamily: 'inherit', outline: 'none',
+                                                              background: '#FAFEFF'
+                                                            }}
+                                                            autoFocus
+                                                          />
+                                                        </div>
                                                       )}
                                                     </div>
                                                         </>
