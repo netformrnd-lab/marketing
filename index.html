@@ -8911,6 +8911,12 @@
                       { type: 'monthly', label: '📅 월간 루틴', items: fixedTasks.filter(t => t.routineType === 'monthly') }
                     ].filter(r => r.items.length > 0);
 
+                    // 타팀요청 업무 수집
+                    const myTeamRequests = (teamRequests || []).filter(r =>
+                      !r.deletedAt && r.assigneeId === currentUser.id &&
+                      (r.status === 'pending' || r.status === 'progress')
+                    );
+
                     // Canvas 설정
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
@@ -8937,7 +8943,8 @@
                     }
                     const totalRoutineRows = routineTypes.reduce((sum, r) => sum + r.items.length, 0);
                     const ROUTINE_SECTION_H = routineTypes.length > 0 ? 44 + totalRoutineRows * ROW_H + routineTypes.length * 28 : 0;
-                    const H = HEADER_H + 20 + contentH + 16 + ROUTINE_SECTION_H + PAD;
+                    const TEAM_REQ_SECTION_H = myTeamRequests.length > 0 ? 44 + myTeamRequests.length * ROW_H : 0;
+                    const H = HEADER_H + 20 + contentH + 16 + ROUTINE_SECTION_H + TEAM_REQ_SECTION_H + PAD;
 
                     canvas.width = W * 2;
                     canvas.height = H * 2;
@@ -9113,6 +9120,58 @@
                           ctx.fillText(rTitle, PAD + 24, y + ROW_H / 2 + 5);
                           y += ROW_H;
                         });
+                      });
+                    }
+
+                    // 타팀요청 업무 섹션
+                    if (myTeamRequests.length > 0) {
+                      y += 12;
+                      // 타팀요청 섹션 헤더
+                      ctx.fillStyle = '#FFF7ED';
+                      ctx.fillRect(PAD, y, W - PAD * 2, 32);
+                      ctx.strokeStyle = '#FDBA74';
+                      ctx.lineWidth = 1;
+                      ctx.strokeRect(PAD, y, W - PAD * 2, 32);
+                      ctx.fillStyle = '#9A3412';
+                      ctx.font = 'bold 14px -apple-system, Pretendard, sans-serif';
+                      ctx.fillText(`📨 타팀요청 업무 (${myTeamRequests.length}건)`, PAD + 12, y + 21);
+                      y += 32;
+
+                      myTeamRequests.forEach(req => {
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(PAD, y, W - PAD * 2, ROW_H);
+                        ctx.strokeStyle = '#FED7AA';
+                        ctx.lineWidth = 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(PAD, y + ROW_H);
+                        ctx.lineTo(W - PAD, y + ROW_H);
+                        ctx.stroke();
+
+                        // 요청팀 태그
+                        const team = REQUEST_TEAMS.find(t => t.id === req.requestTeam);
+                        const teamName = team ? team.name : req.requestTeam || '';
+                        if (teamName) {
+                          ctx.font = 'bold 10px -apple-system, Pretendard, sans-serif';
+                          const tagW = ctx.measureText(teamName).width + 14;
+                          ctx.fillStyle = '#FB923C20';
+                          ctx.beginPath();
+                          ctx.roundRect(PAD + 12, y + 5, tagW, 18, 4);
+                          ctx.fill();
+                          ctx.fillStyle = '#EA580C';
+                          ctx.fillText(teamName, PAD + 19, y + ROW_H / 2 + 4);
+                        }
+
+                        // 업무명
+                        ctx.fillStyle = '#1E293B';
+                        ctx.font = '13px -apple-system, Pretendard, sans-serif';
+                        const titleStartX = teamName ? PAD + 12 + ctx.measureText(teamName).width + 24 : PAD + 24;
+                        let reqTitle = req.title || '';
+                        const maxReqW = W - PAD - titleStartX - 12;
+                        while (ctx.measureText(reqTitle).width > maxReqW && reqTitle.length > 3) {
+                          reqTitle = reqTitle.slice(0, -4) + '...';
+                        }
+                        ctx.fillText(reqTitle, titleStartX, y + ROW_H / 2 + 5);
+                        y += ROW_H;
                       });
                     }
 
