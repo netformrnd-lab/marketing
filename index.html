@@ -4805,7 +4805,7 @@
     };
 
     // ============ KPI 브랜드 카드 컴포넌트 ============
-    const KPIBrandCard = ({ brand, onViewDetail, onKpiNameUpdate, linkedProjects = [] }) => {
+    const KPIBrandCard = ({ brand, onViewDetail, onKpiNameUpdate, onMissionUpdate, linkedProjects = [] }) => {
       const [expanded, setExpanded] = useState(true);
       const [editingKpiId, setEditingKpiId] = useState(null);
       const [editKpiName, setEditKpiName] = useState('');
@@ -4813,6 +4813,8 @@
       const [editingItemId, setEditingItemId] = useState(null);
       const [editItemName, setEditItemName] = useState('');
       const [newItemName, setNewItemName] = useState('');
+      const [editingMission, setEditingMission] = useState(false);
+      const [missionText, setMissionText] = useState(brand.mission || '');
       
       // 후행지표별 progress 계산 (연동된 프로젝트 기반)
       const getItemProgress = (kpiId, itemId) => {
@@ -4967,7 +4969,39 @@
               <span style={{ fontSize: 24, fontWeight: 700, color: avgProgress === 100 ? '#00C471' : brand.color }}>{avgProgress}%</span>
             </div>
 
-            <p style={{ fontSize: 13, color: '#6B7684', lineHeight: 1.5, margin: 0, marginBottom: 16 }}>{brand.mission}</p>
+            {editingMission ? (
+              <div style={{ marginBottom: 16 }}>
+                <textarea
+                  autoFocus
+                  value={missionText}
+                  onChange={(e) => setMissionText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (onMissionUpdate && missionText.trim() !== brand.mission) {
+                        onMissionUpdate(brand.id, missionText.trim());
+                      }
+                      setEditingMission(false);
+                    }
+                    if (e.key === 'Escape') { setMissionText(brand.mission || ''); setEditingMission(false); }
+                  }}
+                  onBlur={() => {
+                    if (onMissionUpdate && missionText.trim() !== brand.mission) {
+                      onMissionUpdate(brand.id, missionText.trim());
+                    }
+                    setEditingMission(false);
+                  }}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, color: '#6B7684', lineHeight: 1.5, border: `1px solid ${brand.color}`, borderRadius: 8, fontFamily: 'inherit', outline: 'none', resize: 'vertical', minHeight: 40 }}
+                  placeholder="브랜드 미션을 입력하세요..."
+                />
+              </div>
+            ) : (
+              <p
+                onClick={() => setEditingMission(true)}
+                style={{ fontSize: 13, color: '#6B7684', lineHeight: 1.5, margin: 0, marginBottom: 16, cursor: 'pointer', padding: '4px 0', borderRadius: 6, minHeight: 20 }}
+                title="클릭하여 미션 수정"
+              >{brand.mission || '미션을 입력하세요 (클릭)'}</p>
+            )}
 
             <div style={{ width: '100%', height: 8, background: '#F2F4F6', borderRadius: 4, overflow: 'hidden', marginBottom: 12 }}>
               <div style={{ width: `${avgProgress}%`, height: '100%', background: avgProgress === 100 ? '#00C471' : brand.color, borderRadius: 4, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
@@ -6356,6 +6390,15 @@
         setKpiTeamMembers(membersData);
       };
       
+      // 브랜드 미션 업데이트
+      const handleMissionUpdate = async (brandId, newMission) => {
+        const brand = brands[brandId];
+        if (!brand) return;
+        const updatedBrand = { ...brand, mission: newMission };
+        await KPIStorageService.saveBrand(brandId, updatedBrand);
+        setBrands(prev => ({ ...prev, [brandId]: updatedBrand }));
+      };
+
       // KPI 이름 업데이트
       const handleKpiNameUpdate = async (brandId, kpiId, newName) => {
         const brand = brands[brandId];
@@ -6571,7 +6614,7 @@
                           tasks: tasks.filter(t => t.projectId === p.id)
                         }));
                         return brand ? (
-                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} onKpiNameUpdate={handleKpiNameUpdate} linkedProjects={brandLinkedProjects} />
+                          <KPIBrandCard key={brand.id} brand={brand} onViewDetail={(brand) => { setCurrentPage('brand-detail'); setSelectedBrand(brand); }} onKpiNameUpdate={handleKpiNameUpdate} onMissionUpdate={handleMissionUpdate} linkedProjects={brandLinkedProjects} />
                         ) : null;
                       })}
                     </div>
