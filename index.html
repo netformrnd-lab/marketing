@@ -8840,8 +8840,8 @@
           <div style={{ flex: 1, overflow: 'auto', background: '#F7F8FA' }}>
             {/* 상단 날짜 + 필터 바 */}
             <div style={{ background: 'white', borderBottom: '1px solid #E5E8EB', padding: '16px 24px' }}>
-              {/* 날짜 표시 */}
-              <div style={{ marginBottom: 16 }}>
+              {/* 날짜 표시 + 주간업무일지 다운로드 */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <h2 style={{ fontSize: 22, fontWeight: 700, color: '#191F28' }}>
                   {(() => {
                     const d = new Date(selectedDate);
@@ -8855,6 +8855,98 @@
                     );
                   })()}
                 </h2>
+                <button
+                  onClick={() => {
+                    // 해당 주의 월~금 날짜 구하기
+                    const sel = new Date(selectedDate);
+                    const dayOfWeek = sel.getDay();
+                    const monday = new Date(sel);
+                    monday.setDate(sel.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                    const weekDates = [];
+                    for (let i = 0; i < 5; i++) {
+                      const d = new Date(monday);
+                      d.setDate(monday.getDate() + i);
+                      weekDates.push(d.toISOString().split('T')[0]);
+                    }
+                    const weekStart = weekDates[0];
+                    const weekEnd = weekDates[4];
+
+                    // 해당 주의 모든 업무 수집
+                    const weekTasks = myTasks.filter(t => !t.parentTaskId && weekDates.includes(t.date));
+
+                    // 날짜별로 그룹핑
+                    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+                    let rows = [];
+
+                    weekDates.forEach(dateStr => {
+                      const d = new Date(dateStr);
+                      const dayLabel = `${d.getMonth() + 1}/${d.getDate()}(${dayNames[d.getDay()]})`;
+                      const dayTasks = weekTasks.filter(t => t.date === dateStr);
+
+                      if (dayTasks.length === 0) {
+                        rows.push({ date: dayLabel, title: '(등록된 업무 없음)', status: '', brand: '' });
+                      } else {
+                        dayTasks.forEach((task, idx) => {
+                          const project = projects.find(p => p.id === task.projectId);
+                          const brand = project ? BRANDS.find(b => b.id === project.brandId) : null;
+                          const subtasks = myTasks.filter(t => t.parentTaskId === task.id && t.date === dateStr);
+
+                          rows.push({
+                            date: idx === 0 ? dayLabel : '',
+                            title: task.title,
+                            status: task.completed ? '✅ 완료' : '⬜ 미완료',
+                            brand: brand?.name || project?.name || ''
+                          });
+
+                          subtasks.forEach(st => {
+                            rows.push({
+                              date: '',
+                              title: '  ↳ ' + st.title,
+                              status: st.completed ? '✅ 완료' : '⬜ 미완료',
+                              brand: ''
+                            });
+                          });
+                        });
+                      }
+                    });
+
+                    // CSV 생성 (BOM 포함하여 한글 깨짐 방지)
+                    const startD = new Date(weekStart);
+                    const endD = new Date(weekEnd);
+                    const header = `주간 업무일지 (${startD.getMonth()+1}/${startD.getDate()} ~ ${endD.getMonth()+1}/${endD.getDate()}) - ${currentUser.name}`;
+
+                    let csv = '\uFEFF'; // BOM
+                    csv += header + '\n\n';
+                    csv += '날짜,업무,상태,브랜드\n';
+                    rows.forEach(r => {
+                      csv += `"${r.date}","${r.title}","${r.status}","${r.brand}"\n`;
+                    });
+
+                    // 요약 통계
+                    const totalTasks = weekTasks.length;
+                    const completedTasks = weekTasks.filter(t => t.completed).length;
+                    csv += `\n요약,전체 ${totalTasks}건 / 완료 ${completedTasks}건 / 완료율 ${totalTasks > 0 ? Math.round(completedTasks/totalTasks*100) : 0}%,,\n`;
+
+                    // 다운로드
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `주간업무일지_${currentUser.name}_${weekStart}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '8px 16px', borderRadius: 8,
+                    border: '1px solid #E5E8EB', background: 'white',
+                    fontSize: 13, fontWeight: 600, color: '#6B7684',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#F7F8FA'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'white'; }}
+                  title="이번 주 업무를 CSV로 다운로드"
+                >📥 주간업무일지 다운로드</button>
               </div>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
