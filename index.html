@@ -8908,13 +8908,25 @@
                     const COL_BRAND = 100;
                     const COL_TASK = W - PAD * 2 - COL_DATE - COL_STATUS - COL_BRAND;
 
+                    // 루틴 데이터 수집
+                    const weekCompKey = weekDates[0]; // 주간 루틴 완료 키 = 월요일 날짜
+                    const monthCompKey = weekDates[0].substring(0, 7) + '-01'; // 월간 루틴 완료 키
+
+                    const routineTypes = [
+                      { type: 'daily', label: '☀️ 일일 루틴', items: fixedTasks.filter(t => t.routineType === 'daily') },
+                      { type: 'weekly', label: '📋 주간 루틴', items: fixedTasks.filter(t => t.routineType === 'weekly') },
+                      { type: 'monthly', label: '📅 월간 루틴', items: fixedTasks.filter(t => t.routineType === 'monthly') }
+                    ].filter(r => r.items.length > 0);
+
                     // 전체 높이 계산
                     let totalRows = 0;
                     dayData.forEach(dd => { totalRows += Math.max(dd.items.length, 1); });
+                    const totalRoutineRows = routineTypes.reduce((sum, r) => sum + r.items.length, 0);
+                    const ROUTINE_SECTION_H = routineTypes.length > 0 ? 44 + totalRoutineRows * ROW_H + routineTypes.length * 28 : 0;
                     const TABLE_TOP = HEADER_H + 16;
                     const TH_H = 36;
                     const SUMMARY_H = 50;
-                    const H = TABLE_TOP + TH_H + dayData.length * DAY_HEADER_H + totalRows * ROW_H + SUMMARY_H + PAD;
+                    const H = TABLE_TOP + TH_H + dayData.length * DAY_HEADER_H + totalRows * ROW_H + ROUTINE_SECTION_H + SUMMARY_H + PAD;
 
                     canvas.width = W * 2;
                     canvas.height = H * 2;
@@ -9053,6 +9065,71 @@
                       ctx.lineTo(W - PAD, y);
                       ctx.stroke();
                     });
+
+                    // 루틴 섹션
+                    if (routineTypes.length > 0) {
+                      y += 12;
+                      // 루틴 섹션 헤더
+                      ctx.fillStyle = '#F0FDF4';
+                      ctx.fillRect(PAD, y, W - PAD * 2, 32);
+                      ctx.strokeStyle = '#BBF7D0';
+                      ctx.lineWidth = 1;
+                      ctx.strokeRect(PAD, y, W - PAD * 2, 32);
+                      ctx.fillStyle = '#166534';
+                      ctx.font = 'bold 14px -apple-system, Pretendard, sans-serif';
+                      ctx.fillText('루틴 업무', PAD + 12, y + 21);
+                      y += 32;
+
+                      routineTypes.forEach(rt => {
+                        // 루틴 타입 소제목
+                        ctx.fillStyle = '#F8FAFC';
+                        ctx.fillRect(PAD, y, W - PAD * 2, 28);
+                        ctx.fillStyle = '#475569';
+                        ctx.font = 'bold 12px -apple-system, Pretendard, sans-serif';
+                        ctx.fillText(rt.label + ` (${rt.items.length}개)`, PAD + 16, y + 18);
+                        y += 28;
+
+                        rt.items.forEach(item => {
+                          // 완료 여부 판단
+                          let compKey;
+                          if (rt.type === 'daily') compKey = selectedDate;
+                          else if (rt.type === 'weekly') compKey = weekCompKey;
+                          else compKey = monthCompKey;
+                          const isDone = (item.completedDates || []).includes(compKey);
+
+                          ctx.fillStyle = '#FFFFFF';
+                          ctx.fillRect(PAD, y, W - PAD * 2, ROW_H);
+                          ctx.strokeStyle = '#F1F5F9';
+                          ctx.beginPath();
+                          ctx.moveTo(PAD, y + ROW_H);
+                          ctx.lineTo(W - PAD, y + ROW_H);
+                          ctx.stroke();
+
+                          // 업무명
+                          ctx.fillStyle = '#1E293B';
+                          ctx.font = '13px -apple-system, Pretendard, sans-serif';
+                          let rTitle = item.title;
+                          const maxW = COL_TASK + COL_DATE - 24;
+                          while (ctx.measureText(rTitle).width > maxW && rTitle.length > 3) {
+                            rTitle = rTitle.slice(0, -4) + '...';
+                          }
+                          ctx.fillText(rTitle, PAD + 24, y + ROW_H / 2 + 5);
+
+                          // 상태
+                          const sx = PAD + COL_DATE + COL_TASK + 12;
+                          if (isDone) {
+                            ctx.fillStyle = '#10B981';
+                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
+                            ctx.fillText('✓ 완료', sx, y + ROW_H / 2 + 5);
+                          } else {
+                            ctx.fillStyle = '#94A3B8';
+                            ctx.font = '13px -apple-system, Pretendard, sans-serif';
+                            ctx.fillText('미완료', sx, y + ROW_H / 2 + 5);
+                          }
+                          y += ROW_H;
+                        });
+                      });
+                    }
 
                     // 요약 바
                     ctx.fillStyle = '#1E3A5F';
