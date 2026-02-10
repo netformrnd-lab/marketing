@@ -17559,9 +17559,9 @@
         const c = node.color || '#6B7684';
         switch (node.type) {
           case 'center':
-            return { ...base, background: '#191F28', color: 'white', fontSize: 15, fontWeight: 800, padding: '12px 24px', borderRadius: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.2)' };
+            return { ...base, background: '#191F28', color: 'white', fontSize: 15, fontWeight: 800, padding: '12px 24px', borderRadius: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.2)', whiteSpace: 'nowrap' };
           case 'category':
-            return { ...base, background: 'white', color: c, fontSize: 13, fontWeight: 700, border: `2px solid ${c}`, borderRadius: 10, padding: '8px 18px' };
+            return { ...base, background: 'white', color: c, fontSize: 13, fontWeight: 700, border: `2px solid ${c}`, borderRadius: 10, padding: '8px 18px', whiteSpace: 'nowrap' };
           case 'kpi':
             return { ...base, background: lightenColor(c, 0.93), color: '#191F28', fontSize: 12, fontWeight: 600, border: `1.5px solid ${bdrColor(c, 0.25)}`, borderRadius: 8, padding: '6px 14px', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
           case 'indicator':
