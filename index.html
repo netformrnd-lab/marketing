@@ -2798,6 +2798,7 @@
                 </>
               ) : (
                 <>
+                  <button onClick={() => printMeeting(meeting)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, color: '#6B7684', cursor: 'pointer' }}>🖨️ 인쇄</button>
                   <button onClick={() => setIsEditing(true)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E5E8EB', background: 'white', fontSize: 13, color: '#6B7684', cursor: 'pointer' }}>수정</button>
                   <button onClick={() => onDelete(meeting.id)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #FEE2E2', background: '#FEF2F2', fontSize: 13, color: '#DC2626', cursor: 'pointer' }}>삭제</button>
                 </>
@@ -4516,6 +4517,62 @@
         result.push(...renderWithUrls(text.substring(lastIndex), `e${idx}`));
       }
       return result.length > 0 ? result : text;
+    };
+
+    // ============ 회의록 인쇄 헬퍼 ============
+    const printMeeting = (meeting) => {
+      const attendeeNames = (meeting.attendees || []).map(aId => {
+        const mem = TEAM_MEMBERS.find(tm => tm.id === aId);
+        return mem ? mem.name : '';
+      }).filter(Boolean).join(', ');
+
+      // **bold** → <strong>bold</strong> 변환
+      const formatContent = (text) => {
+        if (!text) return '';
+        return text
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\n/g, '<br>');
+      };
+
+      const actionItemsHtml = (meeting.actionItems || []).map(ai => {
+        const assignee = TEAM_MEMBERS.find(tm => tm.id === ai.assignee);
+        return '<tr>' +
+          '<td style="padding:6px 12px;border:1px solid #ddd;">' + (ai.status === 'done' ? '✅' : '⬜') + '</td>' +
+          '<td style="padding:6px 12px;border:1px solid #ddd;">' + (ai.text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</td>' +
+          '<td style="padding:6px 12px;border:1px solid #ddd;">' + (assignee ? assignee.name : '-') + '</td>' +
+          '<td style="padding:6px 12px;border:1px solid #ddd;">' + (ai.dueDate || '-') + '</td>' +
+          '</tr>';
+      }).join('');
+
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(
+        '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+        '<title>' + (meeting.title || '회의록') + '</title>' +
+        '<style>' +
+          'body { font-family: -apple-system, "Pretendard", sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #333; }' +
+          'h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }' +
+          '.meta { display: flex; gap: 24px; margin-bottom: 24px; font-size: 14px; color: #666; flex-wrap: wrap; }' +
+          '.meta-item { display: flex; align-items: center; gap: 6px; }' +
+          '.content { font-size: 14px; line-height: 1.8; white-space: pre-wrap; margin-bottom: 24px; padding: 16px; background: #f9f9f9; border-radius: 8px; }' +
+          'table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }' +
+          'th { padding: 8px 12px; background: #f0f0f0; border: 1px solid #ddd; text-align: left; font-weight: 600; }' +
+          'strong { font-weight: 700; }' +
+          '@media print { body { padding: 20px; } }' +
+        '</style></head><body>' +
+        '<h1>📋 ' + (meeting.title || '회의록').replace(/</g,'&lt;') + '</h1>' +
+        '<div class="meta">' +
+          '<div class="meta-item">📅 ' + (meeting.date || '-') + '</div>' +
+          (meeting.startTime ? '<div class="meta-item">🕐 ' + meeting.startTime + (meeting.endTime ? '~' + meeting.endTime : '') + '</div>' : '') +
+          (attendeeNames ? '<div class="meta-item">👥 ' + attendeeNames + '</div>' : '') +
+        '</div>' +
+        (meeting.content ? '<h2 style="font-size:16px;margin-bottom:8px;">📝 회의 내용</h2><div class="content">' + formatContent(meeting.content) + '</div>' : '') +
+        (actionItemsHtml ? '<h2 style="font-size:16px;margin-bottom:8px;">✅ 액션 아이템</h2><table><tr><th style="width:40px">상태</th><th>내용</th><th style="width:80px">담당자</th><th style="width:100px">기한</th></tr>' + actionItemsHtml + '</table>' : '') +
+        '<div style="margin-top:40px;text-align:center;font-size:11px;color:#999;">인쇄일: ' + new Date().toLocaleDateString('ko-KR') + '</div>' +
+        '</body></html>'
+      );
+      printWindow.document.close();
+      setTimeout(() => { printWindow.print(); }, 300);
     };
 
     // ============ Placeholder 탭 (준비중) ============
@@ -13574,7 +13631,23 @@
                                                       >
                                                         {isLocked ? '🔒 잠금' : '🔓 편집중'}
                                                       </button>
-                                                      
+
+                                                      {/* 인쇄 버튼 */}
+                                                      <button
+                                                        onClick={() => printMeeting(meeting)}
+                                                        style={{
+                                                          display: 'flex', alignItems: 'center', gap: 4,
+                                                          padding: '4px 10px', borderRadius: 6,
+                                                          border: '1px solid #E5E8EB',
+                                                          background: '#F2F4F6',
+                                                          color: '#6B7684',
+                                                          fontSize: 12, fontWeight: 600, cursor: 'pointer'
+                                                        }}
+                                                        onMouseEnter={(e) => { e.target.style.background = '#E5E8EB'; }}
+                                                        onMouseLeave={(e) => { e.target.style.background = '#F2F4F6'; }}
+                                                        title="회의록 인쇄"
+                                                      >🖨️ 인쇄</button>
+
                                                       {!isLocked && (
                                                         <>
                                                       {/* 제목 인라인 편집 */}
