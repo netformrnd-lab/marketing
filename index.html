@@ -6679,10 +6679,10 @@
         { id: 'other', name: '기타', emoji: '📦', color: '#6B7684' }
       ];
       const CYCLE_OPTIONS = [
-        { id: 'monthly', name: '매월', shortName: '월', days: 30 },
-        { id: 'quarterly', name: '분기', shortName: '분기', days: 90 },
-        { id: 'semiannual', name: '반기', shortName: '반기', days: 180 },
-        { id: 'yearly', name: '연간', shortName: '연', days: 365 }
+        { id: 'monthly', name: '매월', shortName: '월', months: 1 },
+        { id: 'quarterly', name: '분기', shortName: '분기', months: 3 },
+        { id: 'semiannual', name: '반기', shortName: '반기', months: 6 },
+        { id: 'yearly', name: '연간', shortName: '연', months: 12 }
       ];
       const STATUS_OPTIONS = [
         { id: 'active', name: '활성', color: '#059669', bg: '#ECFDF5' },
@@ -6695,14 +6695,17 @@
       const [editingPayment, setEditingPayment] = useState(null);
       const [viewMode, setViewMode] = useState('list'); // list, calendar
       const [filterCategory, setFilterCategory] = useState('all');
+      const [filterBrand, setFilterBrand] = useState('all');
       const [filterStatus, setFilterStatus] = useState('active');
       const [sortBy, setSortBy] = useState('nextDate'); // nextDate, amount, name
       const [calendarMonth, setCalendarMonth] = useState(new Date());
-      
+
       // 폼 상태
       const [form, setForm] = useState({
-        name: '', amount: '', cycle: 'monthly', category: 'saas',
-        paymentDay: '', startDate: '', memo: '', status: 'active', url: '',
+        name: '', amount: '', cycleMonths: '1', category: 'saas', brand: '',
+        paymentMethod: '', channelName: '',
+        lastPaymentDate: '', nextPaymentDate: '',
+        memo: '', status: 'active',
         contractEndDate: '', autoRenewal: false
       });
       
@@ -6726,41 +6729,69 @@
         await FirebaseService.saveDoc('settings', storageKey, { items, updatedAt: new Date().toISOString() });
       };
       
-      // 다음 결제일 계산
+      // 다음 결제일 계산 (새 구조: lastPaymentDate + cycleMonths)
       const getNextPaymentDate = (payment) => {
         if (payment.status !== 'active') return null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const day = parseInt(payment.paymentDay) || 1;
-        const cycle = CYCLE_OPTIONS.find(c => c.id === payment.cycle);
-        
-        if (payment.cycle === 'monthly') {
-          let next = new Date(today.getFullYear(), today.getMonth(), day);
-          if (next <= today) next.setMonth(next.getMonth() + 1);
-          return next;
-        } else if (payment.cycle === 'quarterly') {
-          const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
-          for (let i = 0; i < 12; i++) {
-            const m = (startMonth + i * 3) % 12;
-            let next = new Date(today.getFullYear(), m, day);
-            if (next <= today) next = new Date(today.getFullYear() + 1, m, day);
-            if (next > today) return next;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+
+        // 새 구조: nextPaymentDate가 있으면 사용
+        if (payment.nextPaymentDate) {
+          return new Date(payment.nextPaymentDate);
+        }
+        // 새 구조: lastPaymentDate + cycleMonths
+        if (payment.lastPaymentDate && payment.cycleMonths) {
+          const months = parseInt(payment.cycleMonths) || 1;
+          const last = new Date(payment.lastPaymentDate);
+          // 마지막 결제일부터 N개월씩 더해서 미래 날짜 찾기
+          let next = new Date(last);
+          next.setMonth(next.getMonth() + months);
+          while (next <= today) {
+            next.setMonth(next.getMonth() + months);
           }
-        } else if (payment.cycle === 'yearly') {
-          const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
-          let next = new Date(today.getFullYear(), startMonth, day);
-          if (next <= today) next = new Date(today.getFullYear() + 1, startMonth, day);
           return next;
-        } else if (payment.cycle === 'semiannual') {
-          const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
-          for (let i = 0; i < 4; i++) {
-            const m = (startMonth + i * 6) % 12;
-            let next = new Date(today.getFullYear(), m, day);
-            if (next <= today) next = new Date(today.getFullYear() + 1, m, day);
-            if (next > today) return next;
+        }
+        // 레거시 호환: 기존 paymentDay + cycle 방식
+        if (payment.paymentDay) {
+          const day = parseInt(payment.paymentDay) || 1;
+          const cycleOpt = CYCLE_OPTIONS.find(c => c.id === payment.cycle);
+          const months = cycleOpt?.months || 1;
+          if (months === 1) {
+            let next = new Date(today.getFullYear(), today.getMonth(), day);
+            if (next <= today) next.setMonth(next.getMonth() + 1);
+            return next;
+          } else {
+            const startMonth = payment.startDate ? new Date(payment.startDate).getMonth() : 0;
+            for (let i = 0; i < Math.ceil(12 / months) + 1; i++) {
+              const m = (startMonth + i * months) % 12;
+              let next = new Date(today.getFullYear(), m, day);
+              if (next <= today) next = new Date(today.getFullYear() + 1, m, day);
+              if (next > today) return next;
+            }
           }
         }
         return null;
+      };
+
+      // 주기 표시 텍스트
+      const getCycleLabel = (payment) => {
+        if (payment.cycleMonths) {
+          const m = parseInt(payment.cycleMonths);
+          if (m === 1) return '매월';
+          if (m === 3) return '분기';
+          if (m === 6) return '반기';
+          if (m === 12) return '연간';
+          return `${m}개월`;
+        }
+        // 레거시
+        const opt = CYCLE_OPTIONS.find(c => c.id === payment.cycle);
+        return opt?.shortName || '월';
+      };
+
+      // 주기 개월수 가져오기
+      const getCycleMonths = (payment) => {
+        if (payment.cycleMonths) return parseInt(payment.cycleMonths) || 1;
+        const opt = CYCLE_OPTIONS.find(c => c.id === payment.cycle);
+        return opt?.months || 1;
       };
       
       // D-day 계산
@@ -6777,24 +6808,17 @@
       const getMonthlyTotal = () => {
         return payments.filter(p => p.status === 'active').reduce((sum, p) => {
           const amt = parseInt(p.amount) || 0;
-          const cycle = CYCLE_OPTIONS.find(c => c.id === p.cycle);
-          if (p.cycle === 'monthly') return sum + amt;
-          if (p.cycle === 'quarterly') return sum + Math.round(amt / 3);
-          if (p.cycle === 'semiannual') return sum + Math.round(amt / 6);
-          if (p.cycle === 'yearly') return sum + Math.round(amt / 12);
-          return sum;
+          const months = getCycleMonths(p);
+          return sum + Math.round(amt / months);
         }, 0);
       };
-      
+
       // 연간 결제 총액
       const getYearlyTotal = () => {
         return payments.filter(p => p.status === 'active').reduce((sum, p) => {
           const amt = parseInt(p.amount) || 0;
-          if (p.cycle === 'monthly') return sum + amt * 12;
-          if (p.cycle === 'quarterly') return sum + amt * 4;
-          if (p.cycle === 'semiannual') return sum + amt * 2;
-          if (p.cycle === 'yearly') return sum + amt;
-          return sum;
+          const months = getCycleMonths(p);
+          return sum + Math.round(amt * 12 / months);
         }, 0);
       };
       
@@ -6810,6 +6834,7 @@
       const getFilteredPayments = () => {
         let filtered = [...payments];
         if (filterCategory !== 'all') filtered = filtered.filter(p => p.category === filterCategory);
+        if (filterBrand !== 'all') filtered = filtered.filter(p => String(p.brand) === filterBrand);
         if (filterStatus !== 'all') filtered = filtered.filter(p => p.status === filterStatus);
         
         filtered.sort((a, b) => {
@@ -6829,18 +6854,34 @@
       
       // 폼 리셋
       const resetForm = () => {
-        setForm({ name: '', amount: '', cycle: 'monthly', category: 'saas', paymentDay: '', startDate: '', memo: '', status: 'active', url: '', contractEndDate: '', autoRenewal: false });
+        setForm({ name: '', amount: '', cycleMonths: '1', category: 'saas', brand: '', paymentMethod: '', channelName: '', lastPaymentDate: '', nextPaymentDate: '', memo: '', status: 'active', contractEndDate: '', autoRenewal: false });
         setEditingPayment(null);
       };
-      
+
+      // 다음 결제일 자동 계산
+      const calcNextDate = (lastDate, months) => {
+        if (!lastDate || !months) return '';
+        const last = new Date(lastDate);
+        const next = new Date(last);
+        next.setMonth(next.getMonth() + (parseInt(months) || 1));
+        return next.toISOString().split('T')[0];
+      };
+
       // 저장
       const handleSave = () => {
         if (!form.name.trim() || !form.amount) return;
+        // 다음 결제일 자동계산 (수동입력 없으면)
+        let nextDate = form.nextPaymentDate;
+        if (!nextDate && form.lastPaymentDate && form.cycleMonths) {
+          nextDate = calcNextDate(form.lastPaymentDate, form.cycleMonths);
+        }
         const item = {
           ...form,
           id: editingPayment?.id || `pay-${Date.now()}`,
           amount: parseInt(form.amount) || 0,
-          paymentDay: parseInt(form.paymentDay) || 1,
+          cycleMonths: parseInt(form.cycleMonths) || 1,
+          brand: form.brand ? parseInt(form.brand) || form.brand : '',
+          nextPaymentDate: nextDate,
           completedPayments: editingPayment?.completedPayments || [],
           updatedAt: new Date().toISOString()
         };
@@ -6852,16 +6893,27 @@
         setShowModal(false);
         resetForm();
       };
-      
+
       // 삭제
       const handleDelete = (id) => {
         if (!confirm('이 결제 항목을 삭제하시겠습니까?')) return;
         savePayments(payments.filter(p => p.id !== id));
       };
-      
+
       // 수정
       const handleEdit = (payment) => {
-        setForm({ ...payment, amount: String(payment.amount), paymentDay: String(payment.paymentDay), contractEndDate: payment.contractEndDate || '', autoRenewal: payment.autoRenewal || false });
+        setForm({
+          ...payment,
+          amount: String(payment.amount || ''),
+          cycleMonths: String(payment.cycleMonths || getCycleMonths(payment)),
+          brand: payment.brand ? String(payment.brand) : '',
+          paymentMethod: payment.paymentMethod || '',
+          channelName: payment.channelName || '',
+          lastPaymentDate: payment.lastPaymentDate || payment.startDate || '',
+          nextPaymentDate: payment.nextPaymentDate || '',
+          contractEndDate: payment.contractEndDate || '',
+          autoRenewal: payment.autoRenewal || false
+        });
         setEditingPayment(payment);
         setShowModal(true);
       };
@@ -7106,13 +7158,20 @@
               </div>
               
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* 브랜드 필터 */}
+                <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
+                  <option value="all">전체 브랜드</option>
+                  {BRANDS.filter(b => b.id !== 1).map(b => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+                </select>
+
                 {/* 카테고리 필터 */}
                 <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
                   style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
                   <option value="all">전체 카테고리</option>
                   {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
                 </select>
-                
+
                 {/* 상태 필터 */}
                 <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
                   style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 12, fontWeight: 600, background: 'white', color: '#4E5968' }}>
@@ -7149,11 +7208,12 @@
               /* ─── 리스트 뷰 ─── */
               <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
                 {/* 테이블 헤더 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '44px 2fr 1fr 100px 80px 110px 90px 70px 40px', gap: 6, padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '40px 2fr 90px 90px 100px 70px 100px 80px 60px 36px', gap: 4, padding: '12px 16px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>
                   <span style={{ textAlign: 'center' }}>결제</span>
                   <span>서비스명</span>
-                  <span>카테고리</span>
-                  <span style={{ textAlign: 'right' }}>결제 금액</span>
+                  <span>브랜드</span>
+                  <span>결제수단</span>
+                  <span style={{ textAlign: 'right' }}>금액</span>
                   <span style={{ textAlign: 'center' }}>주기</span>
                   <span style={{ textAlign: 'center' }}>다음 결제일</span>
                   <span style={{ textAlign: 'center' }}>계약만료</span>
@@ -7173,18 +7233,19 @@
                     
                     const paid = isNextPaymentPaid(p);
                     const contractD = getContractDday(p);
+                    const brand = p.brand ? BRANDS.find(b => b.id === parseInt(p.brand)) : null;
 
                     return (
                       <div key={p.id}
                         onClick={() => handleEdit(p)}
                         className="task-row"
-                        style={{ display: 'grid', gridTemplateColumns: '44px 2fr 1fr 100px 80px 110px 90px 70px 40px', gap: 6, padding: '14px 20px', borderBottom: idx < getFilteredPayments().length - 1 ? '1px solid #F2F4F6' : 'none', alignItems: 'center', cursor: 'pointer' }}>
-                        {/* 결제 확인 버튼 */}
+                        style={{ display: 'grid', gridTemplateColumns: '40px 2fr 90px 90px 100px 70px 100px 80px 60px 36px', gap: 4, padding: '12px 16px', borderBottom: idx < getFilteredPayments().length - 1 ? '1px solid #F2F4F6' : 'none', alignItems: 'center', cursor: 'pointer' }}>
+                        {/* 결제 확인 */}
                         <div style={{ textAlign: 'center' }}>
                           {p.status === 'active' && next ? (
                             <button onClick={(e) => handlePaymentComplete(p.id, e)}
                               title={paid ? '결제 완료 취소' : '결제 완료 처리'}
-                              style={{ width: 30, height: 30, borderRadius: 8, border: paid ? '2px solid #059669' : '2px solid #D1D5DB', background: paid ? '#ECFDF5' : 'white', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                              style={{ width: 28, height: 28, borderRadius: 7, border: paid ? '2px solid #059669' : '2px solid #D1D5DB', background: paid ? '#ECFDF5' : 'white', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                               onMouseEnter={e => { if (!paid) { e.currentTarget.style.borderColor = '#059669'; e.currentTarget.style.background = '#F0FDF4'; } }}
                               onMouseLeave={e => { if (!paid) { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.background = 'white'; } }}>
                               {paid ? '✓' : ''}
@@ -7195,21 +7256,33 @@
                         </div>
 
                         {/* 서비스명 */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ width: 34, height: 34, borderRadius: 10, background: cat?.color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: cat?.color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
                             {cat?.emoji}
                           </div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28' }}>{p.name}</div>
-                            {p.memo && <div style={{ fontSize: 11, color: '#8B95A1', marginTop: 1 }}>{p.memo.substring(0, 30)}{p.memo.length > 30 ? '...' : ''}</div>}
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#191F28', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 1 }}>
+                              {p.channelName && <span style={{ fontSize: 10, color: '#6B7684', background: '#F2F4F6', padding: '1px 5px', borderRadius: 3 }}>{p.channelName}</span>}
+                              {p.memo && <span style={{ fontSize: 10, color: '#B0B8C1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.memo.substring(0, 20)}</span>}
+                            </div>
                           </div>
                         </div>
 
-                        {/* 카테고리 */}
+                        {/* 브랜드 */}
                         <div>
-                          <span style={{ padding: '3px 8px', borderRadius: 6, background: cat?.color + '15', color: cat?.color, fontSize: 11, fontWeight: 600 }}>
-                            {cat?.name}
-                          </span>
+                          {brand ? (
+                            <span style={{ padding: '2px 6px', borderRadius: 5, background: brand.color + '15', color: brand.color, fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                              {brand.name}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 10, color: '#D1D5DB' }}>-</span>
+                          )}
+                        </div>
+
+                        {/* 결제수단 */}
+                        <div style={{ fontSize: 11, color: '#4E5968', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.paymentMethod || <span style={{ color: '#D1D5DB' }}>-</span>}
                         </div>
 
                         {/* 금액 */}
@@ -7219,19 +7292,19 @@
 
                         {/* 주기 */}
                         <div style={{ textAlign: 'center' }}>
-                          <span style={{ padding: '3px 10px', borderRadius: 6, background: '#F2F4F6', fontSize: 11, fontWeight: 600, color: '#4E5968' }}>
-                            {cycle?.shortName}
+                          <span style={{ padding: '2px 8px', borderRadius: 5, background: '#F2F4F6', fontSize: 10, fontWeight: 600, color: '#4E5968' }}>
+                            {getCycleLabel(p)}
                           </span>
                         </div>
 
                         {/* 다음 결제일 */}
-                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                           {next ? (
                             <>
                               <span style={{ fontSize: 12, fontWeight: 600, color: paid ? '#059669' : '#191F28', textDecoration: paid ? 'line-through' : 'none' }}>
                                 {next.getMonth() + 1}/{next.getDate()}
                               </span>
-                              {paid ? <span style={{ fontSize: 10, fontWeight: 700, color: '#059669' }}>✓ 완료</span> : <DdayBadge payment={p} />}
+                              {paid ? <span style={{ fontSize: 9, fontWeight: 700, color: '#059669' }}>✓ 완료</span> : <DdayBadge payment={p} />}
                             </>
                           ) : (
                             <span style={{ fontSize: 11, color: '#B0B8C1' }}>-</span>
@@ -7239,27 +7312,27 @@
                         </div>
 
                         {/* 계약 만료 */}
-                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                           {p.contractEndDate ? (
                             <>
                               <span style={{ fontSize: 11, fontWeight: 600, color: contractD !== null && contractD <= 30 ? '#DC2626' : '#4E5968' }}>
                                 {new Date(p.contractEndDate).getMonth() + 1}/{new Date(p.contractEndDate).getDate()}
                               </span>
                               {contractD !== null && contractD <= 30 && (
-                                <span style={{ padding: '1px 6px', borderRadius: 4, background: contractD <= 7 ? '#FEE2E2' : '#EDE9FE', color: contractD <= 7 ? '#DC2626' : '#7C3AED', fontSize: 10, fontWeight: 700 }}>
+                                <span style={{ padding: '1px 5px', borderRadius: 4, background: contractD <= 7 ? '#FEE2E2' : '#EDE9FE', color: contractD <= 7 ? '#DC2626' : '#7C3AED', fontSize: 9, fontWeight: 700 }}>
                                   {contractD <= 0 ? '만료' : `D-${contractD}`}
                                 </span>
                               )}
-                              {p.autoRenewal && <span style={{ fontSize: 9, color: '#059669', fontWeight: 600 }}>자동갱신</span>}
+                              {p.autoRenewal && <span style={{ fontSize: 8, color: '#059669', fontWeight: 600 }}>자동갱신</span>}
                             </>
                           ) : (
-                            <span style={{ fontSize: 11, color: '#D1D5DB' }}>-</span>
+                            <span style={{ fontSize: 10, color: '#D1D5DB' }}>-</span>
                           )}
                         </div>
 
                         {/* 상태 */}
                         <div style={{ textAlign: 'center' }}>
-                          <span style={{ padding: '3px 8px', borderRadius: 6, background: status?.bg, color: status?.color, fontSize: 11, fontWeight: 600 }}>
+                          <span style={{ padding: '2px 6px', borderRadius: 5, background: status?.bg, color: status?.color, fontSize: 10, fontWeight: 600 }}>
                             {status?.name}
                           </span>
                         </div>
@@ -7267,7 +7340,7 @@
                         {/* 삭제 */}
                         <div style={{ textAlign: 'center' }}>
                           <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
-                            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 13, color: '#B0B8C1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            style={{ width: 26, height: 26, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#B0B8C1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#EF4444'; }}
                             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#B0B8C1'; }}>
                             🗑
@@ -7288,11 +7361,8 @@
                         if (catPayments.length === 0) return null;
                         const catMonthly = catPayments.reduce((sum, p) => {
                           const amt = parseInt(p.amount) || 0;
-                          if (p.cycle === 'monthly') return sum + amt;
-                          if (p.cycle === 'quarterly') return sum + Math.round(amt / 3);
-                          if (p.cycle === 'semiannual') return sum + Math.round(amt / 6);
-                          if (p.cycle === 'yearly') return sum + Math.round(amt / 12);
-                          return sum;
+                          const months = getCycleMonths(p);
+                          return sum + Math.round(amt / months);
                         }, 0);
                         return (
                           <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'white', border: '1px solid #E5E8EB' }}>
@@ -7359,74 +7429,116 @@
               style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000 }}>
               <div onClick={e => e.stopPropagation()}
                 style={{ background: 'white', borderRadius: 20, padding: 28, width: 480, maxHeight: '85vh', overflow: 'auto' }}>
-                <h2 style={{ fontSize: 18, fontWeight: 800, color: '#191F28', marginBottom: 24 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, color: '#191F28', marginBottom: 20 }}>
                   {editingPayment ? '✏️ 결제 항목 수정' : '💳 새 결제 항목 등록'}
                 </h2>
-                
+
                 {/* 서비스명 */}
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>서비스명 *</label>
                   <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
-                    placeholder="예: Figma, Adobe CC, AWS" 
-                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                    placeholder="예: 네이버 브랜드검색광고 pc/mo"
+                    style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
                 </div>
-                
-                {/* 카테고리 & 상태 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+
+                {/* 브랜드 & 카테고리 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>브랜드</label>
+                    <select value={form.brand} onChange={e => setForm({...form, brand: e.target.value})}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      <option value="">선택 안 함</option>
+                      {BRANDS.filter(b => b.id !== 1).map(b => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+                    </select>
+                  </div>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>카테고리</label>
                     <select value={form.category} onChange={e => setForm({...form, category: e.target.value})}
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
                       {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 법인카드/결제수단 & 채널명 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제수단 (법인카드)</label>
+                    <input value={form.paymentMethod} onChange={e => setForm({...form, paymentMethod: e.target.value})}
+                      placeholder="예: 국민 08**, 신한 32**"
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>채널명</label>
+                    <input value={form.channelName} onChange={e => setForm({...form, channelName: e.target.value})}
+                      placeholder="예: 네이버, 아임웹"
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                  </div>
+                </div>
+
+                {/* 금액 & 주기 & 상태 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제 금액 (원) * <span style={{ fontSize: 10, color: '#DC2626' }}>+VAT 포함</span></label>
+                    <input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})}
+                      placeholder="예: 4620000"
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제 주기 (개월)</label>
+                    <select value={form.cycleMonths} onChange={e => {
+                      const newCycle = e.target.value;
+                      const autoNext = calcNextDate(form.lastPaymentDate, newCycle);
+                      setForm({...form, cycleMonths: newCycle, nextPaymentDate: form.nextPaymentDate || autoNext});
+                    }}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      {Array.from({length: 36}, (_, i) => i + 1).map(m => (
+                        <option key={m} value={String(m)}>{m}개월{m === 1 ? ' (매월)' : m === 3 ? ' (분기)' : m === 6 ? ' (반기)' : m === 12 ? ' (연간)' : ''}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>상태</label>
                     <select value={form.status} onChange={e => setForm({...form, status: e.target.value})}
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
                       {STATUS_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
                 </div>
-                
-                {/* 금액 & 주기 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+
+                {/* 마지막 결제일 & 다음 결제일 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제 금액 (원) *</label>
-                    <input type="number" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})}
-                      placeholder="예: 15000"
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>마지막 결제일</label>
+                    <input type="date" value={form.lastPaymentDate} onChange={e => {
+                      const lastDate = e.target.value;
+                      const autoNext = calcNextDate(lastDate, form.cycleMonths);
+                      setForm({...form, lastPaymentDate: lastDate, nextPaymentDate: autoNext});
+                    }}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제 주기</label>
-                    <select value={form.cycle} onChange={e => setForm({...form, cycle: e.target.value})}
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }}>
-                      {CYCLE_OPTIONS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-                
-                {/* 결제일 & 시작일 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>결제일 (매월 몇 일)</label>
-                    <input type="number" min="1" max="31" value={form.paymentDay} onChange={e => setForm({...form, paymentDay: e.target.value})}
-                      placeholder="예: 15"
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 14 }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>최초 결제일{form.cycle !== 'monthly' ? ' (분기/반기/연간 기준)' : ''}</label>
-                    <input type="date" value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})}
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      다음 결제일
+                      {form.lastPaymentDate && form.cycleMonths && <span style={{ fontSize: 10, color: '#3182F6', fontWeight: 500 }}>(자동계산)</span>}
+                    </label>
+                    <input type="date" value={form.nextPaymentDate} onChange={e => setForm({...form, nextPaymentDate: e.target.value})}
+                      style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13, background: form.lastPaymentDate ? '#F7F8FA' : 'white' }} />
+                    {form.nextPaymentDate && (() => {
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const next = new Date(form.nextPaymentDate); next.setHours(0, 0, 0, 0);
+                      const d = Math.ceil((next - today) / (1000 * 60 * 60 * 24));
+                      return <div style={{ fontSize: 11, marginTop: 4, color: d <= 3 ? '#DC2626' : d <= 7 ? '#D97706' : '#3182F6', fontWeight: 600 }}>{d < 0 ? `${Math.abs(d)}일 초과` : d === 0 ? 'D-DAY' : `D-${d}`}</div>;
+                    })()}
                   </div>
                 </div>
-                
+
                 {/* 계약 관리 섹션 */}
-                <div style={{ marginBottom: 16, padding: '16px', background: '#F7F8FA', borderRadius: 12, border: '1px solid #E5E8EB' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#4E5968', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ marginBottom: 14, padding: '14px', background: '#F7F8FA', borderRadius: 12, border: '1px solid #E5E8EB' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#4E5968', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                     📋 계약 정보
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 4, display: 'block' }}>계약 만료일</label>
                       <input type="date" value={form.contractEndDate} onChange={e => setForm({...form, contractEndDate: e.target.value})}
@@ -7435,10 +7547,10 @@
                     <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: form.autoRenewal ? '#ECFDF5' : 'white', width: '100%' }}
                         onClick={() => setForm({...form, autoRenewal: !form.autoRenewal})}>
-                        <div style={{ width: 20, height: 20, borderRadius: 6, border: form.autoRenewal ? '2px solid #059669' : '2px solid #D1D5DB', background: form.autoRenewal ? '#059669' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'white', flexShrink: 0 }}>
+                        <div style={{ width: 18, height: 18, borderRadius: 5, border: form.autoRenewal ? '2px solid #059669' : '2px solid #D1D5DB', background: form.autoRenewal ? '#059669' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'white', flexShrink: 0 }}>
                           {form.autoRenewal ? '✓' : ''}
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: form.autoRenewal ? '#059669' : '#6B7684' }}>자동 갱신</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: form.autoRenewal ? '#059669' : '#6B7684' }}>자동 갱신</span>
                       </label>
                     </div>
                   </div>
@@ -7447,7 +7559,7 @@
                     const end = new Date(form.contractEndDate); end.setHours(0, 0, 0, 0);
                     const d = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
                     return (
-                      <div style={{ fontSize: 12, color: d <= 7 ? '#DC2626' : d <= 30 ? '#D97706' : '#059669', fontWeight: 600 }}>
+                      <div style={{ fontSize: 11, color: d <= 7 ? '#DC2626' : d <= 30 ? '#D97706' : '#059669', fontWeight: 600 }}>
                         {d < 0 ? `계약 만료 ${Math.abs(d)}일 경과` : d === 0 ? '오늘 만료' : `만료까지 ${d}일 남음`}
                         {form.autoRenewal && ' (자동 갱신 예정)'}
                       </div>
@@ -7455,40 +7567,32 @@
                   })()}
                 </div>
 
-                {/* URL */}
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>서비스 URL (선택)</label>
-                  <input value={form.url} onChange={e => setForm({...form, url: e.target.value})}
-                    placeholder="https://..."
-                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
-                </div>
-
                 {/* 메모 */}
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 14 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>메모 (선택)</label>
                   <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})}
-                    placeholder="결제 관련 메모..."
-                    rows={2}
-                    style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13, resize: 'vertical' }} />
+                    placeholder="결제 관련 메모... (예: PC 1,800,000원 / MO 2,400,000원)"
+                    rows={3}
+                    style={{ width: '100%', padding: '11px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13, resize: 'vertical' }} />
                 </div>
 
                 {/* 결제 이력 (수정 모드에서만) */}
                 {editingPayment && (editingPayment.completedPayments || []).length > 0 && (
-                  <div style={{ marginBottom: 16, padding: '12px 16px', background: '#F0FDF4', borderRadius: 10, border: '1px solid #BBF7D0' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 8 }}>✓ 결제 이력 ({(editingPayment.completedPayments || []).length}건)</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ marginBottom: 14, padding: '12px 14px', background: '#F0FDF4', borderRadius: 10, border: '1px solid #BBF7D0' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', marginBottom: 6 }}>✓ 결제 이력 ({(editingPayment.completedPayments || []).length}건)</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {(editingPayment.completedPayments || []).sort().reverse().slice(0, 12).map(date => (
-                        <span key={date} style={{ padding: '3px 8px', borderRadius: 6, background: 'white', fontSize: 11, fontWeight: 600, color: '#059669', border: '1px solid #BBF7D0' }}>
+                        <span key={date} style={{ padding: '2px 7px', borderRadius: 5, background: 'white', fontSize: 10, fontWeight: 600, color: '#059669', border: '1px solid #BBF7D0' }}>
                           {date}
                         </span>
                       ))}
                       {(editingPayment.completedPayments || []).length > 12 && (
-                        <span style={{ fontSize: 11, color: '#8B95A1', padding: '3px 0' }}>외 {(editingPayment.completedPayments || []).length - 12}건</span>
+                        <span style={{ fontSize: 10, color: '#8B95A1', padding: '2px 0' }}>외 {(editingPayment.completedPayments || []).length - 12}건</span>
                       )}
                     </div>
                   </div>
                 )}
-                
+
                 {/* 버튼 */}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => { setShowModal(false); resetForm(); }}
