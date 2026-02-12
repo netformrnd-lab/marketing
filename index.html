@@ -14,6 +14,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -7024,6 +7025,43 @@
         );
       };
       
+      // 엑셀 내보내기
+      const handleExportExcel = () => {
+        const filtered = getFilteredPayments();
+        if (filtered.length === 0) { alert('내보낼 데이터가 없습니다.'); return; }
+        const rows = filtered.map(p => {
+          const cat = CATEGORIES.find(c => c.id === p.category);
+          const brand = p.brand ? BRANDS.find(b => b.id === parseInt(p.brand) || String(b.id) === String(p.brand)) : null;
+          const st = STATUS_OPTIONS.find(s => s.id === p.status);
+          const next = getNextPaymentDate(p);
+          return {
+            '서비스명': p.name || '',
+            '카테고리': cat ? cat.name : '',
+            '브랜드': brand ? brand.name : '',
+            '금액(원)': p.amount || 0,
+            '결제주기': getCycleLabel(p),
+            '최근 결제일': p.lastPaymentDate || '',
+            '다음 결제일': next ? next.toISOString().split('T')[0] : '',
+            '계약만료일': p.contractEndDate || '',
+            '자동갱신': p.autoRenewal ? 'O' : '',
+            '상태': st ? st.name : '',
+            '채널/계정': p.channelName || '',
+            '메모': p.memo || ''
+          };
+        });
+        const ws = XLSX.utils.json_to_sheet(rows);
+        // 컬럼 너비 설정
+        ws['!cols'] = [
+          { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+          { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 },
+          { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 24 }
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '결제주기');
+        const today = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(wb, `결제주기_${today}.xlsx`);
+      };
+
       return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F7F8FA', overflow: 'auto' }}>
           {/* 헤더 */}
@@ -7033,10 +7071,16 @@
                 <h1 style={{ fontSize: 22, fontWeight: 800, color: '#191F28', margin: 0 }}>결제 주기 체크</h1>
                 <p style={{ fontSize: 13, color: '#8B95A1', marginTop: 4 }}>정기 결제 일정을 관리하고 놓치지 마세요</p>
               </div>
-              <button onClick={() => { resetForm(); setShowModal(true); }}
-                style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 16 }}>+</span> 결제 항목 등록
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={handleExportExcel}
+                  style={{ padding: '10px 20px', borderRadius: 10, border: '1px solid #E5E8EB', background: 'white', color: '#4E5968', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14 }}>📥</span> 엑셀 내보내기
+                </button>
+                <button onClick={() => { resetForm(); setShowModal(true); }}
+                  style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#3182F6', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 16 }}>+</span> 결제 항목 등록
+                </button>
+              </div>
             </div>
             
             {/* 요약 카드 */}
