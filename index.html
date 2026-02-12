@@ -6702,7 +6702,8 @@
       // 폼 상태
       const [form, setForm] = useState({
         name: '', amount: '', cycle: 'monthly', category: 'saas',
-        paymentDay: '', startDate: '', memo: '', status: 'active', url: ''
+        paymentDay: '', startDate: '', memo: '', status: 'active', url: '',
+        contractEndDate: '', autoRenewal: false
       });
       
       // Firebase 키
@@ -6828,7 +6829,7 @@
       
       // 폼 리셋
       const resetForm = () => {
-        setForm({ name: '', amount: '', cycle: 'monthly', category: 'saas', paymentDay: '', startDate: '', memo: '', status: 'active', url: '' });
+        setForm({ name: '', amount: '', cycle: 'monthly', category: 'saas', paymentDay: '', startDate: '', memo: '', status: 'active', url: '', contractEndDate: '', autoRenewal: false });
         setEditingPayment(null);
       };
       
@@ -6840,6 +6841,7 @@
           id: editingPayment?.id || `pay-${Date.now()}`,
           amount: parseInt(form.amount) || 0,
           paymentDay: parseInt(form.paymentDay) || 1,
+          completedPayments: editingPayment?.completedPayments || [],
           updatedAt: new Date().toISOString()
         };
         if (editingPayment) {
@@ -6859,7 +6861,7 @@
       
       // 수정
       const handleEdit = (payment) => {
-        setForm({ ...payment, amount: String(payment.amount), paymentDay: String(payment.paymentDay) });
+        setForm({ ...payment, amount: String(payment.amount), paymentDay: String(payment.paymentDay), contractEndDate: payment.contractEndDate || '', autoRenewal: payment.autoRenewal || false });
         setEditingPayment(payment);
         setShowModal(true);
       };
@@ -6896,7 +6898,62 @@
         return days;
       };
       
+      // 다음 결제 완료 여부 체크
+      const isNextPaymentPaid = (payment) => {
+        const next = getNextPaymentDate(payment);
+        if (!next) return false;
+        const key = next.toISOString().split('T')[0];
+        return (payment.completedPayments || []).includes(key);
+      };
+
+      // 결제 완료/취소 토글
+      const handlePaymentComplete = (paymentId, e) => {
+        e.stopPropagation();
+        const payment = payments.find(p => p.id === paymentId);
+        if (!payment) return;
+        const next = getNextPaymentDate(payment);
+        if (!next) return;
+        const key = next.toISOString().split('T')[0];
+        const completed = payment.completedPayments || [];
+        if (completed.includes(key)) {
+          savePayments(payments.map(p => p.id === paymentId ? { ...p, completedPayments: completed.filter(d => d !== key) } : p));
+        } else {
+          savePayments(payments.map(p => p.id === paymentId ? { ...p, completedPayments: [...completed, key] } : p));
+        }
+      };
+
+      // 미결제 (결제일 지났는데 완료 안 한 항목)
+      const getOverduePayments = () => {
+        return payments.filter(p => {
+          if (p.status !== 'active') return false;
+          const dday = getDday(p);
+          if (dday === null) return false;
+          // D-day가 0 이하 = 오늘이거나 이미 지남 → 결제 완료 안 했으면 미결제
+          if (dday <= 0 && !isNextPaymentPaid(p)) return true;
+          return false;
+        });
+      };
+
+      // 계약 만료 D-day
+      const getContractDday = (payment) => {
+        if (!payment.contractEndDate) return null;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const end = new Date(payment.contractEndDate); end.setHours(0, 0, 0, 0);
+        return Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+      };
+
+      // 계약 만료 임박 (30일 이내)
+      const getExpiringContracts = () => {
+        return payments.filter(p => {
+          if (p.status === 'cancelled') return false;
+          const d = getContractDday(p);
+          return d !== null && d >= 0 && d <= 30;
+        }).sort((a, b) => (a.contractEndDate || '').localeCompare(b.contractEndDate || ''));
+      };
+
       const upcoming = getUpcoming();
+      const overdue = getOverduePayments();
+      const expiringContracts = getExpiringContracts();
       const activeCount = payments.filter(p => p.status === 'active').length;
       
       // D-day 배지
@@ -6931,7 +6988,7 @@
             </div>
             
             {/* 요약 카드 */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 20 }}>
               {/* 활성 구독 */}
               <div style={{ background: 'white', borderRadius: 14, padding: '18px 20px', border: '1px solid #E5E8EB' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -6940,7 +6997,7 @@
                 </div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: '#191F28' }}>{activeCount}<span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>건</span></div>
               </div>
-              
+
               {/* 월 예상 비용 */}
               <div style={{ background: 'white', borderRadius: 14, padding: '18px 20px', border: '1px solid #E5E8EB' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -6949,7 +7006,7 @@
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: '#191F28' }}>₩{formatMoney(getMonthlyTotal())}</div>
               </div>
-              
+
               {/* 연간 예상 비용 */}
               <div style={{ background: 'white', borderRadius: 14, padding: '18px 20px', border: '1px solid #E5E8EB' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -6958,31 +7015,79 @@
                 </div>
                 <div style={{ fontSize: 22, fontWeight: 800, color: '#191F28' }}>₩{formatMoney(getYearlyTotal())}</div>
               </div>
-              
+
+              {/* 미결제 */}
+              <div style={{ background: overdue.length > 0 ? '#FEF2F2' : 'white', borderRadius: 14, padding: '18px 20px', border: overdue.length > 0 ? '1px solid #FECACA' : '1px solid #E5E8EB' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: overdue.length > 0 ? '#FECACA' : '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>🚨</span>
+                  미결제
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: overdue.length > 0 ? '#DC2626' : '#191F28' }}>{overdue.length}<span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>건</span></div>
+              </div>
+
               {/* 다가오는 결제 */}
               <div style={{ background: upcoming.length > 0 ? '#FFFBEB' : 'white', borderRadius: 14, padding: '18px 20px', border: upcoming.length > 0 ? '1px solid #FDE68A' : '1px solid #E5E8EB' }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 20, height: 20, borderRadius: 6, background: upcoming.length > 0 ? '#FDE68A' : '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>🔔</span>
+                  <span style={{ width: 20, height: 20, borderRadius: 6, background: upcoming.length > 0 ? '#FDE68A' : '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>🔔</span>
                   7일 내 결제
                 </div>
                 <div style={{ fontSize: 26, fontWeight: 800, color: upcoming.length > 0 ? '#D97706' : '#191F28' }}>{upcoming.length}<span style={{ fontSize: 13, fontWeight: 600, color: '#8B95A1' }}>건</span></div>
               </div>
             </div>
             
+            {/* 미결제 경고 바 */}
+            {overdue.length > 0 && (
+              <div style={{ background: 'white', borderRadius: 12, padding: '14px 20px', marginBottom: 12, border: '1px solid #FECACA', display: 'flex', alignItems: 'center', gap: 12, overflowX: 'auto' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#DC2626', whiteSpace: 'nowrap' }}>🚨 미결제</span>
+                <div style={{ width: 1, height: 20, background: '#E5E8EB', flexShrink: 0 }} />
+                {overdue.map(p => {
+                  const cat = CATEGORIES.find(c => c.id === p.category);
+                  return (
+                    <div key={p.id} onClick={() => handleEdit(p)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#FEF2F2', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: 14 }}>{cat?.emoji}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{p.name}</span>
+                      <span style={{ fontSize: 11, color: '#8B95A1' }}>₩{formatMoney(p.amount)}</span>
+                      <span style={{ padding: '2px 8px', borderRadius: 6, background: '#FEE2E2', color: '#DC2626', fontSize: 11, fontWeight: 700 }}>결제 필요</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 계약 만료 임박 알림 바 */}
+            {expiringContracts.length > 0 && (
+              <div style={{ background: 'white', borderRadius: 12, padding: '14px 20px', marginBottom: 12, border: '1px solid #DDD6FE', display: 'flex', alignItems: 'center', gap: 12, overflowX: 'auto' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>📋 계약만료 임박</span>
+                <div style={{ width: 1, height: 20, background: '#E5E8EB', flexShrink: 0 }} />
+                {expiringContracts.map(p => {
+                  const d = getContractDday(p);
+                  return (
+                    <div key={p.id} onClick={() => handleEdit(p)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#F5F3FF', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{p.name}</span>
+                      <span style={{ padding: '2px 8px', borderRadius: 6, background: d <= 7 ? '#FEE2E2' : '#EDE9FE', color: d <= 7 ? '#DC2626' : '#7C3AED', fontSize: 11, fontWeight: 700 }}>
+                        {d === 0 ? '오늘 만료' : d < 0 ? `${Math.abs(d)}일 경과` : `D-${d}`}
+                      </span>
+                      {p.autoRenewal && <span style={{ padding: '2px 6px', borderRadius: 4, background: '#ECFDF5', color: '#059669', fontSize: 10, fontWeight: 600 }}>자동갱신</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* 다가오는 결제 알림 바 */}
             {upcoming.length > 0 && (
-              <div style={{ background: 'white', borderRadius: 12, padding: '14px 20px', marginBottom: 20, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 12, overflowX: 'auto' }}>
+              <div style={{ background: 'white', borderRadius: 12, padding: '14px 20px', marginBottom: 12, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 12, overflowX: 'auto' }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: '#D97706', whiteSpace: 'nowrap' }}>⚡ 곧 결제</span>
                 <div style={{ width: 1, height: 20, background: '#E5E8EB', flexShrink: 0 }} />
                 {upcoming.map(p => {
                   const cat = CATEGORIES.find(c => c.id === p.category);
-                  const next = getNextPaymentDate(p);
+                  const paid = isNextPaymentPaid(p);
                   return (
-                    <div key={p.id} onClick={() => handleEdit(p)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#FFFBEB', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <div key={p.id} onClick={() => handleEdit(p)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: paid ? '#ECFDF5' : '#FFFBEB', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: paid ? 0.7 : 1 }}>
                       <span style={{ fontSize: 14 }}>{cat?.emoji}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>{p.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28', textDecoration: paid ? 'line-through' : 'none' }}>{p.name}</span>
                       <span style={{ fontSize: 11, color: '#8B95A1' }}>₩{formatMoney(p.amount)}</span>
-                      <DdayBadge payment={p} />
+                      {paid ? <span style={{ padding: '2px 8px', borderRadius: 6, background: '#ECFDF5', color: '#059669', fontSize: 11, fontWeight: 700 }}>✓ 완료</span> : <DdayBadge payment={p} />}
                     </div>
                   );
                 })}
@@ -7044,12 +7149,14 @@
               /* ─── 리스트 뷰 ─── */
               <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E5E8EB', overflow: 'hidden' }}>
                 {/* 테이블 헤더 */}
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 100px 100px 90px 70px 60px', gap: 8, padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '44px 2fr 1fr 100px 80px 110px 90px 70px 40px', gap: 6, padding: '12px 20px', background: '#F7F8FA', borderBottom: '1px solid #E5E8EB', fontSize: 11, fontWeight: 600, color: '#8B95A1' }}>
+                  <span style={{ textAlign: 'center' }}>결제</span>
                   <span>서비스명</span>
                   <span>카테고리</span>
                   <span style={{ textAlign: 'right' }}>결제 금액</span>
-                  <span style={{ textAlign: 'center' }}>결제 주기</span>
+                  <span style={{ textAlign: 'center' }}>주기</span>
                   <span style={{ textAlign: 'center' }}>다음 결제일</span>
+                  <span style={{ textAlign: 'center' }}>계약만료</span>
                   <span style={{ textAlign: 'center' }}>상태</span>
                   <span></span>
                 </div>
@@ -7064,11 +7171,29 @@
                     const next = getNextPaymentDate(p);
                     const dday = getDday(p);
                     
+                    const paid = isNextPaymentPaid(p);
+                    const contractD = getContractDday(p);
+
                     return (
                       <div key={p.id}
                         onClick={() => handleEdit(p)}
                         className="task-row"
-                        style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 100px 100px 90px 70px 60px', gap: 8, padding: '14px 20px', borderBottom: idx < getFilteredPayments().length - 1 ? '1px solid #F2F4F6' : 'none', alignItems: 'center', cursor: 'pointer' }}>
+                        style={{ display: 'grid', gridTemplateColumns: '44px 2fr 1fr 100px 80px 110px 90px 70px 40px', gap: 6, padding: '14px 20px', borderBottom: idx < getFilteredPayments().length - 1 ? '1px solid #F2F4F6' : 'none', alignItems: 'center', cursor: 'pointer' }}>
+                        {/* 결제 확인 버튼 */}
+                        <div style={{ textAlign: 'center' }}>
+                          {p.status === 'active' && next ? (
+                            <button onClick={(e) => handlePaymentComplete(p.id, e)}
+                              title={paid ? '결제 완료 취소' : '결제 완료 처리'}
+                              style={{ width: 30, height: 30, borderRadius: 8, border: paid ? '2px solid #059669' : '2px solid #D1D5DB', background: paid ? '#ECFDF5' : 'white', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                              onMouseEnter={e => { if (!paid) { e.currentTarget.style.borderColor = '#059669'; e.currentTarget.style.background = '#F0FDF4'; } }}
+                              onMouseLeave={e => { if (!paid) { e.currentTarget.style.borderColor = '#D1D5DB'; e.currentTarget.style.background = 'white'; } }}>
+                              {paid ? '✓' : ''}
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#D1D5DB' }}>-</span>
+                          )}
+                        </div>
+
                         {/* 서비스명 */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <div style={{ width: 34, height: 34, borderRadius: 10, background: cat?.color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
@@ -7079,47 +7204,66 @@
                             {p.memo && <div style={{ fontSize: 11, color: '#8B95A1', marginTop: 1 }}>{p.memo.substring(0, 30)}{p.memo.length > 30 ? '...' : ''}</div>}
                           </div>
                         </div>
-                        
+
                         {/* 카테고리 */}
                         <div>
                           <span style={{ padding: '3px 8px', borderRadius: 6, background: cat?.color + '15', color: cat?.color, fontSize: 11, fontWeight: 600 }}>
                             {cat?.name}
                           </span>
                         </div>
-                        
+
                         {/* 금액 */}
                         <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#191F28' }}>
                           ₩{formatMoney(p.amount)}
                         </div>
-                        
+
                         {/* 주기 */}
                         <div style={{ textAlign: 'center' }}>
                           <span style={{ padding: '3px 10px', borderRadius: 6, background: '#F2F4F6', fontSize: 11, fontWeight: 600, color: '#4E5968' }}>
-                            {cycle?.name}
+                            {cycle?.shortName}
                           </span>
                         </div>
-                        
+
                         {/* 다음 결제일 */}
                         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                           {next ? (
                             <>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: '#191F28' }}>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: paid ? '#059669' : '#191F28', textDecoration: paid ? 'line-through' : 'none' }}>
                                 {next.getMonth() + 1}/{next.getDate()}
                               </span>
-                              <DdayBadge payment={p} />
+                              {paid ? <span style={{ fontSize: 10, fontWeight: 700, color: '#059669' }}>✓ 완료</span> : <DdayBadge payment={p} />}
                             </>
                           ) : (
                             <span style={{ fontSize: 11, color: '#B0B8C1' }}>-</span>
                           )}
                         </div>
-                        
+
+                        {/* 계약 만료 */}
+                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                          {p.contractEndDate ? (
+                            <>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: contractD !== null && contractD <= 30 ? '#DC2626' : '#4E5968' }}>
+                                {new Date(p.contractEndDate).getMonth() + 1}/{new Date(p.contractEndDate).getDate()}
+                              </span>
+                              {contractD !== null && contractD <= 30 && (
+                                <span style={{ padding: '1px 6px', borderRadius: 4, background: contractD <= 7 ? '#FEE2E2' : '#EDE9FE', color: contractD <= 7 ? '#DC2626' : '#7C3AED', fontSize: 10, fontWeight: 700 }}>
+                                  {contractD <= 0 ? '만료' : `D-${contractD}`}
+                                </span>
+                              )}
+                              {p.autoRenewal && <span style={{ fontSize: 9, color: '#059669', fontWeight: 600 }}>자동갱신</span>}
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#D1D5DB' }}>-</span>
+                          )}
+                        </div>
+
                         {/* 상태 */}
                         <div style={{ textAlign: 'center' }}>
                           <span style={{ padding: '3px 8px', borderRadius: 6, background: status?.bg, color: status?.color, fontSize: 11, fontWeight: 600 }}>
                             {status?.name}
                           </span>
                         </div>
-                        
+
                         {/* 삭제 */}
                         <div style={{ textAlign: 'center' }}>
                           <button onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
@@ -7277,22 +7421,73 @@
                   </div>
                 </div>
                 
+                {/* 계약 관리 섹션 */}
+                <div style={{ marginBottom: 16, padding: '16px', background: '#F7F8FA', borderRadius: 12, border: '1px solid #E5E8EB' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#4E5968', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📋 계약 정보
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#8B95A1', marginBottom: 4, display: 'block' }}>계약 만료일</label>
+                      <input type="date" value={form.contractEndDate} onChange={e => setForm({...form, contractEndDate: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E5E8EB', fontSize: 13, background: 'white' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 14px', borderRadius: 8, border: '1px solid #E5E8EB', background: form.autoRenewal ? '#ECFDF5' : 'white', width: '100%' }}
+                        onClick={() => setForm({...form, autoRenewal: !form.autoRenewal})}>
+                        <div style={{ width: 20, height: 20, borderRadius: 6, border: form.autoRenewal ? '2px solid #059669' : '2px solid #D1D5DB', background: form.autoRenewal ? '#059669' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'white', flexShrink: 0 }}>
+                          {form.autoRenewal ? '✓' : ''}
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: form.autoRenewal ? '#059669' : '#6B7684' }}>자동 갱신</span>
+                      </label>
+                    </div>
+                  </div>
+                  {form.contractEndDate && (() => {
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                    const end = new Date(form.contractEndDate); end.setHours(0, 0, 0, 0);
+                    const d = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+                    return (
+                      <div style={{ fontSize: 12, color: d <= 7 ? '#DC2626' : d <= 30 ? '#D97706' : '#059669', fontWeight: 600 }}>
+                        {d < 0 ? `계약 만료 ${Math.abs(d)}일 경과` : d === 0 ? '오늘 만료' : `만료까지 ${d}일 남음`}
+                        {form.autoRenewal && ' (자동 갱신 예정)'}
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 {/* URL */}
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>서비스 URL (선택)</label>
                   <input value={form.url} onChange={e => setForm({...form, url: e.target.value})}
-                    placeholder="https://..." 
+                    placeholder="https://..."
                     style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13 }} />
                 </div>
-                
+
                 {/* 메모 */}
-                <div style={{ marginBottom: 24 }}>
+                <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#4E5968', marginBottom: 6, display: 'block' }}>메모 (선택)</label>
                   <textarea value={form.memo} onChange={e => setForm({...form, memo: e.target.value})}
                     placeholder="결제 관련 메모..."
                     rows={2}
                     style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #E5E8EB', fontSize: 13, resize: 'vertical' }} />
                 </div>
+
+                {/* 결제 이력 (수정 모드에서만) */}
+                {editingPayment && (editingPayment.completedPayments || []).length > 0 && (
+                  <div style={{ marginBottom: 16, padding: '12px 16px', background: '#F0FDF4', borderRadius: 10, border: '1px solid #BBF7D0' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#166534', marginBottom: 8 }}>✓ 결제 이력 ({(editingPayment.completedPayments || []).length}건)</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {(editingPayment.completedPayments || []).sort().reverse().slice(0, 12).map(date => (
+                        <span key={date} style={{ padding: '3px 8px', borderRadius: 6, background: 'white', fontSize: 11, fontWeight: 600, color: '#059669', border: '1px solid #BBF7D0' }}>
+                          {date}
+                        </span>
+                      ))}
+                      {(editingPayment.completedPayments || []).length > 12 && (
+                        <span style={{ fontSize: 11, color: '#8B95A1', padding: '3px 0' }}>외 {(editingPayment.completedPayments || []).length - 12}건</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 {/* 버튼 */}
                 <div style={{ display: 'flex', gap: 8 }}>
