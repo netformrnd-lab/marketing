@@ -8812,60 +8812,90 @@
         setTasks(prev => {
           const task = prev.find(t => t.id === id);
           if (!task) return prev;
-          
+
           const newCompleted = !task.completed;
-          
+          let updated;
+
           // 하위업무인 경우 (parentTaskId가 없는 업무)
           if (!task.parentTaskId) {
             // 서브태스크들 찾기
             const subtasks = prev.filter(t => t.parentTaskId === id);
-            
+
             if (subtasks.length > 0) {
               // 하위업무 체크 → 모든 서브태스크도 같이 체크/해제
-              return prev.map(t => {
+              updated = prev.map(t => {
                 if (t.id === id) return { ...t, completed: newCompleted };
                 if (t.parentTaskId === id) return { ...t, completed: newCompleted };
                 return t;
               });
+              // Firebase에 즉시 저장
+              updated.filter(t => t.id === id || t.parentTaskId === id).forEach(t => FirebaseService.save('tasks', t.id, t));
+              return updated;
             }
           }
-          
+
           // 서브태스크인 경우 (parentTaskId가 있는 업무)
           if (task.parentTaskId) {
-            const updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
-            
+            updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+
             // 모든 서브태스크가 완료되었는지 확인
             const siblings = updated.filter(t => t.parentTaskId === task.parentTaskId);
             const allCompleted = siblings.every(t => t.completed);
-            
+
             // 부모 하위업무도 업데이트
-            return updated.map(t => {
+            updated = updated.map(t => {
               if (t.id === task.parentTaskId) {
                 return { ...t, completed: allCompleted };
               }
               return t;
             });
+            // Firebase에 즉시 저장
+            FirebaseService.save('tasks', id, updated.find(t => t.id === id));
+            const parent = updated.find(t => t.id === task.parentTaskId);
+            if (parent) FirebaseService.save('tasks', parent.id, parent);
+            return updated;
           }
-          
+
           // 일반 업무 (서브태스크 없는 하위업무)
-          return prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+          updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+          // Firebase에 즉시 저장
+          FirebaseService.save('tasks', id, updated.find(t => t.id === id));
+          return updated;
         });
       };
-      const toggleBookmark = (id) => setTasks(prev => prev.map(t => t.id === id ? { ...t, bookmark: !t.bookmark } : t));
+      const toggleBookmark = (id) => {
+        setTasks(prev => {
+          const updated = prev.map(t => t.id === id ? { ...t, bookmark: !t.bookmark } : t);
+          const task = updated.find(t => t.id === id);
+          if (task) FirebaseService.save('tasks', id, task);
+          return updated;
+        });
+      };
       // 휴지통으로 이동 (deletedAt 추가)
-      const deleteTask = (id) => setTasks(prev => prev.map(t => 
-        (t.id === id || t.parentTaskId === id) ? { ...t, deletedAt: Date.now() } : t
-      ));
+      const deleteTask = (id) => {
+        setTasks(prev => {
+          const now = Date.now();
+          const updated = prev.map(t =>
+            (t.id === id || t.parentTaskId === id) ? { ...t, deletedAt: now } : t
+          );
+          // Firebase에 즉시 저장
+          updated.filter(t => t.id === id || t.parentTaskId === id).forEach(t => FirebaseService.save('tasks', t.id, t));
+          return updated;
+        });
+      };
       const requestDeleteTask = (task) => setConfirmDelete({ type: 'task', id: task.id, title: task.title });
-      const addTask = (task) => { 
-        const dt = tasks.filter(t => t.date === task.date && t.memberId === currentUser.id); 
-        const mx = Math.max(...dt.map(t => t.order), -1); 
+      const addTask = (task) => {
+        const dt = tasks.filter(t => t.date === task.date && t.memberId === currentUser.id);
+        const mx = Math.max(...dt.map(t => t.order), -1);
         const parentId = Date.now();
         const { newSubtasks, updatedSubtasks, ...taskData } = task;
-        
+
         // 메인 업무 추가
         const newTask = { ...taskData, id: parentId, memberId: currentUser.id, order: mx + 1, completed: false, bookmark: task.bookmark || false, note: task.note || '' };
-        
+
+        // Firebase에 즉시 저장
+        FirebaseService.save('tasks', newTask.id, newTask);
+
         // 하위업무가 있으면 함께 추가
         if (newSubtasks && newSubtasks.length > 0) {
           const subtasksToAdd = newSubtasks.map((st, idx) => ({
@@ -8880,6 +8910,7 @@
             bookmark: false,
             note: ''
           }));
+          subtasksToAdd.forEach(st => FirebaseService.save('tasks', st.id, st));
           setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
         } else {
           setTasks(prev => [...prev, newTask]);
@@ -8887,17 +8918,17 @@
       };
       const updateTask = (task) => {
         const { newSubtasks, updatedSubtasks, ...taskData } = task;
-        
+
         setTasks(prev => {
           let updated = prev.map(t => t.id === task.id ? { ...t, ...taskData } : t);
-          
+
           // 기존 하위업무 업데이트
           if (updatedSubtasks && updatedSubtasks.length > 0) {
             updatedSubtasks.forEach(st => {
               updated = updated.map(t => t.id === st.id ? { ...t, title: st.title } : t);
             });
           }
-          
+
           // 새 하위업무 추가
           if (newSubtasks && newSubtasks.length > 0) {
             const newSubtasksToAdd = newSubtasks.map((st, idx) => ({
@@ -8914,12 +8945,29 @@
             }));
             updated = [...updated, ...newSubtasksToAdd];
           }
-          
+
+          // Firebase에 즉시 저장
+          const taskToSave = updated.find(t => t.id === task.id);
+          if (taskToSave) FirebaseService.save('tasks', taskToSave.id, taskToSave);
+          if (updatedSubtasks) updatedSubtasks.forEach(st => {
+            const s = updated.find(t => t.id === st.id);
+            if (s) FirebaseService.save('tasks', s.id, s);
+          });
+          if (newSubtasks && newSubtasks.length > 0) {
+            updated.filter(t => t.parentTaskId === task.id && !prev.find(p => p.id === t.id)).forEach(st => FirebaseService.save('tasks', st.id, st));
+          }
+
           return updated;
         });
       };
       const updateTaskFields = (id, fields) => {
-        setTasks(prev => prev.map(t => t.id === id ? { ...t, ...fields } : t));
+        setTasks(prev => {
+          const updated = prev.map(t => t.id === id ? { ...t, ...fields } : t);
+          // Firebase에 즉시 저장
+          const task = updated.find(t => t.id === id);
+          if (task) FirebaseService.save('tasks', id, task);
+          return updated;
+        });
         setSelectedTaskForNote(prev => prev ? { ...prev, ...fields } : null);
       };
       
@@ -9006,10 +9054,18 @@
         newTasks.splice(targetIdx, 0, draggedTask);
         
         const updates = newTasks.map((t, i) => ({ id: t.id, order: i }));
-        setTasks(prev => prev.map(t => {
-          const update = updates.find(u => u.id === t.id);
-          return update ? { ...t, order: update.order } : t;
-        }));
+        setTasks(prev => {
+          const result = prev.map(t => {
+            const update = updates.find(u => u.id === t.id);
+            return update ? { ...t, order: update.order } : t;
+          });
+          // Firebase에 즉시 저장
+          updates.forEach(u => {
+            const task = result.find(t => t.id === u.id);
+            if (task) FirebaseService.save('tasks', task.id, task);
+          });
+          return result;
+        });
         setDraggedTask(null);
       };
       const handleDragEnd = () => { setDraggedTask(null); setDragOverId(null); };
@@ -9991,26 +10047,34 @@
                         if (calendarDragTask && calendarDragTask.date !== date) {
                           setTasks(prev => {
                             const draggedTask = calendarDragTask;
-                            
+                            let updated;
+
                             // 부모 업무인 경우
                             if (!draggedTask.parentTaskId) {
                               // 같은 날에 있는 서브태스크들
-                              const sameDaySubtasks = prev.filter(t => 
+                              const sameDaySubtasks = prev.filter(t =>
                                 t.parentTaskId === draggedTask.id && t.date === draggedTask.date
                               );
-                              
+
                               // 서브태스크가 1개만 남아있으면 함께 이동
                               if (sameDaySubtasks.length === 1) {
-                                return prev.map(t => {
+                                updated = prev.map(t => {
                                   if (t.id === draggedTask.id) return { ...t, date };
                                   if (t.id === sameDaySubtasks[0].id) return { ...t, date };
                                   return t;
                                 });
+                                // Firebase에 즉시 저장
+                                FirebaseService.save('tasks', draggedTask.id, { ...draggedTask, date });
+                                FirebaseService.save('tasks', sameDaySubtasks[0].id, { ...sameDaySubtasks[0], date });
+                                return updated;
                               }
                             }
-                            
+
                             // 그 외의 경우: 드래그한 것만 이동
-                            return prev.map(t => t.id === draggedTask.id ? { ...t, date } : t);
+                            updated = prev.map(t => t.id === draggedTask.id ? { ...t, date } : t);
+                            // Firebase에 즉시 저장
+                            FirebaseService.save('tasks', draggedTask.id, { ...draggedTask, date });
+                            return updated;
                           });
                         }
                         // 루틴 업무 드래그 (주간/월간만)
@@ -10384,7 +10448,10 @@
                   completed: false,
                   createdAt: new Date().toISOString()
                 };
-                
+
+                // Firebase에 즉시 저장
+                FirebaseService.save('tasks', newTask.id, newTask);
+
                 if (newSubtasks && newSubtasks.length > 0) {
                   const subtasksToAdd = newSubtasks.map((st, idx) => ({
                     id: parentId + idx + 1,
@@ -10398,6 +10465,7 @@
                     bookmark: false,
                     note: ''
                   }));
+                  subtasksToAdd.forEach(st => FirebaseService.save('tasks', st.id, st));
                   setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
                 } else {
                   setTasks(prev => [...prev, newTask]);
