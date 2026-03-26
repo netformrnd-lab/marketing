@@ -828,6 +828,7 @@
       // 초기 데이터 개수 저장 (첫 로드 시점) - 저장 보호용
       const initialDataCount = useRef({ projects: 0, tasks: 0, fixedTasks: 0, teamRequests: 0 });
       const isFirstSave = useRef({ projects: true, tasks: true, fixedTasks: true, teamRequests: true });
+      const prevTasksRef = useRef(null); // 업무 diff 저장용
       // 실시간 동기화에서 받은 업데이트인지 구분 (무한 저장 방지)
       const isRemoteUpdate = useRef({ projects: false, tasks: false, fixedTasks: false, teamRequests: false, meetings: false });
       
@@ -1091,11 +1092,11 @@
         FirebaseService.syncCollection('projects', projects);
       }, [projects, isLoading, dataLoaded, currentUser]);
       
-      // 업무 변경 시 Firebase에 저장
+      // 업무 변경 시 Firebase에 저장 (diff 기반 - 변경된 항목만 개별 저장)
       useEffect(() => {
         if (!currentUser || !dataLoaded || isLoading) return;
 
-        // 리모트 업데이트면 저장 스킵 (isFirstSave도 함께 해제)
+        // 리모트 업데이트면 저장 스킵 (상태만 추적)
         if (isRemoteUpdate.current.tasks) {
           isRemoteUpdate.current.tasks = false;
           if (isFirstSave.current.tasks) {
@@ -1103,6 +1104,7 @@
             isFirstSave.current.tasks = false;
             console.log('[Firebase] 업무 초기 개수 (리모트):', tasks.length);
           }
+          prevTasksRef.current = tasks;
           return;
         }
 
@@ -1110,15 +1112,46 @@
           initialDataCount.current.tasks = tasks.length;
           isFirstSave.current.tasks = false;
           console.log('[Firebase] 업무 초기 개수:', tasks.length);
+          // 초기 로드 시 Firebase에 데이터가 없으면 전체 저장
+          if (tasks.length > 0 && !prevTasksRef.current) {
+            FirebaseService.syncCollection('tasks', tasks);
+          }
+          prevTasksRef.current = tasks;
+          return;
         }
 
-        if (tasks.length === 0) {
+        if (tasks.length === 0 && (!prevTasksRef.current || prevTasksRef.current.length === 0)) {
           console.warn('[Firebase] 업무 저장 차단: 빈 배열');
           return;
         }
 
-        console.log('[Firebase] 업무 저장:', tasks.length, '개');
-        FirebaseService.syncCollection('tasks', tasks);
+        // diff 기반 저장: 변경/추가된 항목만 개별 저장, 삭제된 항목만 개별 삭제
+        const prev = prevTasksRef.current || [];
+        const currentMap = new Map(tasks.map(t => [t.id, t]));
+        const prevMap = new Map(prev.map(t => [t.id, t]));
+
+        let savedCount = 0;
+        tasks.forEach(t => {
+          const prevTask = prevMap.get(t.id);
+          if (!prevTask || JSON.stringify(prevTask) !== JSON.stringify(t)) {
+            FirebaseService.save('tasks', t.id, t);
+            savedCount++;
+          }
+        });
+
+        let deletedCount = 0;
+        prev.forEach(t => {
+          if (!currentMap.has(t.id)) {
+            FirebaseService.delete('tasks', t.id);
+            deletedCount++;
+          }
+        });
+
+        if (savedCount > 0 || deletedCount > 0) {
+          console.log(`[Firebase] 업무 diff 저장: ${savedCount}개 저장, ${deletedCount}개 삭제`);
+        }
+
+        prevTasksRef.current = tasks;
       }, [tasks, isLoading, dataLoaded, currentUser]);
       
       // 루틴 업무 변경 시 Firebase에 저장
@@ -10447,7 +10480,6 @@
                   createdAt: new Date().toISOString()
                 };
 
-                // Firebase 저장은 useEffect의 syncCollection이 처리
                 if (newSubtasks && newSubtasks.length > 0) {
                   const subtasksToAdd = newSubtasks.map((st, idx) => ({
                     id: parentId + idx + 1,
@@ -10462,8 +10494,13 @@
                     note: ''
                   }));
                   setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
+                  // Firebase에 즉시 저장
+                  FirebaseService.save('tasks', newTask.id, newTask);
+                  subtasksToAdd.forEach(st => FirebaseService.save('tasks', st.id, st));
                 } else {
                   setTasks(prev => [...prev, newTask]);
+                  // Firebase에 즉시 저장
+                  FirebaseService.save('tasks', newTask.id, newTask);
                 }
                 setCalendarAddTaskDate(null);
               }}
