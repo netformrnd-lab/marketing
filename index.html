@@ -877,6 +877,7 @@
             
             // 업무 로드
             const loadedTasks = await FirebaseService.getAll('tasks');
+            console.log('[Firebase] 📦 업무 로드:', loadedTasks ? loadedTasks.length + '개' : 'null', loadedTasks ? loadedTasks.map(t => t.id).slice(-5) : []);
             if (loadedTasks && loadedTasks.length > 0) {
               setTasks(loadedTasks.map(t => ({ ...t, id: Number(t.id) || t.id })));
             } else if (loadedTasks && loadedTasks.length === 0) {
@@ -8915,7 +8916,7 @@
         });
       };
       const requestDeleteTask = (task) => setConfirmDelete({ type: 'task', id: task.id, title: task.title });
-      const addTask = (task) => {
+      const addTask = async (task) => {
         const dt = tasks.filter(t => t.date === task.date && t.memberId === currentUser.id);
         const mx = Math.max(...dt.map(t => t.order), -1);
         const parentId = Date.now();
@@ -8939,13 +8940,30 @@
             note: ''
           }));
           setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
-          // Firebase에 즉시 저장
-          FirebaseService.save('tasks', newTask.id, newTask);
-          subtasksToAdd.forEach(st => FirebaseService.save('tasks', st.id, st));
+          // Firebase에 즉시 저장 (await로 완료 보장)
+          try {
+            await FirebaseService.save('tasks', newTask.id, newTask);
+            await Promise.all(subtasksToAdd.map(st => FirebaseService.save('tasks', st.id, st)));
+            console.log('[Firebase] ✅ 업무 저장 완료:', newTask.title, '(ID:', newTask.id, ')');
+          } catch (e) {
+            console.error('[Firebase] ❌ 업무 저장 실패:', e);
+          }
         } else {
           setTasks(prev => [...prev, newTask]);
-          // Firebase에 즉시 저장
-          FirebaseService.save('tasks', newTask.id, newTask);
+          // Firebase에 즉시 저장 (await로 완료 보장)
+          try {
+            await FirebaseService.save('tasks', newTask.id, newTask);
+            console.log('[Firebase] ✅ 업무 저장 완료:', newTask.title, '(ID:', newTask.id, ')');
+            // 저장 검증: Firebase에서 다시 읽어서 확인
+            const verify = await database.ref('tasks/' + newTask.id).once('value');
+            if (verify.val()) {
+              console.log('[Firebase] ✅ 저장 검증 성공 - Firebase에 데이터 존재');
+            } else {
+              console.error('[Firebase] ❌ 저장 검증 실패 - Firebase에 데이터 없음!');
+            }
+          } catch (e) {
+            console.error('[Firebase] ❌ 업무 저장 실패:', e);
+          }
         }
       };
       const updateTask = (task) => {
