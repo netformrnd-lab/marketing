@@ -463,8 +463,8 @@
       { id: 2, title: '이메일 확인 및 회신', projectId: null, routineType: 'daily', completedDates: [], memberId: 1 },
       { id: 3, title: '주간 회의 준비', projectId: 1, routineType: 'weekly', completedDates: [], memberId: 1 },
       { id: 4, title: '팀 미팅 참석', projectId: null, routineType: 'weekly', completedDates: [], memberId: 1 },
-      { id: 5, title: '월간 보고서 작성', projectId: 1, routineType: 'monthly', completedDates: [], memberId: 1 },
-      { id: 6, title: '월간 KPI 점검', projectId: null, routineType: 'monthly', completedDates: [], memberId: 1 },
+      { id: 5, title: '월간 보고서 작성', projectId: 1, routineType: 'longterm', completedDates: [], memberId: 1 },
+      { id: 6, title: '월간 KPI 점검', projectId: null, routineType: 'longterm', completedDates: [], memberId: 1 },
     ];
 
     // ============ 로그인 화면 ============
@@ -7640,16 +7640,14 @@
         return todayDate.getDay() === (t.displayDayOfWeek ?? 1);
       });
       
-      // 월간 루틴
-      const monthStart = todayStr.slice(0, 7) + '-01';
-      const monthlyRoutines = fixedTasks.filter(t => 
-        t.routineType === 'monthly' && 
-        todayDate.getDate() === (t.displayDayOfMonth ?? 1) &&
-        !t.completedDates?.includes(monthStart)
+      // 장기 프로젝트
+      const longtermProjects = fixedTasks.filter(t =>
+        t.routineType === 'longterm' &&
+        !t.completedDates?.includes('longterm')
       );
-      
+
       // 전체 오늘 할 일 (미완료만)
-      const totalTodayItems = todayTasks.length + dailyRoutines.length + weeklyRoutines.length + monthlyRoutines.length;
+      const totalTodayItems = todayTasks.length + dailyRoutines.length + weeklyRoutines.length + longtermProjects.length;
       
       // 브랜드별 프로젝트 현황
       const brandStats = BRANDS.map(brand => {
@@ -8675,7 +8673,7 @@
       // 루틴 필터 상태 (캘린더 뷰에서 표시/숨김)
       const [showDailyRoutine, setShowDailyRoutine] = useState(true);
       const [showWeeklyRoutine, setShowWeeklyRoutine] = useState(true);
-      const [showMonthlyRoutine, setShowMonthlyRoutine] = useState(true);
+      const [showLongtermProject, setShowLongtermProject] = useState(true);
       
       // 캘린더 뷰 선택된 업무 (상세 모달용)
       const [calendarSelectedTask, setCalendarSelectedTask] = useState(null);
@@ -8792,7 +8790,7 @@
       const getMonthStart = (dateStr) => dateStr.slice(0, 7) + '-01';
       const getCompletionKey = (routineType, dateStr) => {
         if (routineType === 'weekly') return getWeekStart(dateStr);
-        if (routineType === 'monthly') return getMonthStart(dateStr);
+        if (routineType === 'longterm') return 'longterm';
         return dateStr;
       };
       
@@ -9012,7 +9010,7 @@
       };
       const dailyTasks = useMemo(() => getFilteredRoutineTasks('daily'), [fixedTasks, searchQuery, selectedProject]);
       const weeklyTasks = useMemo(() => getFilteredRoutineTasks('weekly'), [fixedTasks, searchQuery, selectedProject]);
-      const monthlyTasks = useMemo(() => getFilteredRoutineTasks('monthly'), [fixedTasks, searchQuery, selectedProject]);
+      const longtermTasks = useMemo(() => getFilteredRoutineTasks('longterm'), [fixedTasks, searchQuery, selectedProject]);
       
       // 루틴 타입별 완료 카운트
       const getRoutineStats = (type) => {
@@ -9227,7 +9225,7 @@
                     const routineTypes = [
                       { type: 'daily', label: '☀️ 일일 루틴', items: fixedTasks.filter(t => t.routineType === 'daily') },
                       { type: 'weekly', label: '📋 주간 루틴', items: fixedTasks.filter(t => t.routineType === 'weekly') },
-                      { type: 'monthly', label: '📅 월간 루틴', items: fixedTasks.filter(t => t.routineType === 'monthly') }
+                      { type: 'longterm', label: '🎯 장기 프로젝트', items: fixedTasks.filter(t => t.routineType === 'longterm') }
                     ].filter(r => r.items.length > 0);
 
                     // 타팀요청 업무 수집
@@ -9564,21 +9562,21 @@
                   onItemClick={(task) => setCalendarSelectedRoutine({ ...task, date: selectedDate })}
                 />
                 
-                {/* 월간 루틴 */}
-                <RoutineSection 
-                  title="월간 루틴" 
-                  type="monthly"
-                  icon="📆"
+                {/* 장기 프로젝트 */}
+                <RoutineSection
+                  title="장기 프로젝트"
+                  type="longterm"
+                  icon="🎯"
                   bgColor="#F3E8FF"
                   borderColor="#D8B4FE"
                   textColor="#6B21A8"
                   buttonColor="#9333EA"
-                  tasks={monthlyTasks}
-                  stats={getRoutineStats('monthly')}
+                  tasks={longtermTasks}
+                  stats={getRoutineStats('longterm')}
                   isCompleted={isRoutineCompleted}
-                  onToggle={(id) => toggleFixedComplete(id, 'monthly')}
+                  onToggle={(id) => toggleFixedComplete(id, 'longterm')}
                   onDelete={requestDeleteFixedTask}
-                  onAdd={() => { setAddRoutineType('monthly'); setShowAddFixedModal(true); }}
+                  onAdd={() => { setAddRoutineType('longterm'); setShowAddFixedModal(true); }}
                   onItemClick={(task) => setCalendarSelectedRoutine({ ...task, date: selectedDate })}
                 />
               </div>
@@ -9938,19 +9936,19 @@
                     >
                       📅 주간
                     </button>
-                    <button 
-                      onClick={() => setShowMonthlyRoutine(!showMonthlyRoutine)}
-                      style={{ 
+                    <button
+                      onClick={() => setShowLongtermProject(!showLongtermProject)}
+                      style={{
                         display: 'flex', alignItems: 'center', gap: 4,
-                        padding: '5px 10px', borderRadius: 6, 
-                        border: showMonthlyRoutine ? '1px solid #6B7684' : '1px solid #E5E8EB',
-                        background: showMonthlyRoutine ? '#F7F8FA' : 'white',
-                        fontSize: 12, fontWeight: 500, 
-                        color: showMonthlyRoutine ? '#191F28' : '#B0B8C1',
+                        padding: '5px 10px', borderRadius: 6,
+                        border: showLongtermProject ? '1px solid #6B7684' : '1px solid #E5E8EB',
+                        background: showLongtermProject ? '#F7F8FA' : 'white',
+                        fontSize: 12, fontWeight: 500,
+                        color: showLongtermProject ? '#191F28' : '#B0B8C1',
                         cursor: 'pointer'
                       }}
                     >
-                      📆 월간
+                      🎯 장기
                     </button>
                   </div>
                 </div>
@@ -10089,8 +10087,8 @@
                                   : t
                               ));
                             }
-                          } else if (routine.routineType === 'monthly') {
-                            // 월간 루틴: 표시 날짜 변경 (1-31)
+                          } else if (routine.routineType === 'longterm') {
+                            // 장기 프로젝트: 표시 날짜 변경 (1-31)
                             const newDayOfMonth = new Date(date).getDate();
                             setFixedTasks(prev => prev.map(t => t.id === routine.id ? { ...t, displayDayOfMonth: newDayOfMonth } : t));
                           }
@@ -10240,13 +10238,12 @@
                             );
                           })}
                           
-                          {/* 월간 루틴 (설정된 날짜에 표시, 기본값 1일) */}
-                          {showMonthlyRoutine && fixedTasks.filter(t => t.routineType === 'monthly' && !t.deletedAt && day === (t.displayDayOfMonth ?? 1)).map(task => {
-                            const monthStart = date.slice(0, 7) + '-01';
-                            const isCompleted = (task.completedDates || []).includes(monthStart);
+                          {/* 장기 프로젝트 (설정된 날짜에 표시, 기본값 1일) */}
+                          {showLongtermProject && fixedTasks.filter(t => t.routineType === 'longterm' && !t.deletedAt && day === (t.displayDayOfMonth ?? 1)).map(task => {
+                            const isCompleted = (task.completedDates || []).includes('longterm');
                             return (
                               <div 
-                                key={`monthly-${task.id}`}
+                                key={`longterm-${task.id}`}
                                 draggable={true}
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData('text/plain', `routine-${task.id}`);
@@ -10270,13 +10267,13 @@
                                 }}
                               >
                                 <button 
-                                  onClick={(e) => { e.stopPropagation(); toggleFixedComplete(task.id, 'monthly'); }}
+                                  onClick={(e) => { e.stopPropagation(); toggleFixedComplete(task.id, 'longterm'); }}
                                   style={{ width: 18, height: 18, borderRadius: 4, border: isCompleted ? 'none' : '2px solid #8B95A1', background: isCompleted ? '#8B95A1' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer', padding: 0 }}
                                 >
                                   {isCompleted && <Icon name="check" size={12} color="white" />}
                                 </button>
                                 <span style={{ fontSize: 12, color: isCompleted ? '#8B95A1' : '#191F28', textDecoration: isCompleted ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>
-                                  📆 {task.title}
+                                  🎯 {task.title}
                                 </span>
                               </div>
                             );
@@ -10568,8 +10565,8 @@
                 toggleFixedComplete(id, type);
                 const completionKey = calendarSelectedRoutine.routineType === 'weekly' 
                   ? getWeekStart(calendarSelectedRoutine.date) 
-                  : calendarSelectedRoutine.routineType === 'monthly' 
-                    ? calendarSelectedRoutine.date.slice(0, 7) + '-01' 
+                  : calendarSelectedRoutine.routineType === 'longterm'
+                    ? 'longterm'
                     : calendarSelectedRoutine.date;
                 const isCompleted = (calendarSelectedRoutine.completedDates || []).includes(completionKey);
                 setCalendarSelectedRoutine(prev => ({
@@ -10617,13 +10614,13 @@
       const typeInfo = {
         daily: { label: '일일 루틴', icon: '☀️', color: '#F59E0B', bgColor: '#FEF3C7' },
         weekly: { label: '주간 루틴', icon: '📅', color: '#3B82F6', bgColor: '#DBEAFE' },
-        monthly: { label: '월간 루틴', icon: '📆', color: '#9333EA', bgColor: '#F3E8FF' },
+        longterm: { label: '장기 프로젝트', icon: '🎯', color: '#9333EA', bgColor: '#F3E8FF' },
       };
       const info = typeInfo[routine.routineType] || typeInfo.daily;
-      const completionKey = routine.routineType === 'weekly' 
-        ? getWeekStart(routine.date) 
-        : routine.routineType === 'monthly' 
-          ? routine.date.slice(0, 7) + '-01' 
+      const completionKey = routine.routineType === 'weekly'
+        ? getWeekStart(routine.date)
+        : routine.routineType === 'longterm'
+          ? 'longterm'
           : routine.date;
       const isCompleted = (routine.completedDates || []).includes(completionKey);
       const proj = BRANDS.find(p => p.id === routine.projectId);
@@ -10932,7 +10929,7 @@
       const typeInfo = {
         daily: { label: '일일 루틴 업무', icon: '☀️', color: '#F59E0B' },
         weekly: { label: '주간 루틴 업무', icon: '📅', color: '#3B82F6' },
-        monthly: { label: '월간 루틴 업무', icon: '📆', color: '#9333EA' },
+        longterm: { label: '장기 프로젝트 업무', icon: '🎯', color: '#9333EA' },
       };
       const info = typeInfo[routineType] || typeInfo.daily;
       
@@ -17181,8 +17178,8 @@
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {trashedFixedTasks.map(task => {
                         const daysLeft = getDaysLeft(task.deletedAt);
-                        const typeLabel = { daily: '일일', weekly: '주간', monthly: '월간' }[task.routineType] || '';
-                        const typeColor = { daily: '#F59E0B', weekly: '#3B82F6', monthly: '#9333EA' }[task.routineType] || '#8B95A1';
+                        const typeLabel = { daily: '일일', weekly: '주간', longterm: '장기' }[task.routineType] || '';
+                        const typeColor = { daily: '#F59E0B', weekly: '#3B82F6', longterm: '#9333EA' }[task.routineType] || '#8B95A1';
                         return (
                           <div key={task.id} style={{ 
                             display: 'flex', alignItems: 'center', gap: 12,
@@ -17191,7 +17188,7 @@
                           }}>
                             <div style={{ flex: 1 }}>
                               <p style={{ fontSize: 15, fontWeight: 500, color: '#191F28' }}>{task.title}</p>
-                              <span style={{ fontSize: 11, color: typeColor, background: `${typeColor}15`, padding: '2px 8px', borderRadius: 4, marginTop: 4, display: 'inline-block' }}>{typeLabel} 루틴</span>
+                              <span style={{ fontSize: 11, color: typeColor, background: `${typeColor}15`, padding: '2px 8px', borderRadius: 4, marginTop: 4, display: 'inline-block' }}>{typeLabel}{task.routineType === 'longterm' ? ' 프로젝트' : ' 루틴'}</span>
                             </div>
                             <span style={{ 
                               fontSize: 12, color: daysLeft <= 1 ? '#F04452' : '#8B95A1',
@@ -17583,7 +17580,7 @@
           
           fixedWithCompletions.forEach(ft => {
             const ftNodeId = nid();
-            const routineLabel = { daily: '매일', weekly: '주간', monthly: '월간' }[ft.routineType] || '';
+            const routineLabel = { daily: '매일', weekly: '주간', longterm: '장기' }[ft.routineType] || '';
             nodes.push({ id: ftNodeId, type: 'task', text: `[${routineLabel}] ${ft.title}`, color: '#8B5CF6', x: 0, y: 0 });
             conns.push({ from: diaryCatId, to: ftNodeId });
           });
