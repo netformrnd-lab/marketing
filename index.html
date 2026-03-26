@@ -8891,7 +8891,7 @@
         // 메인 업무 추가
         const newTask = { ...taskData, id: parentId, memberId: currentUser.id, order: mx + 1, completed: false, bookmark: task.bookmark || false, note: task.note || '' };
 
-        // 하위업무가 있으면 함께 추가 (Firebase 저장은 useEffect의 syncCollection이 처리)
+        // 하위업무가 있으면 함께 추가
         if (newSubtasks && newSubtasks.length > 0) {
           const subtasksToAdd = newSubtasks.map((st, idx) => ({
             id: parentId + idx + 1,
@@ -8906,8 +8906,13 @@
             note: ''
           }));
           setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
+          // Firebase에 즉시 저장
+          FirebaseService.save('tasks', newTask.id, newTask);
+          subtasksToAdd.forEach(st => FirebaseService.save('tasks', st.id, st));
         } else {
           setTasks(prev => [...prev, newTask]);
+          // Firebase에 즉시 저장
+          FirebaseService.save('tasks', newTask.id, newTask);
         }
       };
       const updateTask = (task) => {
