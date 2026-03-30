@@ -997,7 +997,16 @@
         const unsubscribeTasks = FirebaseService.onDataChange('tasks', (updatedTasks) => {
           if (updatedTasks) {
             isRemoteUpdate.current.tasks = true;
-            setTasks(updatedTasks.map(t => ({ ...t, id: Number(t.id) || t.id })));
+            const firebaseTasks = updatedTasks.map(t => ({ ...t, id: Number(t.id) || t.id }));
+            setTasks(prev => {
+              // Firebase에서 온 데이터로 교체하되, 로컬에만 있는 최근 추가 업무는 보존
+              const firebaseIds = new Set(firebaseTasks.map(t => t.id));
+              const recentLocal = prev.filter(t =>
+                !firebaseIds.has(t.id) && !t.deletedAt &&
+                typeof t.id === 'number' && (Date.now() - t.id) < 30000
+              );
+              return [...firebaseTasks, ...recentLocal];
+            });
             console.log('[Firebase] 업무 실시간 업데이트:', updatedTasks.length, '개');
           }
         });
@@ -1143,6 +1152,11 @@
         let deletedCount = 0;
         prev.forEach(t => {
           if (!currentMap.has(t.id)) {
+            // 최근 추가된 업무(30초 이내)는 삭제하지 않음 (race condition 방지)
+            if (typeof t.id === 'number' && (Date.now() - t.id) < 30000) {
+              console.log('[Firebase] 최근 추가 업무 삭제 방지:', t.id, t.title);
+              return;
+            }
             FirebaseService.delete('tasks', t.id);
             deletedCount++;
           }
