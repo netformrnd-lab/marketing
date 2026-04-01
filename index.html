@@ -1303,142 +1303,6 @@
         }
       };
       
-      // ===== 중앙 업무 CRUD 함수 (모든 탭에서 공통 사용) =====
-      const addTask = async (task) => {
-        const taskMemberId = task.memberId || currentUser.id;
-        const dt = tasks.filter(t => t.date === task.date && t.memberId === taskMemberId);
-        const mx = Math.max(...dt.map(t => t.order), -1);
-        const parentId = Date.now();
-        const { newSubtasks, updatedSubtasks, ...taskData } = task;
-
-        const newTask = { ...taskData, id: parentId, memberId: taskMemberId, order: mx + 1, completed: false, bookmark: task.bookmark || false, note: task.note || '' };
-
-        if (newSubtasks && newSubtasks.length > 0) {
-          const subtasksToAdd = newSubtasks.map((st, idx) => ({
-            id: parentId + idx + 1,
-            parentTaskId: parentId,
-            title: st.title,
-            projectId: task.projectId,
-            date: task.date,
-            memberId: taskMemberId,
-            order: idx,
-            completed: false,
-            bookmark: false,
-            note: ''
-          }));
-          setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
-          try {
-            await FirebaseService.save('tasks', newTask.id, newTask);
-            await Promise.all(subtasksToAdd.map(st => FirebaseService.save('tasks', st.id, st)));
-            console.log('[Firebase] ✅ 업무 저장 완료:', newTask.title, '(ID:', newTask.id, ')');
-          } catch (e) {
-            console.error('[Firebase] ❌ 업무 저장 실패:', e);
-          }
-        } else {
-          setTasks(prev => [...prev, newTask]);
-          try {
-            await FirebaseService.save('tasks', newTask.id, newTask);
-            console.log('[Firebase] ✅ 업무 저장 완료:', newTask.title, '(ID:', newTask.id, ')');
-          } catch (e) {
-            console.error('[Firebase] ❌ 업무 저장 실패:', e);
-          }
-        }
-      };
-
-      const deleteTask = (id) => {
-        setTasks(prev => {
-          const now = Date.now();
-          const updated = prev.map(t =>
-            (t.id === id || t.parentTaskId === id) ? { ...t, deletedAt: now } : t
-          );
-          updated.filter(t => t.id === id || t.parentTaskId === id).forEach(t => FirebaseService.save('tasks', t.id, t));
-          return updated;
-        });
-      };
-
-      const updateTask = (task) => {
-        const { newSubtasks, updatedSubtasks, ...taskData } = task;
-
-        setTasks(prev => {
-          let updated = prev.map(t => t.id === task.id ? { ...t, ...taskData } : t);
-
-          if (updatedSubtasks && updatedSubtasks.length > 0) {
-            updatedSubtasks.forEach(st => {
-              updated = updated.map(t => t.id === st.id ? { ...t, title: st.title } : t);
-            });
-          }
-
-          if (newSubtasks && newSubtasks.length > 0) {
-            const newSubtasksToAdd = newSubtasks.map((st, idx) => ({
-              id: Date.now() + idx + 1,
-              parentTaskId: task.id,
-              title: st.title,
-              projectId: task.projectId,
-              date: task.date,
-              memberId: task.memberId || currentUser.id,
-              order: idx,
-              completed: false,
-              bookmark: false,
-              note: ''
-            }));
-            updated = [...updated, ...newSubtasksToAdd];
-          }
-
-          const taskToSave = updated.find(t => t.id === task.id);
-          if (taskToSave) FirebaseService.save('tasks', taskToSave.id, taskToSave);
-          if (updatedSubtasks) updatedSubtasks.forEach(st => {
-            const s = updated.find(t => t.id === st.id);
-            if (s) FirebaseService.save('tasks', s.id, s);
-          });
-          if (newSubtasks && newSubtasks.length > 0) {
-            updated.filter(t => t.parentTaskId === task.id && !prev.find(p => p.id === t.id)).forEach(st => FirebaseService.save('tasks', st.id, st));
-          }
-
-          return updated;
-        });
-      };
-
-      const toggleTaskComplete = (id) => {
-        setTasks(prev => {
-          const task = prev.find(t => t.id === id);
-          if (!task) return prev;
-
-          const newCompleted = !task.completed;
-          let updated;
-
-          if (!task.parentTaskId) {
-            const subtasks = prev.filter(t => t.parentTaskId === id);
-            if (subtasks.length > 0) {
-              updated = prev.map(t => {
-                if (t.id === id) return { ...t, completed: newCompleted };
-                if (t.parentTaskId === id) return { ...t, completed: newCompleted };
-                return t;
-              });
-              updated.filter(t => t.id === id || t.parentTaskId === id).forEach(t => FirebaseService.save('tasks', t.id, t));
-              return updated;
-            }
-          }
-
-          if (task.parentTaskId) {
-            updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
-            const siblings = updated.filter(t => t.parentTaskId === task.parentTaskId);
-            const allCompleted = siblings.every(t => t.completed);
-            updated = updated.map(t => {
-              if (t.id === task.parentTaskId) return { ...t, completed: allCompleted };
-              return t;
-            });
-            FirebaseService.save('tasks', id, updated.find(t => t.id === id));
-            const parent = updated.find(t => t.id === task.parentTaskId);
-            if (parent) FirebaseService.save('tasks', parent.id, parent);
-            return updated;
-          }
-
-          updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
-          FirebaseService.save('tasks', id, updated.find(t => t.id === id));
-          return updated;
-        });
-      };
-
       // useMemo 선언
       const totalUnread = useMemo(() => projects.reduce((sum, p) => sum + Math.max(0, (p.comments || []).length - (readComments[p.id] || 0)), 0), [projects, readComments]);
 
@@ -1801,16 +1665,16 @@
               <HomeTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} fixedTasks={fixedTasks.filter(t => !t.deletedAt && t.memberId === currentUser.id)} currentUser={currentUser} setActiveTab={setActiveTab} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'worklog' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <WorkLogTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} fixedTasks={fixedTasks.filter(t => !t.deletedAt && t.memberId === currentUser.id)} setFixedTasks={setFixedTasks} projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} teamRequests={teamRequests.filter(r => !r.deletedAt)} setTeamRequests={setTeamRequests} addTask={addTask} deleteTask={deleteTask} updateTask={updateTask} toggleTaskComplete={toggleTaskComplete} />
+              <WorkLogTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} fixedTasks={fixedTasks.filter(t => !t.deletedAt && t.memberId === currentUser.id)} setFixedTasks={setFixedTasks} projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} teamRequests={teamRequests.filter(r => !r.deletedAt)} setTeamRequests={setTeamRequests} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'project' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <ProjectTab projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} projectTemplates={projectTemplates} meetings={meetings} setMeetings={setMeetings} kpiBrands={kpiBrands} addTask={addTask} deleteTask={deleteTask} updateTask={updateTask} toggleTaskComplete={toggleTaskComplete} />
+              <ProjectTab projects={projects.filter(p => !p.deletedAt)} setProjects={setProjects} tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} currentUser={currentUser} readComments={readComments} setReadComments={setReadComments} projectTemplates={projectTemplates} meetings={meetings} setMeetings={setMeetings} kpiBrands={kpiBrands} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'teamrequest' ? 'flex' : 'none', flexDirection: 'column' }}>
               <TeamRequestTab teamRequests={teamRequests} setTeamRequests={setTeamRequests} currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'calendar' ? 'flex' : 'none', flexDirection: 'column' }}>
-              <CalendarTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} deleteTask={deleteTask} updateTask={updateTask} toggleTaskComplete={toggleTaskComplete} />
+              <CalendarTab tasks={tasks.filter(t => !t.deletedAt)} setTasks={setTasks} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} />
             </div>
             <div style={{ flex: 1, display: activeTab === 'growthboard' ? 'flex' : 'none', flexDirection: 'column' }}>
               <GrowthBoardTab tasks={tasks.filter(t => !t.deletedAt)} projects={projects.filter(p => !p.deletedAt)} currentUser={currentUser} kpiBrands={kpiBrands} fixedTasks={fixedTasks.filter(t => !t.deletedAt)} teamRequests={teamRequests.filter(r => !r.deletedAt)} meetings={meetings} />
@@ -1879,10 +1743,10 @@
               onDeleteComment={(cid) => {
                 setProjects(prev => prev.map(p => p.id === globalSelectedProject.id ? { ...p, comments: (p.comments || []).filter(c => c.id !== cid) } : p));
               }} 
-              onAddTask={(t) => addTask({ ...t, projectId: globalSelectedProject.id })}
-              onToggleTask={(taskId) => toggleTaskComplete(taskId)}
-              onDeleteTask={(task) => deleteTask(typeof task === 'object' ? task.id : task)}
-              onUpdateTask={(task) => updateTask(task)}
+              onAddTask={(t) => setTasks(prev => [...prev, t])} 
+              onToggleTask={(taskId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t))} 
+              onDeleteTask={(taskId) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, deletedAt: new Date().toISOString() } : t))} 
+              onUpdateTask={(taskId, updates) => setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))} 
               onUpdateProject={(updated) => {
                 setProjects(prev => prev.map(p => p.id === updated.id ? updated : p));
                 setGlobalSelectedProject(updated);
@@ -8829,7 +8693,7 @@
     }
 
     // ============ 업무일지 탭 ============
-    function WorkLogTab({ tasks, setTasks, currentUser, fixedTasks, setFixedTasks, projects, setProjects, teamRequests, setTeamRequests, addTask, deleteTask, updateTask, toggleTaskComplete }) {
+    function WorkLogTab({ tasks, setTasks, currentUser, fixedTasks, setFixedTasks, projects, setProjects, teamRequests, setTeamRequests }) {
       const [viewMode, setViewMode] = useState('worklog'); // 'worklog' | 'calendar'
       const [selectedDate, setSelectedDate] = useState(today);
       const [currentMonth, setCurrentMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() });
@@ -8990,7 +8854,61 @@
       }, [myTasks, selectedDate, fixedTasks]);
 
       const moveMonth = (dir) => setCurrentMonth(prev => { let m = prev.month + (dir === 'prev' ? -1 : 1), y = prev.year; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } return { year: y, month: m }; });
-      const toggleComplete = toggleTaskComplete;
+      const toggleComplete = (id) => {
+        setTasks(prev => {
+          const task = prev.find(t => t.id === id);
+          if (!task) return prev;
+
+          const newCompleted = !task.completed;
+          let updated;
+
+          // 하위업무인 경우 (parentTaskId가 없는 업무)
+          if (!task.parentTaskId) {
+            // 서브태스크들 찾기
+            const subtasks = prev.filter(t => t.parentTaskId === id);
+
+            if (subtasks.length > 0) {
+              // 하위업무 체크 → 모든 서브태스크도 같이 체크/해제
+              updated = prev.map(t => {
+                if (t.id === id) return { ...t, completed: newCompleted };
+                if (t.parentTaskId === id) return { ...t, completed: newCompleted };
+                return t;
+              });
+              // Firebase에 즉시 저장
+              updated.filter(t => t.id === id || t.parentTaskId === id).forEach(t => FirebaseService.save('tasks', t.id, t));
+              return updated;
+            }
+          }
+
+          // 서브태스크인 경우 (parentTaskId가 있는 업무)
+          if (task.parentTaskId) {
+            updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+
+            // 모든 서브태스크가 완료되었는지 확인
+            const siblings = updated.filter(t => t.parentTaskId === task.parentTaskId);
+            const allCompleted = siblings.every(t => t.completed);
+
+            // 부모 하위업무도 업데이트
+            updated = updated.map(t => {
+              if (t.id === task.parentTaskId) {
+                return { ...t, completed: allCompleted };
+              }
+              return t;
+            });
+            // Firebase에 즉시 저장
+            FirebaseService.save('tasks', id, updated.find(t => t.id === id));
+            const parent = updated.find(t => t.id === task.parentTaskId);
+            if (parent) FirebaseService.save('tasks', parent.id, parent);
+            return updated;
+          }
+
+          // 일반 업무 (서브태스크 없는 하위업무)
+          updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+          // Firebase에 즉시 저장
+          FirebaseService.save('tasks', id, updated.find(t => t.id === id));
+          return updated;
+        });
+      };
       const toggleBookmark = (id) => {
         setTasks(prev => {
           const updated = prev.map(t => t.id === id ? { ...t, bookmark: !t.bookmark } : t);
@@ -8999,7 +8917,113 @@
           return updated;
         });
       };
+      // 휴지통으로 이동 (deletedAt 추가)
+      const deleteTask = (id) => {
+        setTasks(prev => {
+          const now = Date.now();
+          const updated = prev.map(t =>
+            (t.id === id || t.parentTaskId === id) ? { ...t, deletedAt: now } : t
+          );
+          // Firebase에 즉시 저장
+          updated.filter(t => t.id === id || t.parentTaskId === id).forEach(t => FirebaseService.save('tasks', t.id, t));
+          return updated;
+        });
+      };
       const requestDeleteTask = (task) => setConfirmDelete({ type: 'task', id: task.id, title: task.title });
+      const addTask = async (task) => {
+        const dt = tasks.filter(t => t.date === task.date && t.memberId === currentUser.id);
+        const mx = Math.max(...dt.map(t => t.order), -1);
+        const parentId = Date.now();
+        const { newSubtasks, updatedSubtasks, ...taskData } = task;
+
+        // 메인 업무 추가
+        const newTask = { ...taskData, id: parentId, memberId: currentUser.id, order: mx + 1, completed: false, bookmark: task.bookmark || false, note: task.note || '' };
+
+        // 하위업무가 있으면 함께 추가
+        if (newSubtasks && newSubtasks.length > 0) {
+          const subtasksToAdd = newSubtasks.map((st, idx) => ({
+            id: parentId + idx + 1,
+            parentTaskId: parentId,
+            title: st.title,
+            projectId: task.projectId,
+            date: task.date,
+            memberId: currentUser.id,
+            order: idx,
+            completed: false,
+            bookmark: false,
+            note: ''
+          }));
+          setTasks(prev => [...prev, newTask, ...subtasksToAdd]);
+          // Firebase에 즉시 저장 (await로 완료 보장)
+          try {
+            await FirebaseService.save('tasks', newTask.id, newTask);
+            await Promise.all(subtasksToAdd.map(st => FirebaseService.save('tasks', st.id, st)));
+            console.log('[Firebase] ✅ 업무 저장 완료:', newTask.title, '(ID:', newTask.id, ')');
+          } catch (e) {
+            console.error('[Firebase] ❌ 업무 저장 실패:', e);
+          }
+        } else {
+          setTasks(prev => [...prev, newTask]);
+          // Firebase에 즉시 저장 (await로 완료 보장)
+          try {
+            await FirebaseService.save('tasks', newTask.id, newTask);
+            console.log('[Firebase] ✅ 업무 저장 완료:', newTask.title, '(ID:', newTask.id, ')');
+            // 저장 검증: Firebase에서 다시 읽어서 확인
+            const verify = await database.ref('tasks/' + newTask.id).once('value');
+            if (verify.val()) {
+              console.log('[Firebase] ✅ 저장 검증 성공 - Firebase에 데이터 존재');
+            } else {
+              console.error('[Firebase] ❌ 저장 검증 실패 - Firebase에 데이터 없음!');
+            }
+          } catch (e) {
+            console.error('[Firebase] ❌ 업무 저장 실패:', e);
+          }
+        }
+      };
+      const updateTask = (task) => {
+        const { newSubtasks, updatedSubtasks, ...taskData } = task;
+
+        setTasks(prev => {
+          let updated = prev.map(t => t.id === task.id ? { ...t, ...taskData } : t);
+
+          // 기존 하위업무 업데이트
+          if (updatedSubtasks && updatedSubtasks.length > 0) {
+            updatedSubtasks.forEach(st => {
+              updated = updated.map(t => t.id === st.id ? { ...t, title: st.title } : t);
+            });
+          }
+
+          // 새 하위업무 추가
+          if (newSubtasks && newSubtasks.length > 0) {
+            const newSubtasksToAdd = newSubtasks.map((st, idx) => ({
+              id: Date.now() + idx + 1,
+              parentTaskId: task.id,
+              title: st.title,
+              projectId: task.projectId,
+              date: task.date,
+              memberId: currentUser.id,
+              order: idx,
+              completed: false,
+              bookmark: false,
+              note: ''
+            }));
+            updated = [...updated, ...newSubtasksToAdd];
+          }
+
+          // Firebase에 즉시 저장
+          const taskToSave = updated.find(t => t.id === task.id);
+          if (taskToSave) FirebaseService.save('tasks', taskToSave.id, taskToSave);
+          if (updatedSubtasks) updatedSubtasks.forEach(st => {
+            const s = updated.find(t => t.id === st.id);
+            if (s) FirebaseService.save('tasks', s.id, s);
+          });
+          if (newSubtasks && newSubtasks.length > 0) {
+            updated.filter(t => t.parentTaskId === task.id && !prev.find(p => p.id === t.id)).forEach(st => FirebaseService.save('tasks', st.id, st));
+          }
+
+          return updated;
+        });
+      };
       const updateTaskFields = (id, fields) => {
         setTasks(prev => {
           const updated = prev.map(t => t.id === id ? { ...t, ...fields } : t);
@@ -11639,7 +11663,7 @@
     }
 
     // ============ 프로젝트 탭 ============
-    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments, projectTemplates, meetings = [], setMeetings, kpiBrands = {}, addTask, deleteTask, updateTask, toggleTaskComplete }) {
+    function ProjectTab({ projects, setProjects, tasks, setTasks, currentUser, readComments, setReadComments, projectTemplates, meetings = [], setMeetings, kpiBrands = {} }) {
       const [viewMode, setViewMode] = useState('projects'); // 'projects' | 'tasks'
       const [selectedBrand, setSelectedBrand] = useState(null);
       const [selectedProject, setSelectedProject] = useState(null);
@@ -11839,10 +11863,56 @@
       const addComment = (pid, text, file = null) => { const nc = { id: Date.now(), memberId: currentUser.id, text, file, createdAt: new Date().toISOString() }; setProjects(prev => prev.map(p => p.id === pid ? { ...p, comments: [...(p.comments || []), nc] } : p)); setReadComments(prev => ({ ...prev, [pid]: (prev[pid] || 0) + 1 })); if (selectedProject?.id === pid) setSelectedProject(prev => ({ ...prev, comments: [...(prev.comments || []), nc] })); };
       const updateComment = (pid, cid, text) => { setProjects(prev => prev.map(p => p.id === pid ? { ...p, comments: (p.comments || []).map(c => c.id === cid ? { ...c, text, editedAt: new Date().toISOString() } : c) } : p)); if (selectedProject?.id === pid) setSelectedProject(prev => ({ ...prev, comments: (prev.comments || []).map(c => c.id === cid ? { ...c, text, editedAt: new Date().toISOString() } : c) })); };
       const deleteComment = (pid, cid) => { setProjects(prev => prev.map(p => p.id === pid ? { ...p, comments: (p.comments || []).filter(c => c.id !== cid) } : p)); setReadComments(prev => ({ ...prev, [pid]: Math.max(0, (prev[pid] || 0) - 1) })); if (selectedProject?.id === pid) setSelectedProject(prev => ({ ...prev, comments: (prev.comments || []).filter(c => c.id !== cid) })); };
-      // addTask, deleteTask, updateTask, toggleTaskComplete는 props로 받음 (TeamWorkApp에서 정의)
+      const addTask = (t) => { const pt = tasks.filter(x => x.projectId === t.projectId); const mx = Math.max(...pt.map(x => x.order), -1); setTasks(prev => [...prev, { ...t, id: Date.now(), order: mx + 1, completed: false, note: '', bookmark: false }]); };
+      const toggleTaskComplete = (id) => {
+        setTasks(prev => {
+          const task = prev.find(t => t.id === id);
+          if (!task) return prev;
+          
+          const newCompleted = !task.completed;
+          
+          // 하위업무인 경우 (parentTaskId가 없는 업무)
+          if (!task.parentTaskId) {
+            const subtasks = prev.filter(t => t.parentTaskId === id);
+            
+            if (subtasks.length > 0) {
+              // 하위업무 체크 → 모든 서브태스크도 같이 체크/해제
+              return prev.map(t => {
+                if (t.id === id) return { ...t, completed: newCompleted };
+                if (t.parentTaskId === id) return { ...t, completed: newCompleted };
+                return t;
+              });
+            }
+          }
+          
+          // 서브태스크인 경우 (parentTaskId가 있는 업무)
+          if (task.parentTaskId) {
+            const updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+            
+            // 모든 서브태스크가 완료되었는지 확인
+            const siblings = updated.filter(t => t.parentTaskId === task.parentTaskId);
+            const allCompleted = siblings.every(t => t.completed);
+            
+            // 부모 하위업무도 업데이트
+            return updated.map(t => {
+              if (t.id === task.parentTaskId) {
+                return { ...t, completed: allCompleted };
+              }
+              return t;
+            });
+          }
+          
+          // 일반 업무 (서브태스크 없는 하위업무)
+          return prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+        });
+      };
+      // 휴지통으로 이동 (deletedAt 추가)
+      const deleteTask = (id) => setTasks(prev => prev.map(t => 
+        (t.id === id || t.parentTaskId === id) ? { ...t, deletedAt: Date.now() } : t
+      ));
       const requestDeleteTask = (task) => setConfirmDelete({ type: 'task', id: task.id, title: task.title });
       const requestDeleteProject = (project) => setConfirmDelete({ type: 'project', id: project.id, title: project.title });
-
+      
       // 삭제 확인 처리
       const handleConfirmDelete = () => {
         if (confirmDelete) {
@@ -11850,12 +11920,13 @@
             deleteTask(confirmDelete.id);
           } else if (confirmDelete.type === 'project') {
             deleteProject(confirmDelete.id);
-            setSelectedProject(null);
+            setSelectedProject(null); // 프로젝트 삭제 후 슬라이드 닫기
           }
           setConfirmDelete(null);
         }
       };
-
+      
+      const updateTask = (updatedTask) => setTasks(prev => prev.map(t => t.id === updatedTask.id ? { ...t, ...updatedTask } : t));
       const reorderTasks = (updates) => setTasks(prev => prev.map(t => { const u = updates.find(x => x.id === t.id); return u ? { ...t, order: u.order } : t; }));
 
       // 내가 참여한 프로젝트 (내가 만든 프로젝트 OR 내가 담당자인 업무가 있는 프로젝트)
@@ -12971,7 +13042,7 @@
 
           {/* KPI 전체 화면 뷰 - 좌우 분할 레이아웃 */}
           {selectedKpiItem && (
-            <KpiFullScreenView
+            <KpiFullScreenView 
               kpiItem={selectedKpiItem}
               kpiBrands={kpiBrands}
               projects={projects}
@@ -12983,7 +13054,6 @@
               setMeetings={setMeetings}
               onClose={() => setSelectedKpiItem(null)}
               onOpenProject={openProject}
-              toggleTaskComplete={toggleTaskComplete}
             />
           )}
 
@@ -13008,7 +13078,7 @@
     }
 
     // KPI 전체 화면 뷰 컴포넌트
-    function KpiFullScreenView({ kpiItem, kpiBrands, projects, tasks, setProjects, setTasks, currentUser, meetings, setMeetings, onClose, onOpenProject, toggleTaskComplete }) {
+    function KpiFullScreenView({ kpiItem, kpiBrands, projects, tasks, setProjects, setTasks, currentUser, meetings, setMeetings, onClose, onOpenProject }) {
       const [selectedProjectId, setSelectedProjectId] = useState(null);
       const [detailTab, setDetailTab] = useState('tasks');
       const [showMeetingModal, setShowMeetingModal] = useState(false);
@@ -13206,8 +13276,12 @@
         }
       };
       
-      // toggleTaskComplete는 props로 받음 (TeamWorkApp에서 정의)
-
+      const toggleTaskComplete = (taskId) => {
+        setTasks(prev => prev.map(t => 
+          t.id === taskId ? { ...t, completed: !t.completed, completedAt: !t.completed ? new Date().toISOString() : null } : t
+        ));
+      };
+      
       return (
         <div 
           onClick={onClose}
@@ -16372,7 +16446,7 @@
     }
 
     // ============ 전체업무 탭 ============
-    function CalendarTab({ tasks, setTasks, projects, currentUser, deleteTask, updateTask, toggleTaskComplete }) {
+    function CalendarTab({ tasks, setTasks, projects, currentUser }) {
       const [viewMode, setViewMode] = useState('list'); // 'calendar' or 'list'
       const [currentMonth, setCurrentMonth] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() });
       const [selectedTask, setSelectedTask] = useState(null);
@@ -16460,22 +16534,83 @@
       };
 
       const moveMonth = (dir) => setCurrentMonth(prev => { let m = prev.month + (dir === 'prev' ? -1 : 1), y = prev.year; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } return { year: y, month: m }; });
-      // toggleTaskComplete, deleteTask, updateTask는 props로 받음 (TeamWorkApp에서 정의)
-      // CalendarTab 전용 래퍼: selectedTask 상태도 함께 업데이트
-      const handleToggleTaskComplete = (id) => {
-        toggleTaskComplete(id);
-        if (selectedTask?.id === id) setSelectedTask(prev => ({ ...prev, completed: !prev.completed }));
+      const toggleTaskComplete = (id) => { 
+        setTasks(prev => {
+          const task = prev.find(t => t.id === id);
+          if (!task) return prev;
+          
+          const newCompleted = !task.completed;
+          
+          // 하위업무인 경우
+          if (!task.parentTaskId) {
+            const subtasks = prev.filter(t => t.parentTaskId === id);
+            if (subtasks.length > 0) {
+              return prev.map(t => {
+                if (t.id === id) return { ...t, completed: newCompleted };
+                if (t.parentTaskId === id) return { ...t, completed: newCompleted };
+                return t;
+              });
+            }
+          }
+          
+          // 서브태스크인 경우
+          if (task.parentTaskId) {
+            const updated = prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+            const siblings = updated.filter(t => t.parentTaskId === task.parentTaskId);
+            const allCompleted = siblings.every(t => t.completed);
+            return updated.map(t => t.id === task.parentTaskId ? { ...t, completed: allCompleted } : t);
+          }
+          
+          return prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t);
+        }); 
+        if (selectedTask?.id === id) setSelectedTask(prev => ({ ...prev, completed: !prev.completed })); 
       };
-      const handleDeleteTask = (id) => {
-        deleteTask(id);
-        setSelectedTask(null);
+      // 휴지통으로 이동 (deletedAt 추가)
+      const deleteTask = (id) => { 
+        setTasks(prev => prev.map(t => 
+          (t.id === id || t.parentTaskId === id) ? { ...t, deletedAt: Date.now() } : t
+        )); 
+        setSelectedTask(null); 
       };
       const requestDeleteTask = (task) => setConfirmDelete({ id: task.id, title: task.title });
       const handleConfirmDelete = () => {
         if (confirmDelete) {
-          handleDeleteTask(confirmDelete.id);
+          deleteTask(confirmDelete.id);
           setConfirmDelete(null);
         }
+      };
+      const updateTask = (task) => { 
+        const { newSubtasks, updatedSubtasks, ...taskData } = task;
+        
+        setTasks(prev => {
+          let updated = prev.map(t => t.id === task.id ? { ...t, ...taskData } : t);
+          
+          // 기존 하위업무 업데이트
+          if (updatedSubtasks && updatedSubtasks.length > 0) {
+            updatedSubtasks.forEach(st => {
+              updated = updated.map(t => t.id === st.id ? { ...t, title: st.title } : t);
+            });
+          }
+          
+          // 새 하위업무 추가
+          if (newSubtasks && newSubtasks.length > 0) {
+            const newSubtasksToAdd = newSubtasks.map((st, idx) => ({
+              id: Date.now() + idx + 1,
+              parentTaskId: task.id,
+              title: st.title,
+              projectId: task.projectId,
+              date: task.date,
+              memberId: currentUser.id,
+              order: idx,
+              completed: false,
+              bookmark: false,
+              note: ''
+            }));
+            updated = [...updated, ...newSubtasksToAdd];
+          }
+          
+          return updated;
+        });
       };
 
       return (
@@ -16657,7 +16792,7 @@
                           onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                         >
                           <button 
-                            onClick={(e) => { e.stopPropagation(); handleToggleTaskComplete(task.id); }}
+                            onClick={(e) => { e.stopPropagation(); toggleTaskComplete(task.id); }} 
                             style={{ width: 28, height: 28, borderRadius: 8, border: task.completed ? 'none' : '2px solid #D1D6DB', background: task.completed ? '#3182F6' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                           >
                             {task.completed && <Icon name="check" size={16} color="white" />}
@@ -16717,7 +16852,7 @@
                               }}
                             >
                               <button 
-                                onClick={(e) => { e.stopPropagation(); handleToggleTaskComplete(st.id); }}
+                                onClick={(e) => { e.stopPropagation(); toggleTaskComplete(st.id); }} 
                                 style={{ width: 24, height: 24, borderRadius: 6, border: st.completed ? 'none' : '2px solid #D1D6DB', background: st.completed ? '#00C471' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                               >
                                 {st.completed && <Icon name="check" size={14} color="white" />}
@@ -16844,7 +16979,7 @@
                     
                     {/* 버튼 영역 */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <button onClick={() => handleToggleTaskComplete(selectedTask.id)} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: selectedTask.completed ? '#F7F8FA' : '#3182F6', color: selectedTask.completed ? '#6B7684' : 'white', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
+                      <button onClick={() => toggleTaskComplete(selectedTask.id)} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: selectedTask.completed ? '#F7F8FA' : '#3182F6', color: selectedTask.completed ? '#6B7684' : 'white', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
                         <Icon name="check" size={18} color={selectedTask.completed ? '#6B7684' : 'white'} /> {selectedTask.completed ? '완료 취소' : '완료 처리'}
                       </button>
                       
